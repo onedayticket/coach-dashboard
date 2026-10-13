@@ -1020,6 +1020,7 @@ function testAndAuthorizeUrlFetch() {
  * - 캐시를 사용하므로 매번 ListModels를 호출하지 않아 1~2초 내 즉시 생성
  */
 function callGemini(prompt, systemInstruction, payload) {
+  const startGasTime = new Date().getTime();
   const apiKey = getEffectiveGeminiApiKey(payload);
   const keySource = (payload && payload.geminiApiKey && String(payload.geminiApiKey).trim().length > 0)
     ? '대시보드(Frontend)'
@@ -1031,7 +1032,8 @@ function callGemini(prompt, systemInstruction, payload) {
     keySource: keySource,
     model: '탐색 중',
     httpStatus: null,
-    errorMessage: null
+    errorMessage: null,
+    elapsedSeconds: 0
   };
 
   if (!apiKey) {
@@ -1039,9 +1041,8 @@ function callGemini(prompt, systemInstruction, payload) {
     return { text: null, debug: debugInfo };
   }
 
-  // 1. 캐시/구글 서버에서 검증된 실제 텍스트 모델 목록 획득 (최대 상위 3개 후보)
-  const supportedModels = getGoogleSupportedTextModels(apiKey);
-  const targetModels = (supportedModels && supportedModels.length > 0) ? supportedModels.slice(0, 3) : ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
+  // [초고속 직행] 무조건 검증된 gemini-1.5-flash를 1순위로 즉시 호출 (불필요한 ListModels 지연 0초)
+  const targetModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
 
   let lastError = null;
 
@@ -1056,76 +1057,63 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 4096 // [요청 3] 토큰 한도를 1500에서 4096으로 대폭 상향 (글자수 끊김 원천 방지)
+        maxOutputTokens: 4096 // [요청 3] 토큰 한도를 4096으로 대폭 상향 (글자수 끊김 원천 방지)
       }
     };
     if (systemInstruction) {
       bodyObj.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
 
-    // 일시적 과부하(HTTP 503) 발생 시 구글 권장 1.5초 대기 후 1회 재시도
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const response = UrlFetchApp.fetch(url, {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify(bodyObj),
-          muteHttpExceptions: true
-        });
+    try {
+      const response = UrlFetchApp.fetch(url, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify(bodyObj),
+        muteHttpExceptions: true
+      });
 
-        const code = response.getResponseCode();
-        debugInfo.httpStatus = code;
-        const responseText = response.getContentText();
+      const code = response.getResponseCode();
+      debugInfo.httpStatus = code;
+      const responseText = response.getContentText();
 
-        if (code === 200) {
-          const json = JSON.parse(responseText);
-          if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
-            const candidate = json.candidates[0];
-            const generatedText = candidate.content.parts[0].text;
-            const finishReason = candidate.finishReason || 'STOP';
-            debugInfo.finishReason = finishReason;
-            debugInfo.isTruncated = (finishReason === 'MAX_TOKENS');
-            debugInfo.usage = json.usageMetadata || {};
-            return { text: generatedText, debug: debugInfo };
-          }
+      if (code === 200) {
+        const json = JSON.parse(responseText);
+        if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
+          const candidate = json.candidates[0];
+          const generatedText = candidate.content.parts[0].text;
+          const finishReason = candidate.finishReason || 'STOP';
+          debugInfo.finishReason = finishReason;
+          debugInfo.isTruncated = (finishReason === 'MAX_TOKENS');
+          debugInfo.usage = json.usageMetadata || {};
+          debugInfo.elapsedSeconds = ((new Date().getTime() - startGasTime) / 1000).toFixed(1);
+          return { text: generatedText, debug: debugInfo };
         }
-
-        // 에러 메시지 추출
-        try {
-          const errJson = JSON.parse(responseText);
-          lastError = errJson.error ? `[HTTP ${code}] ${errJson.error.message || errJson.error.status}` : `[HTTP ${code}] ${responseText}`;
-        } catch (pe) {
-          lastError = `[HTTP ${code}] ${responseText}`;
-        }
-
-        // API Key 자체가 잘못된 경우 즉시 반환
-        if (lastError.includes('API_KEY_INVALID') || lastError.includes('API key not valid')) {
-          debugInfo.errorMessage = lastError;
-          return { text: null, debug: debugInfo };
-        }
-
-        Logger.log(`${modelName} 시도 ${attempt} 실패: ${lastError}`);
-
-        // 503(과부하) 또는 429(할당량)인 경우 1.5초 대기 후 1회 재시도
-        if ((code === 503 || code === 429) && attempt === 1) {
-          Utilities.sleep(1500); // 1.5초 대기
-          continue;
-        }
-
-        // 그 외 오류이거나 2차 시도 실패 시 다음 모델로 전환
-        break;
-
-      } catch (e) {
-        lastError = 'UrlFetchApp 통신 예외: ' + e.toString();
-        Logger.log(`${modelName} 통신 예외: ` + e.toString());
-        break;
       }
+
+      // 에러 메시지 추출
+      try {
+        const errJson = JSON.parse(responseText);
+        lastError = errJson.error ? `[HTTP ${code}] ${errJson.error.message || errJson.error.status}` : `[HTTP ${code}] ${responseText}`;
+      } catch (pe) {
+        lastError = `[HTTP ${code}] ${responseText}`;
+      }
+
+      // API Key 자체가 잘못된 경우 즉시 반환
+      if (lastError.includes('API_KEY_INVALID') || lastError.includes('API key not valid')) {
+        debugInfo.errorMessage = lastError;
+        debugInfo.elapsedSeconds = ((new Date().getTime() - startGasTime) / 1000).toFixed(1);
+        return { text: null, debug: debugInfo };
+      }
+
+      Logger.log(`${modelName} 호출 실패: ${lastError}`);
+    } catch (e) {
+      lastError = 'UrlFetchApp 통신 예외: ' + e.toString();
+      Logger.log(`${modelName} 통신 예외: ` + e.toString());
     }
   }
 
-  // 실패 시 캐시 삭제 (다음에 최신 모델 재취득)
-  CacheService.getScriptCache().remove('SUPPORTED_TEXT_MODELS_V1');
   debugInfo.errorMessage = lastError;
+  debugInfo.elapsedSeconds = ((new Date().getTime() - startGasTime) / 1000).toFixed(1);
   return { text: null, debug: debugInfo };
 }
 

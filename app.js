@@ -453,74 +453,71 @@ async function getBrowserSupportedGeminiModels(apiKey) {
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   const apiKey = (AppState.geminiApiKey || '').trim();
-  if (!apiKey) return null;
+  if (!apiKey) return { text: null, error: 'API 키 미등록' };
 
-  const candidateModels = await getBrowserSupportedGeminiModels(apiKey);
+  // 구버전 캐시 정리
+  localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
+
+  const startTime = performance.now();
+  // 가장 빠르고 안정적인 모델 순서로 직행
+  const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
+  let lastErrorDetail = '';
 
   for (const model of candidateModels) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    // 503(과부하) 대비 최대 2회 시도
-    for (let attempt = 1; attempt <= 2; attempt++) {
-      try {
-        const res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-            generationConfig: {
-              temperature: 0.7,
-              topK: 40,
-              topP: 0.95,
-              maxOutputTokens: 8192 // [요청 3] 토큰 한도를 8192(기존의 2배)로 대폭 상향하여 글자수 끊김 완벽 방지
-            }
-          })
-        });
-
-        if (res.ok) {
-          const json = await res.json();
-          if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
-            const candidate = json.candidates[0];
-            const text = candidate.content.parts[0].text;
-            const finishReason = candidate.finishReason || 'UNKNOWN';
-            const usage = json.usageMetadata || {};
-
-            console.group('%c🔍 [Gemini AI 실시간 디버그 리포트]', 'color: #0dcaf0; font-weight: bold; font-size: 13px;');
-            console.log('📌 호출 모델:', model);
-            console.log('🏁 종료 상태 (finishReason):', finishReason === 'STOP' ? '✅ STOP (완전한 정상 종료)' : `⚠️ ${finishReason} (토큰 한도 등으로 도중 끊김)`);
-            console.log('📏 생성 텍스트 길이:', text.length, '자');
-            console.log('📊 토큰 소비량 (usageMetadata):', usage);
-            console.groupEnd();
-
-            return {
-              text: text,
-              isAiGenerated: true,
-              model: model,
-              finishReason: finishReason,
-              usage: usage,
-              isTruncated: (finishReason === 'MAX_TOKENS')
-            };
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+          generationConfig: {
+            temperature: 0.7,
+            topK: 40,
+            topP: 0.95,
+            maxOutputTokens: 8192
           }
-        }
+        })
+      });
 
-        // 503 과부하 또는 429 시 1.5초 후 재시도
-        if ((res.status === 503 || res.status === 429) && attempt === 1) {
-          console.warn(`[브라우저 직통 Gemini ${model}] 503 과부하 발생 ➔ 1.5초 후 재시도 중...`);
-          await new Promise(r => setTimeout(r, 1500));
-          continue;
-        }
+      if (res.ok) {
+        const json = await res.json();
+        if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
+          const candidate = json.candidates[0];
+          const text = candidate.content.parts[0].text;
+          const finishReason = candidate.finishReason || 'STOP';
+          const usage = json.usageMetadata || {};
+          const elapsedSec = ((performance.now() - startTime) / 1000).toFixed(1);
 
-        break; // 다른 오류이거나 2차 실패 시 다음 모델로 전환
-      } catch (e) {
-        console.warn(`[브라우저 직통 Gemini ${model} 예외]`, e);
-        break;
+          console.group('%c⚡ [Gemini AI 브라우저 직통 초고속 성공]', 'color: #10b981; font-weight: bold; font-size: 13px;');
+          console.log(`📌 모델: ${model} | 소요시간: ${elapsedSec}초`);
+          console.log(`🏁 상태: ${finishReason} | 텍스트 길이: ${text.length}자`);
+          console.groupEnd();
+
+          return {
+            text: text,
+            isAiGenerated: true,
+            model: model,
+            elapsedSec: elapsedSec,
+            finishReason: finishReason,
+            usage: usage,
+            isTruncated: (finishReason === 'MAX_TOKENS')
+          };
+        }
+      } else {
+        const errText = await res.text().catch(() => '');
+        lastErrorDetail = `[HTTP ${res.status}] ${errText.slice(0, 150)}`;
+        console.warn(`[브라우저 직통 ${model} 응답 오류]`, res.status, errText);
       }
+    } catch (e) {
+      lastErrorDetail = `[네트워크 예외] ${e.message}`;
+      console.warn(`[브라우저 직통 ${model} 네트워크 예외]`, e);
     }
   }
 
-  localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
-  return null;
+  return { text: null, error: lastErrorDetail };
 }
 
 function simulateMockAction(payload) {
@@ -1359,34 +1356,39 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
           hideLoadingOverlay();
           setInputValue('inputCurrentExerciseRoutine', directRes.text);
           if (directRes.isTruncated) {
-            showToast(`⚠️ [AI 루틴 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${directRes.text.length}자)`, 'warning', 8000);
+            showToast(`⚠️ [브라우저 직통 ${directRes.elapsedSec}초] 토큰 한도 끊김 (${directRes.text.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 맞춤 운동 루틴 생성 완료] (${directRes.text.length}자)`, 'success', 4000);
+            showToast(`✓ [브라우저 직통 ${directRes.elapsedSec}초] AI 운동 루틴 생성 완료 (${directRes.model}, ${directRes.text.length}자)`, 'success', 5000);
           }
           return;
+        } else {
+          console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
+          showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
         }
       }
 
-      // [2] GAS 백엔드 경유 모드 (GAS 속성 키 사용 시, 초경량 2초 직행)
+      // [2] GAS 백엔드 경유 모드 (초경량 직행)
+      const gasStartTime = performance.now();
       const res = await postToGasBackend({
         action: 'generateWorkoutRoutine',
         member: AppState.selectedMember,
         customExerciseGuideline: customGuideline
       });
       hideLoadingOverlay();
+      const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
 
       if (res && res.routine) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentExerciseRoutine', res.routine);
+          const modelName = (res.debug && res.debug.model) ? res.debug.model : 'AI';
           if (res.debug && res.debug.isTruncated) {
-            showToast(`⚠️ [AI 루틴 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${res.routine.length}자)`, 'warning', 8000);
+            showToast(`⚠️ [GAS 백엔드 ${gasElapsedSec}초] 토큰 한도 끊김 (${res.routine.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 맞춤 운동 루틴 생성 완료] (${res.routine.length}자)`, 'success', 4000);
+            showToast(`✓ [GAS 백엔드 ${gasElapsedSec}초] AI 맞춤 운동 루틴 생성 완료 (${modelName}, ${res.routine.length}자)`, 'success', 5000);
           }
         } else {
-          // AI 생성 실패 시: 입력칸에 에러 찌꺼기 텍스트를 덮어씌우지 않고 안내 토스트 팝업 제공
           const errDetail = (res.debug && res.debug.errorMessage) ? res.debug.errorMessage : '구글 서버 과부하';
-          showToast(`⚠️ [AI 일시 지연] ${errDetail}\n잠시 후 다시 버튼을 눌러주세요.`, 'warning', 7000);
+          showToast(`⚠️ [AI 일시 지연 (${gasElapsedSec}초)] ${errDetail}\n잠시 후 다시 버튼을 눌러주세요.`, 'warning', 7000);
           console.warn('[Gemini AI 디버그 정보]', res.debug);
         }
       }
@@ -1431,34 +1433,39 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
           hideLoadingOverlay();
           setInputValue('inputCurrentDietPlan', directRes.text);
           if (directRes.isTruncated) {
-            showToast(`⚠️ [AI 식단 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${directRes.text.length}자)`, 'warning', 8000);
+            showToast(`⚠️ [브라우저 직통 ${directRes.elapsedSec}초] 토큰 한도 끊김 (${directRes.text.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 맞춤 데일리 식단 생성 완료] (${directRes.text.length}자)`, 'success', 4000);
+            showToast(`✓ [브라우저 직통 ${directRes.elapsedSec}초] AI 맞춤 데일리 식단 생성 완료 (${directRes.model}, ${directRes.text.length}자)`, 'success', 5000);
           }
           return;
+        } else {
+          console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
+          showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
         }
       }
 
-      // [2] GAS 백엔드 경유 모드 (GAS 속성 키 사용 시, 초경량 2초 직행)
+      // [2] GAS 백엔드 경유 모드 (초경량 직행)
+      const gasStartTime = performance.now();
       const res = await postToGasBackend({
         action: 'generateDietPlan',
         member: AppState.selectedMember,
         customDietGuideline: customGuideline
       });
       hideLoadingOverlay();
+      const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
 
       if (res && res.dietPlan) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentDietPlan', res.dietPlan);
+          const modelName = (res.debug && res.debug.model) ? res.debug.model : 'AI';
           if (res.debug && res.debug.isTruncated) {
-            showToast(`⚠️ [AI 식단 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${res.dietPlan.length}자)`, 'warning', 8000);
+            showToast(`⚠️ [GAS 백엔드 ${gasElapsedSec}초] 토큰 한도 끊김 (${res.dietPlan.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 맞춤 데일리 식단 생성 완료] (${res.dietPlan.length}자)`, 'success', 4000);
+            showToast(`✓ [GAS 백엔드 ${gasElapsedSec}초] AI 맞춤 데일리 식단 생성 완료 (${modelName}, ${res.dietPlan.length}자)`, 'success', 5000);
           }
         } else {
-          // AI 생성 실패 시: 입력칸에 에러 찌꺼기 텍스트를 덮어씌우지 않고 안내 토스트 팝업 제공
           const errDetail = (res.debug && res.debug.errorMessage) ? res.debug.errorMessage : '구글 서버 과부하';
-          showToast(`⚠️ [AI 일시 지연] ${errDetail}\n잠시 후 다시 버튼을 눌러주세요.`, 'warning', 7000);
+          showToast(`⚠️ [AI 일시 지연 (${gasElapsedSec}초)] ${errDetail}\n잠시 후 다시 버튼을 눌러주세요.`, 'warning', 7000);
           console.warn('[Gemini AI 디버그 정보]', res.debug);
         }
       }
