@@ -1,0 +1,508 @@
+/**
+ * ==============================================================================
+ * [4주 온라인 코칭 대시보드 - style.css]
+ * 모던하고 미려한 대시보드 커스텀 스타일 (Bootstrap 5 확장)
+ * ==============================================================================
+ */
+
+:root {
+  --primary-color: #4f46e5;
+  --primary-hover: #4338ca;
+  --primary-light: #eef2ff;
+  --success-color: #10b981;
+  --warning-color: #f59e0b;
+  --danger-color: #ef4444;
+  --dark-bg: #0f172a;
+  --card-bg: #ffffff;
+  --border-color: #e2e8f0;
+  --text-main: #1e293b;
+  --text-muted: #64748b;
+}
+
+body {
+  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f8fafc;
+  color: var(--text-main);
+  min-height: 100vh;
+}
+
+/* 상단 글로벌 내비게이션 바 */
+.navbar-brand {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+/* 메인 대시보드 뷰 탭 (참여자 관리 vs 지침서 관리) */
+.view-nav-btn {
+  font-weight: 600;
+  font-size: 0.88rem;
+  padding: 0.45rem 1rem;
+  border-radius: 0.5rem;
+  transition: all 0.2s ease;
+  color: #94a3b8;
+  border: 1px solid transparent;
+}
+
+.view-nav-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.view-nav-btn.active {
+  color: #ffffff !important;
+  background-color: #4f46e5 !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 2px 8px rgba(79, 70, 229, 0.35);
+}
+
+/* 화면 분할 레이아웃 */
+.main-wrapper {
+  min-height: calc(100vh - 70px);
+}
+
+/* 좌측 사이드바 */
+.sidebar-panel {
+  background: var(--card-bg);
+  border-radius: 1rem;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.04);
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 100px);
+  position: sticky;
+  top: 80px;
+}
+
+.sidebar-header {
+  padding: 1.15rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.sidebar-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: visible;
+  padding: 0.75rem 0.75rem 4rem 0.75rem; /* 하단 카드 드롭다운 공간 확보 */
+  position: relative;
+}
+
+/* 사이드바 상단 탭 전환 */
+.sidebar-tab-btn {
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.5rem;
+  transition: all 0.15s ease;
+}
+
+/* 참여자 카드 */
+.member-card-item {
+  border: 1px solid #f1f5f9;
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.65rem;
+  cursor: pointer;
+  background-color: #ffffff;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  z-index: 1;
+  overflow: visible !important; /* 드롭다운 잘림 방지 */
+}
+
+.member-card-item:hover {
+  border-color: #cbd5e1;
+  background-color: #f8faff;
+  transform: translateY(-1px);
+  z-index: 5;
+}
+
+/* [버그 수정 핵심] 드롭다운이 열린 카드를 아래/위의 모든 다른 형제 카드보다 최상단 레이어로 격상 */
+.member-card-item:has(.show),
+.member-card-item:has(.dropdown-menu.show),
+.member-card-item:focus-within {
+  z-index: 1050 !important;
+}
+
+.member-card-item.active {
+  background-color: #f5f3ff !important;
+  border-color: #6366f1 !important;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.12);
+}
+
+.member-card-item.active::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 15%;
+  height: 70%;
+  width: 4px;
+  background-color: #4f46e5;
+  border-top-right-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+
+.member-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+/* ==============================================================================
+ * [Git Tag 스타일 라벨 & 드롭다운 개선]
+ * ============================================================================== */
+
+/* Git Tag 스타일 뱃지 */
+.git-tag-pill {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #1e293b;
+  background-color: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.375rem;
+  padding: 0.25rem 0.55rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  letter-spacing: -0.2px;
+  transition: all 0.15s ease;
+}
+
+.git-tag-pill:hover {
+  background-color: #e2e8f0;
+  border-color: #94a3b8;
+}
+
+.git-tag-pill i {
+  color: #4f46e5;
+  font-size: 0.8rem;
+}
+
+/* 태그 드롭다운 버튼: 뚜렷하고 명확하게 보이도록 개선 */
+.btn-git-tag-dropdown {
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.2rem 0.55rem;
+  border-radius: 0.375rem;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  cursor: pointer;
+}
+
+.btn-git-tag-dropdown:hover, .btn-git-tag-dropdown:focus {
+  background-color: #eef2ff;
+  border-color: #6366f1;
+  color: #4f46e5;
+  box-shadow: 0 0 0 0.15rem rgba(99, 102, 241, 0.15);
+}
+
+/* 드롭다운 컨테이너 및 열림 상태 */
+.member-card-item .dropdown {
+  position: relative;
+}
+
+.member-card-item .dropdown.show {
+  z-index: 1060 !important;
+}
+
+/* 드롭다운 메뉴 위치 및 잘림 방지 (하위 형제 요소들 위로 최상단 렌더링) */
+.dropdown-menu-tag {
+  z-index: 99999 !important;
+  min-width: 195px;
+  border-radius: 0.5rem;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2), 0 4px 10px rgba(15, 23, 42, 0.1) !important;
+  padding: 0.5rem 0;
+  font-size: 0.8rem;
+}
+
+.dropdown-menu-tag .dropdown-item {
+  padding: 0.45rem 1rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+
+.dropdown-menu-tag .dropdown-item:hover {
+  background-color: #f1f5f9;
+  color: #4f46e5;
+}
+
+.dropdown-menu-tag .dropdown-item.active {
+  background-color: #4f46e5;
+  color: #ffffff;
+}
+
+/* ==============================================================================
+ * [지침서 대시보드 뷰 스타일 (새 창/모달 대신 대시보드 내 인라인 뷰)]
+ * ============================================================================== */
+.guideline-nav-item {
+  border: 1px solid #f1f5f9;
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+  background-color: #ffffff;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.guideline-nav-item:hover {
+  background-color: #f8faff;
+  border-color: #cbd5e1;
+}
+
+.guideline-nav-item.active {
+  background-color: #f5f3ff !important;
+  border-color: #6366f1 !important;
+}
+
+.guideline-number-badge {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.guideline-card-box {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.guideline-card-box:focus-within {
+  border-color: #6366f1;
+  box-shadow: 0 8px 16px -2px rgba(99, 102, 241, 0.12);
+}
+
+.guideline-textarea {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  border-radius: 0.5rem;
+  resize: vertical;
+}
+
+/* 우측 메인 상세 패널 */
+.section-panel {
+  background: var(--card-bg);
+  border-radius: 1rem;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.03);
+  margin-bottom: 1.5rem;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.section-panel:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+}
+
+.section-header {
+  padding: 1rem 1.5rem;
+  background-color: #ffffff;
+  border-bottom: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 0;
+  color: #0f172a;
+}
+
+.section-body {
+  padding: 1.5rem;
+}
+
+/* 접기/펴기(Toggle) 버튼 */
+.btn-toggle-collapse {
+  padding: 0.25rem 0.5rem;
+  color: var(--text-muted);
+  border-radius: 0.375rem;
+  transition: all 0.2s ease;
+}
+
+.btn-toggle-collapse:hover {
+  background-color: #f1f5f9;
+  color: var(--primary-color);
+}
+
+.btn-toggle-collapse i {
+  transition: transform 0.2s ease;
+}
+
+.btn-toggle-collapse.collapsed i {
+  transform: rotate(-90deg);
+}
+
+/* 인적 사항 그리드 */
+.info-field-box {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 0.85rem 1rem;
+  height: 100%;
+}
+
+.info-field-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 0.25rem;
+}
+
+.info-field-val {
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+/* 지침 & 루틴 카드 */
+.routine-box {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.routine-textarea {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* 차트 영역: 3개의 별개 꺾은선 그래프 */
+.chart-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1rem;
+  height: 260px;
+  position: relative;
+}
+
+.chart-card-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #334155;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.chart-canvas-wrapper {
+  position: relative;
+  height: calc(100% - 30px);
+  width: 100%;
+}
+
+/* 피드백 테이블 */
+.feedback-table th {
+  background-color: #f8fafc;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 2px solid #e2e8f0;
+  padding: 0.75rem 1rem;
+}
+
+.feedback-table td {
+  vertical-align: middle;
+  font-size: 0.875rem;
+  padding: 0.85rem 1rem;
+}
+
+/* AI 제안 인디케이터 배지 */
+.ai-badge {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  font-weight: 600;
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* 폼 컨트롤 포커스 링 */
+.form-control:focus, .form-select:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 0.2rem rgba(99, 102, 241, 0.15);
+}
+
+/* 로딩 스피너 오버레이 */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.5);
+  backdrop-filter: blur(2px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+  color: white;
+}
+
+/* 전역 알림 드롭다운 스타일 */
+.notification-dropdown-menu {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+}
+
+.notification-item {
+  transition: background-color 0.15s ease;
+  white-space: normal;
+}
+
+.notification-item:hover {
+  background-color: #f1f5f9;
+}
+
+.hover-bg-light:hover {
+  background-color: #f8fafc;
+}
+

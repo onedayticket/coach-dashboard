@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>4주 습관화 코칭 통합 대시보드</title>
+  
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <!-- Google Fonts (Noto Sans KR) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Custom CSS (style.css) -->
+  <link href="style.css" rel="stylesheet">
+</head>
+<body>
+
+  <!-- ========================================================================= -->
+  <!-- [상단 내비게이션 바] -->
+  <!-- ========================================================================= -->
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top shadow-sm py-2">
+    <div class="container-fluid px-lg-4">
+      <a class="navbar-brand d-flex align-items-center" href="#" onclick="switchDashboardView('members'); return false;">
+        <i class="bi bi-heart-pulse-fill text-danger me-2 fs-4"></i>
+        <span>4주 온라인 습관화 코칭 대시보드</span>
+      </a>
+
+      <!-- [요구사항 1] 대시보드 메인 뷰 전환 탭: 참여자 관리 vs 지침서 관리 (모달 아님) -->
+      <div class="d-flex align-items-center gap-1 ms-lg-3">
+        <button type="button" class="view-nav-btn active" id="btnNavViewMembers" onclick="switchDashboardView('members')">
+          <i class="bi bi-people-fill me-1"></i> 참여자 관리
+        </button>
+        <button type="button" class="view-nav-btn" id="btnNavViewGuidelines" onclick="switchDashboardView('guidelines')">
+          <i class="bi bi-journal-text me-1 text-warning"></i> 코칭 지침서 관리 (5종)
+        </button>
+      </div>
+
+      <!-- 선택된 참여자 퀵 배지 (참여자 뷰일 때 표시) -->
+      <div class="d-none d-xl-flex align-items-center ms-3" id="navSelectedMemberBadge">
+        <span class="badge bg-secondary-subtle text-secondary border px-3 py-2 fw-normal">
+          <i class="bi bi-person me-1"></i>선택된 참여자 없음
+        </span>
+      </div>
+
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <!-- [요구사항 4] 미완료 피드백 전역 알림 드롭다운 -->
+        <div class="dropdown position-relative me-1" id="notificationDropdownContainer">
+          <button type="button" class="btn btn-outline-secondary btn-sm position-relative text-white border-secondary px-2 py-1" id="btnNotificationBell" data-bs-toggle="dropdown" aria-expanded="false" title="미완료 피드백 알림">
+            <i class="bi bi-bell-fill fs-6"></i>
+            <span id="unreadFeedbackBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none shadow-sm" style="font-size: 0.68rem; padding: 0.25em 0.5em;">
+              0
+              <span class="visually-hidden">미완료 피드백</span>
+            </span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="notificationDropdownList" style="min-width: 330px; max-width: 380px; max-height: 420px; overflow-y: auto; z-index: 1055;">
+            <li class="dropdown-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
+              <span class="fw-bold text-dark"><i class="bi bi-clock-history me-1 text-primary"></i>미완료 피드백 대기 목록</span>
+              <span class="badge bg-danger rounded-pill" id="notificationListCountBadge">0건</span>
+            </li>
+            <div id="notificationItemsContainer">
+              <li class="p-4 text-center text-muted small">대기 중인 피드백이 없습니다. 🎉</li>
+            </div>
+          </ul>
+        </div>
+
+        <!-- GAS 연결 상태 배지 -->
+        <span id="apiStatusBadge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-2 px-3 small">
+          <span class="status-dot bg-secondary me-1"></span> Mock 모드
+        </span>
+
+        <!-- 설정 모달 버튼 -->
+        <button type="button" class="btn btn-dark btn-sm border-secondary text-white" data-bs-toggle="modal" data-bs-target="#apiConfigModal" title="GAS Web App 설정">
+          <i class="bi bi-gear-fill"></i>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ========================================================================= -->
+  <!-- [메인 화면 분할 레이아웃 컨테이너] -->
+  <!-- ========================================================================= -->
+  <div class="container-fluid px-lg-4 py-3 main-wrapper">
+    <div class="row g-3">
+
+      <!-- ===================================================================== -->
+      <!-- [1. 좌측 사이드바: 탭에 따라 참여자 목록 또는 지침서 목록 표시] -->
+      <!-- ===================================================================== -->
+      <div class="col-12 col-md-4 col-xl-3">
+        <div class="sidebar-panel">
+          
+          <!-- 사이드바 상단 탭 전환 바 -->
+          <div class="p-2 border-bottom bg-light d-flex gap-1">
+            <button type="button" class="btn btn-sm w-50 sidebar-tab-btn active" id="tabBtnMembers" onclick="switchDashboardView('members')">
+              <i class="bi bi-people me-1"></i>참여자 목록
+            </button>
+            <button type="button" class="btn btn-sm w-50 sidebar-tab-btn text-muted" id="tabBtnGuidelines" onclick="switchDashboardView('guidelines')">
+              <i class="bi bi-journal-text me-1"></i>지침서 목록
+            </button>
+          </div>
+
+          <!-- A. [사이드바: 참여자 목록 모드] -->
+          <div id="sidebarMembersMode" class="d-flex flex-column flex-grow-1 overflow-hidden">
+            <!-- 검색 & 필터 헤더 -->
+            <div class="sidebar-header">
+              <div class="d-flex align-items-center justify-content-between mb-2">
+                <h6 class="fw-bold mb-0 text-dark">
+                  <i class="bi bi-people-fill text-primary me-1"></i>참여자 리스트
+                </h6>
+                <span class="badge bg-primary-subtle text-primary fw-semibold" id="memberCountText">0명</span>
+              </div>
+
+              <!-- 이름, 회원번호, 태그 다중 검색창 -->
+              <div class="input-group input-group-sm mb-2">
+                <span class="input-group-text bg-light border-end-0 text-muted"><i class="bi bi-search"></i></span>
+                <input type="text" id="memberSearchInput" class="form-control bg-light border-start-0 ps-0" placeholder="이름, 회원번호, 태그 검색...">
+              </div>
+
+              <!-- 상태 필터 토글: 전체 / 유효(Active) / 휴면(Inactive) -->
+              <div class="btn-group btn-group-sm w-100 mb-2" role="group">
+                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusAll" value="all" checked autocomplete="off">
+                <label class="btn btn-outline-secondary" for="filterStatusAll">전체</label>
+
+                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusActive" value="active" autocomplete="off">
+                <label class="btn btn-outline-success" for="filterStatusActive"><i class="bi bi-check-circle me-1"></i>유효</label>
+
+                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusInactive" value="inactive" autocomplete="off">
+                <label class="btn btn-outline-secondary" for="filterStatusInactive"><i class="bi bi-moon me-1"></i>휴면</label>
+              </div>
+
+              <!-- [요구사항 2] Git Tag 스타일 프로그램 코스 필터 칩 토글 영역 -->
+              <div class="d-flex flex-wrap gap-1 align-items-center pt-1" id="tagFilterContainer">
+                <small class="text-muted me-1 fw-bold" style="font-size: 0.72rem;"><i class="bi bi-tag-fill text-secondary me-1"></i>코스:</small>
+                <button type="button" class="git-tag-pill active border-0" data-tag="all">전체</button>
+                <!-- 동적 태그 버튼 렌더링 -->
+              </div>
+            </div>
+
+            <!-- 참여자 리스트 스크롤 영역 -->
+            <div class="sidebar-body" id="memberListContainer">
+              <div class="text-center py-5 text-muted small">
+                <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                <div>참여자 목록을 불러오는 중...</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- B. [사이드바: 코칭 지침서 5종 네비게이션 모드] -->
+          <div id="sidebarGuidelinesMode" class="d-none flex-column flex-grow-1 overflow-hidden p-2">
+            <div class="p-2 mb-2 border-bottom">
+              <h6 class="fw-bold mb-1 text-dark d-flex align-items-center">
+                <i class="bi bi-journal-bookmark-fill text-warning me-2"></i>5대 코칭 지침서
+              </h6>
+              <span class="text-muted small" style="font-size: 0.75rem;">클릭하여 해당 지침서로 스크롤</span>
+            </div>
+            <div class="sidebar-body p-1">
+              <div class="guideline-nav-item active" onclick="scrollToGuideline('gdSecPhilosophy')">
+                <div class="guideline-number-badge bg-primary text-white">1</div>
+                <div>
+                  <div class="fw-bold small text-dark">코칭 철학</div>
+                  <div class="text-muted" style="font-size: 0.72rem;">지속가능성 &amp; 멘탈 복리 효과</div>
+                </div>
+              </div>
+              <div class="guideline-nav-item" onclick="scrollToGuideline('gdSecExercise')">
+                <div class="guideline-number-badge bg-success text-white">2</div>
+                <div>
+                  <div class="fw-bold small text-dark">운동 제안 지침서</div>
+                  <div class="text-muted" style="font-size: 0.72rem;">주 3~4회 점진적 과부하 원칙</div>
+                </div>
+              </div>
+              <div class="guideline-nav-item" onclick="scrollToGuideline('gdSecDiet')">
+                <div class="guideline-number-badge bg-warning text-dark">3</div>
+                <div>
+                  <div class="fw-bold small text-dark">식단 제안 지침서</div>
+                  <div class="text-muted" style="font-size: 0.72rem;">단백질/식이섬유 &amp; 수분 2L</div>
+                </div>
+              </div>
+              <div class="guideline-nav-item" onclick="scrollToGuideline('gdSecFeedback')">
+                <div class="guideline-number-badge bg-info text-white">4</div>
+                <div>
+                  <div class="fw-bold small text-dark">피드백 지침서</div>
+                  <div class="text-muted" style="font-size: 0.72rem;">24시간 내 칭찬 선행 피드백</div>
+                </div>
+              </div>
+              <div class="guideline-nav-item" onclick="scrollToGuideline('gdSecMotivation')">
+                <div class="guideline-number-badge bg-danger text-white">5</div>
+                <div>
+                  <div class="fw-bold small text-dark">동기부여 지침서</div>
+                  <div class="text-muted" style="font-size: 0.72rem;">자책 방지 &amp; 회복 탄력성</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ===================================================================== -->
+      <!-- [2. 우측 메인 영역] -->
+      <!-- ===================================================================== -->
+      <div class="col-12 col-md-8 col-xl-9">
+
+        <!-- =================================================================== -->
+        <!-- [VIEW 1: 참여자 관리 메인 화면] -->
+        <!-- =================================================================== -->
+        <div id="viewMembersWrapper">
+          <!-- 참여자 미선택 시 Empty State -->
+          <div id="noMemberSelectedState" class="card section-panel p-5 text-center">
+            <div class="py-5">
+              <i class="bi bi-person-bounding-box display-1 text-muted opacity-50 mb-3 d-block"></i>
+              <h4 class="fw-bold text-dark">선택된 참여자가 없습니다</h4>
+              <p class="text-muted">좌측 사이드바에서 상세 정보를 확인하고 코칭할 참여자를 클릭해 주세요.</p>
+            </div>
+          </div>
+
+          <!-- 참여자 상세 정보 컨테이너 -->
+          <div id="memberDetailContent" class="d-none">
+
+            <!-- ----------------------------------------------------------------- -->
+            <!-- [상단] 인적 사항 (사전 설문 기반, 접기/펴기 가능) -->
+            <!-- ----------------------------------------------------------------- -->
+            <section class="section-panel" id="panelPersonalInfo">
+              <div class="section-header">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-person-vcard text-primary fs-5"></i>
+                  <h5 class="section-title">인적 사항 (사전 설문)</h5>
+                  <span class="badge bg-dark text-white font-monospace" id="badgeMemberId">M001</span>
+                  <span class="badge bg-light text-dark border fw-normal" id="badgeMemberStatus">유효</span>
+                  <span class="git-tag-pill" id="badgeMemberTag"><i class="bi bi-tag-fill"></i>4주-체중감량반</span>
+                </div>
+                <button class="btn btn-sm btn-toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePersonalInfo" aria-expanded="true">
+                  <i class="bi bi-chevron-down fs-6"></i>
+                </button>
+              </div>
+
+              <div class="collapse show" id="collapsePersonalInfo">
+                  <div class="row g-3">
+                    <div class="col-6 col-md-2">
+                      <div class="info-field-box bg-light border-primary-subtle">
+                        <div class="info-field-label text-primary"><i class="bi bi-hash me-1"></i>회원번호</div>
+                        <div class="info-field-val font-monospace text-primary fw-bold" id="valMemberId">-</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <div class="info-field-box">
+                        <div class="info-field-label"><i class="bi bi-person me-1"></i>이름 / 나이 / 성별</div>
+                        <div class="info-field-val" id="valNameAgeGender">-</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-2">
+                      <div class="info-field-box">
+                        <div class="info-field-label"><i class="bi bi-rulers me-1"></i>키 / 시작 체중</div>
+                        <div class="info-field-val" id="valHeightWeight">-</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4">
+                      <div class="info-field-box">
+                        <div class="info-field-label"><i class="bi bi-briefcase me-1"></i>직업 / 근무시간</div>
+                        <div class="info-field-val text-truncate" id="valJobSchedule">-</div>
+                      </div>
+                    </div>
+
+                    <div class="col-6 col-md-3">
+                      <div class="info-field-box">
+                        <div class="info-field-label"><i class="bi bi-hourglass-split me-1"></i>운동 경력</div>
+                        <div class="info-field-val text-truncate" id="valExperience">-</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-3">
+                      <div class="info-field-box">
+                        <div class="info-field-label"><i class="bi bi-repeat me-1"></i>주당 운동 횟수</div>
+                        <div class="info-field-val" id="valFrequency">-</div>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <div class="info-field-box bg-white">
+                        <div class="info-field-label text-primary"><i class="bi bi-flag-fill me-1"></i>프로그램 참여 목적</div>
+                        <div class="text-dark fw-medium mt-1 text-truncate" id="valGoal">-</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ----------------------------------------------------------------- -->
+            <!-- [중단] 지침 및 루틴 관리 (접기/펴기 가능, AI 백엔드 호출 & DB 연동) -->
+            <!-- ----------------------------------------------------------------- -->
+            <section class="section-panel" id="panelGuidelineRoutine">
+              <div class="section-header">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-diagram-3-fill text-success fs-5"></i>
+                  <h5 class="section-title">지침 및 루틴 관리</h5>
+                  <span class="ai-badge"><i class="bi bi-stars"></i> Gemini AI 백엔드 연동</span>
+                </div>
+                <button class="btn btn-sm btn-toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#collapseGuidelineRoutine" aria-expanded="true">
+                  <i class="bi bi-chevron-down fs-6"></i>
+                </button>
+              </div>
+
+              <div class="collapse show" id="collapseGuidelineRoutine">
+                <div class="section-body">
+                  <div class="row g-4">
+
+                    <!-- [좌측: 운동 관리 영역] -->
+                    <div class="col-12 col-lg-6">
+                      <div class="routine-box border-start border-4 border-success">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                          <h6 class="fw-bold mb-0 text-success d-flex align-items-center">
+                            <i class="bi bi-activity me-1 fs-5"></i>운동 지침 및 루틴
+                          </h6>
+                          <button type="button" class="btn btn-outline-success btn-sm fw-semibold" id="btnSaveExerciseGuideline">
+                            <i class="bi bi-check2 me-1"></i>수정 지침 저장
+                          </button>
+                        </div>
+
+                        <!-- 1. 운동 루틴 수정 제안 지침 -->
+                        <div class="mb-3">
+                          <label for="inputExerciseGuideline" class="form-label small fw-bold text-dark d-flex justify-content-between">
+                            <span>운동 루틴 수정 제안 지침 <span class="badge bg-danger-subtle text-danger fw-normal">AI 최우선 반영</span></span>
+                          </label>
+                          <textarea class="form-control routine-textarea" id="inputExerciseGuideline" rows="2" placeholder="코치가 입력한 수정 지침이 있을 경우 AI가 이를 최우선으로 반영하여 루틴을 생성합니다."></textarea>
+                        </div>
+
+                        <!-- 2. AI 운동 루틴 업데이트 버튼 -->
+                        <div class="mb-3">
+                          <button type="button" class="btn btn-success btn-sm w-100 fw-bold py-2 shadow-sm" id="btnAiUpdateExerciseRoutine">
+                            <i class="bi bi-robot me-1"></i> [AI] 운동 루틴 업데이트 (지침서 + 수정지침 기반)
+                          </button>
+                        </div>
+
+                        <!-- 3. 현재 제안 운동 루틴 표시 및 편집 칸 -->
+                        <div class="mt-auto">
+                          <div class="d-flex align-items-center justify-content-between mb-1">
+                            <label for="inputCurrentExerciseRoutine" class="form-label small fw-bold text-dark mb-0">현재 제안 운동 루틴</label>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-success text-decoration-none fw-semibold" id="btnSaveExerciseRoutine">
+                              <i class="bi bi-floppy me-1"></i>루틴 저장
+                            </button>
+                          </div>
+                          <textarea class="form-control routine-textarea bg-light" id="inputCurrentExerciseRoutine" rows="6" placeholder="현재 제안된 운동 루틴 내용이 표시됩니다. 코치가 직접 수정 후 저장할 수 있습니다."></textarea>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- [우측: 식단 관리 영역] -->
+                    <div class="col-12 col-lg-6">
+                      <div class="routine-box border-start border-4 border-warning">
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                          <h6 class="fw-bold mb-0 text-warning-emphasis d-flex align-items-center">
+                            <i class="bi bi-egg-fried me-1 fs-5"></i>식단 지침 및 계획
+                          </h6>
+                          <button type="button" class="btn btn-outline-warning btn-sm fw-semibold text-dark" id="btnSaveDietGuideline">
+                            <i class="bi bi-check2 me-1"></i>수정 지침 저장
+                          </button>
+                        </div>
+
+                        <!-- 1. 식단 수정 제안 지침 -->
+                        <div class="mb-3">
+                          <label for="inputDietGuideline" class="form-label small fw-bold text-dark d-flex justify-content-between">
+                            <span>식단 수정 제안 지침 <span class="badge bg-danger-subtle text-danger fw-normal">AI 최우선 반영</span></span>
+                          </label>
+                          <textarea class="form-control routine-textarea" id="inputDietGuideline" rows="2" placeholder="코치가 입력한 수정 지침이 있을 경우 AI가 이를 최우선으로 반영하여 식단을 생성합니다."></textarea>
+                        </div>
+
+                        <!-- 2. AI 식단 업데이트 버튼 -->
+                        <div class="mb-3">
+                          <button type="button" class="btn btn-warning btn-sm w-100 fw-bold py-2 shadow-sm text-dark" id="btnAiUpdateDietPlan">
+                            <i class="bi bi-robot me-1"></i> [AI] 식단 업데이트 (지침서 + 수정지침 기반)
+                          </button>
+                        </div>
+
+                        <!-- 3. 현재 제안 식단 표시 및 편집 칸 -->
+                        <div class="mt-auto">
+                          <div class="d-flex align-items-center justify-content-between mb-1">
+                            <label for="inputCurrentDietPlan" class="form-label small fw-bold text-dark mb-0">현재 제안 식단</label>
+                            <button type="button" class="btn btn-link btn-sm p-0 text-warning-emphasis text-decoration-none fw-semibold" id="btnSaveDietPlan">
+                              <i class="bi bi-floppy me-1"></i>식단 저장
+                            </button>
+                          </div>
+                          <textarea class="form-control routine-textarea bg-light" id="inputCurrentDietPlan" rows="6" placeholder="현재 제안된 식단 계획 내용이 표시됩니다. 코치가 직접 수정 후 저장할 수 있습니다."></textarea>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- ----------------------------------------------------------------- -->
+            <!-- [하단] 피드백 누적 관리 (3개의 독립 Chart.js 그래프 & 일자별 피드백 테이블) -->
+            <!-- ----------------------------------------------------------------- -->
+            <section class="section-panel" id="panelFeedbackHistory">
+              <div class="section-header">
+                <div class="d-flex align-items-center gap-2">
+                  <i class="bi bi-calendar3-week text-info fs-5"></i>
+                  <h5 class="section-title">피드백 누적 관리</h5>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                  <!-- 기간별 종합 피드백 모달 트리거 -->
+                  <button type="button" class="btn btn-primary btn-sm fw-bold px-3 shadow-sm" data-bs-toggle="modal" data-bs-target="#comprehensiveFeedbackModal">
+                    <i class="bi bi-file-earmark-text-fill me-1"></i> [AI] 종합 피드백
+                  </button>
+                  <button class="btn btn-sm btn-toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFeedbackHistory" aria-expanded="true">
+                    <i class="bi bi-chevron-down fs-6"></i>
+                  </button>
+                </div>
+              </div>
+
+              <div class="collapse show" id="collapseFeedbackHistory">
+                <div class="section-body">
+
+                  <!-- [핵심 요구사항] 서로 단위가 다른 3개의 별개 꺾은선 그래프 영역 -->
+                  <div class="mb-4">
+                    <div class="d-flex align-items-center justify-content-between mb-2">
+                      <span class="small fw-bold text-secondary">
+                        <i class="bi bi-graph-up text-primary me-1"></i>데일리 데이터 추이 (서로 다른 단위 분리 꺾은선 그래프 3종)
+                      </span>
+                    </div>
+                    <div class="row g-3">
+                      
+                      <!-- 1. 아침 공복 몸무게 변화 차트 (단위: kg) -->
+                      <div class="col-12 col-lg-4">
+                        <div class="chart-card">
+                          <div class="chart-card-title text-primary">
+                            <i class="bi bi-speedometer2 me-1"></i> 1. 아침 공복 몸무게 (kg)
+                          </div>
+                          <div class="chart-canvas-wrapper">
+                            <canvas id="chartWeight"></canvas>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 2. 운동 실행률 점수 차트 (단위: 점 / 10점 만점) -->
+                      <div class="col-12 col-lg-4">
+                        <div class="chart-card">
+                          <div class="chart-card-title text-success">
+                            <i class="bi bi-activity me-1"></i> 2. 운동 실행률 점수 (점)
+                          </div>
+                          <div class="chart-canvas-wrapper">
+                            <canvas id="chartExercise"></canvas>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- 3. 식단 실행률 점수 차트 (단위: 점 / 10점 만점) -->
+                      <div class="col-12 col-lg-4">
+                        <div class="chart-card">
+                          <div class="chart-card-title text-warning-emphasis">
+                            <i class="bi bi-egg-fried me-1"></i> 3. 식단 실행률 점수 (점)
+                          </div>
+                          <div class="chart-canvas-wrapper">
+                            <canvas id="chartDiet"></canvas>
+                          </div>
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  <!-- 일자별 피드백 누적 테이블 & [피드백 하기] 버튼 -->
+                  <div class="table-responsive border rounded-3 bg-white">
+                    <table class="table table-hover feedback-table mb-0">
+                      <thead>
+                        <tr>
+                          <th style="width: 100px;">날짜</th>
+                          <th style="width: 85px;">공복 체중</th>
+                          <th style="width: 95px;">운동 점수</th>
+                          <th style="width: 95px;">식단 점수</th>
+                          <th>운동 &amp; 식단 수행 내용</th>
+                          <th style="width: 200px;">회원 일기/코멘트</th>
+                          <th style="width: 220px;">코치 피드백 코멘트</th>
+                          <th style="width: 120px;" class="text-center">액션</th>
+                        </tr>
+                      </thead>
+                      <tbody id="feedbackTableBody">
+                        <!-- 동적 렌더링 -->
+                      </tbody>
+                    </table>
+                  </div>
+
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+
+        <!-- =================================================================== -->
+        <!-- [VIEW 2: 코칭 지침서 관리 (Guidelines) 대시보드 인라인 메인 화면] -->
+        <!-- [요구사항 1] 모달이 아니라 참여자 화면처럼 대시보드 자체에 있는 뷰로 구현 -->
+        <!-- =================================================================== -->
+        <div id="viewGuidelinesWrapper" class="d-none">
+          <section class="section-panel">
+            <div class="section-header bg-white py-3">
+              <div>
+                <h4 class="section-title text-dark d-flex align-items-center mb-1">
+                  <i class="bi bi-journal-text text-warning me-2 fs-4"></i>5대 코칭 지침서 (Guidelines) 관리
+                </h4>
+                <p class="text-muted small mb-0">
+                  구글 시트 <code>Guidelines</code> 탭과 실시간 동기화되는 5가지 핵심 코칭 기준을 대시보드에서 직접 열람·수정합니다.
+                </p>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <span class="text-muted small d-none d-lg-inline" id="guidelinesSyncStatusText">시트 연동 상태: 양호</span>
+                <button type="button" class="btn btn-primary fw-bold px-4 py-2 shadow-sm" id="btnSaveAllGuidelinesInline">
+                  <i class="bi bi-cloud-arrow-up me-1"></i> 5개 지침서 일괄 저장
+                </button>
+              </div>
+            </div>
+
+            <div class="section-body p-4 bg-light">
+              <div class="alert alert-primary bg-primary-subtle border-0 rounded-3 mb-4 d-flex align-items-start gap-3">
+                <i class="bi bi-info-circle-fill text-primary fs-4 mt-1"></i>
+                <div>
+                  <h6 class="fw-bold text-primary mb-1">코칭 지침서 실시간 연동 안내</h6>
+                  <p class="mb-0 text-secondary small">
+                    모든 지침서는 웹앱 코드에 하드코딩되지 않고 구글 시트에서 실시간으로 불러와 표시됩니다.<br>
+                    내용을 수정한 뒤 우측 상단의 <strong>[5개 지침서 일괄 저장]</strong> 또는 각 카드별 <strong>[개별 저장]</strong>을 클릭하면 즉시 구글 시트에 덮어쓰기 저장됩니다.
+                  </p>
+                </div>
+              </div>
+
+              <div class="d-flex flex-column gap-4">
+                
+                <!-- 1. 코칭 철학 -->
+                <div class="guideline-card-box" id="gdSecPhilosophy">
+                  <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="guideline-number-badge bg-primary text-white">1</div>
+                      <div>
+                        <h5 class="fw-bold mb-0 text-dark">코칭 철학 (Coaching Philosophy)</h5>
+                        <span class="text-muted small">4주 프로그램 전반을 관통하는 핵심 가치와 태도</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm fw-semibold" onclick="saveSingleGuidelineInline('philosophy', '코칭 철학')">
+                      <i class="bi bi-check2 me-1"></i>개별 저장
+                    </button>
+                  </div>
+                  <textarea class="form-control guideline-textarea" id="gdInlinePhilosophy" rows="3" placeholder="지침 내용을 입력하거나 구글 시트와 연동하세요..."></textarea>
+                  <div class="text-muted small mt-2">
+                    <i class="bi bi-lightbulb text-warning me-1"></i>회원이 지치거나 실패감을 느낄 때 상기시켜 줄 멘탈 모델과 핵심 원칙을 기술하세요.
+                  </div>
+                </div>
+
+                <!-- 2. 운동 제안 지침서 -->
+                <div class="guideline-card-box" id="gdSecExercise">
+                  <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="guideline-number-badge bg-success text-white">2</div>
+                      <div>
+                        <h5 class="fw-bold mb-0 text-dark">운동 제안 지침서 (Exercise Guidelines)</h5>
+                        <span class="text-muted small">AI 운동 루틴 생성 시 1순위 기반이 되는 코칭 가이드라인</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-success btn-sm fw-semibold" onclick="saveSingleGuidelineInline('exercise', '운동 제안 지침서')">
+                      <i class="bi bi-check2 me-1"></i>개별 저장
+                    </button>
+                  </div>
+                  <textarea class="form-control guideline-textarea" id="gdInlineExercise" rows="4" placeholder="지침 내용을 입력하거나 구글 시트와 연동하세요..."></textarea>
+                  <div class="text-muted small mt-2">
+                    <i class="bi bi-lightbulb text-warning me-1"></i>초보자 및 바쁜 직장인의 관절 부상 방지 및 점진적 강도 조절 원칙을 포함하세요.
+                  </div>
+                </div>
+
+                <!-- 3. 식단 제안 지침서 -->
+                <div class="guideline-card-box" id="gdSecDiet">
+                  <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="guideline-number-badge bg-warning text-dark">3</div>
+                      <div>
+                        <h5 class="fw-bold mb-0 text-dark">식단 제안 지침서 (Diet Guidelines)</h5>
+                        <span class="text-muted small">AI 식단 계획 생성 시 1순위 기반이 되는 영양 가이드라인</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-warning btn-sm fw-semibold text-dark" onclick="saveSingleGuidelineInline('diet', '식단 제안 지침서')">
+                      <i class="bi bi-check2 me-1"></i>개별 저장
+                    </button>
+                  </div>
+                  <textarea class="form-control guideline-textarea" id="gdInlineDiet" rows="4" placeholder="지침 내용을 입력하거나 구글 시트와 연동하세요..."></textarea>
+                  <div class="text-muted small mt-2">
+                    <i class="bi bi-lightbulb text-warning me-1"></i>극단적 절식 대신 양질의 단백질 20~30g, 식이섬유 탑재 및 수분 2L 섭취 원칙을 명시하세요.
+                  </div>
+                </div>
+
+                <!-- 4. 피드백 지침서 -->
+                <div class="guideline-card-box" id="gdSecFeedback">
+                  <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="guideline-number-badge bg-info text-white">4</div>
+                      <div>
+                        <h5 class="fw-bold mb-0 text-dark">피드백 지침서 (Feedback Guidelines)</h5>
+                        <span class="text-muted small">AI 데일리 피드백 코멘트 작성 톤앤매너 및 포맷</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-info btn-sm fw-semibold" onclick="saveSingleGuidelineInline('feedback', '피드백 지침서')">
+                      <i class="bi bi-check2 me-1"></i>개별 저장
+                    </button>
+                  </div>
+                  <textarea class="form-control guideline-textarea" id="gdInlineFeedback" rows="4" placeholder="지침 내용을 입력하거나 구글 시트와 연동하세요..."></textarea>
+                  <div class="text-muted small mt-2">
+                    <i class="bi bi-lightbulb text-warning me-1"></i>24시간 내 피드백, 긍정적 칭찬(Positive Reinforcement) 선행 및 1가지 구체적 제안 원칙을 유지하세요.
+                  </div>
+                </div>
+
+                <!-- 5. 동기부여 지침서 -->
+                <div class="guideline-card-box" id="gdSecMotivation">
+                  <div class="d-flex align-items-center justify-content-between mb-3 border-bottom pb-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="guideline-number-badge bg-danger text-white">5</div>
+                      <div>
+                        <h5 class="fw-bold mb-0 text-dark">동기부여 지침서 (Motivation Guidelines)</h5>
+                        <span class="text-muted small">슬럼프, 폭식, 정체기 겪는 참여자를 위한 멘탈 케어 지침</span>
+                      </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-danger btn-sm fw-semibold" onclick="saveSingleGuidelineInline('motivation', '동기부여 지침서')">
+                      <i class="bi bi-check2 me-1"></i>개별 저장
+                    </button>
+                  </div>
+                  <textarea class="form-control guideline-textarea" id="gdInlineMotivation" rows="4" placeholder="지침 내용을 입력하거나 구글 시트와 연동하세요..."></textarea>
+                  <div class="text-muted small mt-2">
+                    <i class="bi bi-lightbulb text-warning me-1"></i>"한 끼 실패가 4주의 실패는 아니다"라는 회복 탄력성(Resilience) 메시지를 강조하세요.
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </section>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- [모달 1: AI 데일리 피드백 도출 및 검토 모달] -->
+  <!-- ========================================================================= -->
+  <div class="modal fade" id="dailyFeedbackModal" tabindex="-1" aria-labelledby="dailyFeedbackModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-dark text-white">
+          <div class="d-flex align-items-center gap-2">
+            <i class="bi bi-robot text-warning fs-5"></i>
+            <h5 class="modal-title fw-bold" id="dailyFeedbackModalLabel">AI 데일리 피드백 작성 및 검토</h5>
+          </div>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          
+          <!-- 피드백 대상 일자 및 요약 -->
+          <div class="alert alert-light border d-flex justify-content-between align-items-center mb-3 py-2">
+            <div>
+              <strong id="dfModalTargetDate" class="text-dark">2026-10-12</strong>
+              <span class="text-muted ms-2">| 참여자: <strong id="dfModalTargetName" class="text-primary">-</strong></span>
+            </div>
+            <div id="dfModalStats">
+              <span class="badge bg-primary-subtle text-primary me-1">체중: <span id="dfModalWeight">-</span>kg</span>
+              <span class="badge bg-success-subtle text-success me-1">운동: <span id="dfModalExScore">-</span>점</span>
+              <span class="badge bg-warning-subtle text-warning-emphasis">식단: <span id="dfModalDietScore">-</span>점</span>
+            </div>
+          </div>
+
+          <!-- 1. AI가 생성한 피드백 코멘트 (코치 편집 가능) -->
+          <div class="mb-4">
+            <label for="dfModalFeedbackComment" class="form-label fw-bold text-dark d-flex align-items-center justify-content-between">
+              <span><i class="bi bi-chat-heart text-danger me-1"></i>피드백 코멘트 (회원 전달용)</span>
+              <small class="text-muted fw-normal">피드백/동기부여 지침서 기반 도출</small>
+            </label>
+            <textarea class="form-control" id="dfModalFeedbackComment" rows="5" placeholder="AI가 지침서를 바탕으로 작성한 피드백 코멘트가 로드됩니다. 코치가 직접 다듬고 수정할 수 있습니다."></textarea>
+          </div>
+
+          <!-- 2. AI 체중 추이 분석 및 계획 수정 제안 (근거 제시 필수) -->
+          <div class="card border-warning-subtle bg-light p-3 rounded-3" id="dfModalProposalSection">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <h6 class="fw-bold text-dark mb-0 d-flex align-items-center">
+                <i class="bi bi-lightbulb-fill text-warning me-2 fs-5"></i>AI 데이터 추이 분석 및 수정 제안
+              </h6>
+              <span class="badge bg-warning text-dark fw-bold" id="dfModalNeedModifyBadge">수정 권장</span>
+            </div>
+
+            <!-- 명확한 근거 문장 -->
+            <div class="p-2 mb-3 bg-white rounded border border-warning-subtle">
+              <strong class="text-dark small d-block mb-1"><i class="bi bi-search text-primary me-1"></i>수정 제안 근거 (체중 추이 및 수행 분석):</strong>
+              <div class="text-secondary small" id="dfModalModificationReason">
+                "데일리 피드백에서 최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어..."
+              </div>
+            </div>
+
+            <!-- AI 운동/식단 제안 내용 & 복사 편의 버튼 -->
+            <div class="row g-2">
+              <div class="col-md-6">
+                <div class="p-2 bg-white rounded border h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small fw-bold text-success"><i class="bi bi-activity me-1"></i>AI 운동 수정 제안</span>
+                    <button type="button" class="btn btn-outline-success btn-sm py-0 px-2 small" id="btnCopyAiExerciseProposal">
+                      <i class="bi bi-arrow-up-right me-1"></i>중단 지침칸에 복사
+                    </button>
+                  </div>
+                  <p class="small text-muted mb-0" id="dfModalAiExerciseProposal">제안 내용 없음</p>
+                </div>
+              </div>
+              <div class="col-md-6">
+                <div class="p-2 bg-white rounded border h-100">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small fw-bold text-warning-emphasis"><i class="bi bi-egg-fried me-1"></i>AI 식단 수정 제안</span>
+                    <button type="button" class="btn btn-outline-warning btn-sm py-0 px-2 small text-dark" id="btnCopyAiDietProposal">
+                      <i class="bi bi-arrow-up-right me-1"></i>중단 지침칸에 복사
+                    </button>
+                  </div>
+                  <p class="small text-muted mb-0" id="dfModalAiDietProposal">제안 내용 없음</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="form-text small text-muted mt-2">
+              <i class="bi bi-shield-exclamation text-danger me-1"></i>
+              <strong>중요 원칙:</strong> 위 'AI 운동/식단 수정 제안'은 자동으로 회원 DB에 반영되지 않습니다. 제안을 수용하기로 결정한 경우 상단의 <strong>[중단 지침칸에 복사]</strong>를 눌러 중단 영역의 '수정 제안 지침' 칸에 입력 후 그곳의 [저장] 버튼을 누를 때만 회원 DB(members sheet)에 최종 반영됩니다.
+            </div>
+          </div>
+
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">닫기</button>
+          <button type="button" class="btn btn-primary btn-sm px-4 fw-bold shadow-sm" id="btnSaveDailyFeedbackComment">
+            <i class="bi bi-floppy me-1"></i> 피드백 코멘트 저장 (Feedbacks DB)
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- [모달 2: 기간별 종합 피드백 모달] -->
+  <!-- ========================================================================= -->
+  <div class="modal fade" id="comprehensiveFeedbackModal" tabindex="-1" aria-labelledby="compModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-dark text-white">
+          <h5 class="modal-title fw-bold" id="compModalLabel">
+            <i class="bi bi-file-earmark-text-fill text-primary me-2"></i>기간별 AI 종합 피드백 생성
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <!-- 기간 설정 -->
+          <div class="row g-3 align-items-end mb-3">
+            <div class="col-md-5">
+              <label class="form-label small fw-bold text-dark mb-1">시작일</label>
+              <input type="date" class="form-control form-control-sm" id="compStartDate">
+            </div>
+            <div class="col-md-5">
+              <label class="form-label small fw-bold text-dark mb-1">종료일</label>
+              <input type="date" class="form-control form-control-sm" id="compEndDate">
+            </div>
+            <div class="col-md-2">
+              <button type="button" class="btn btn-primary btn-sm w-100 fw-bold" id="btnGenerateComprehensiveFeedback">
+                <i class="bi bi-play-fill me-1"></i>생성
+              </button>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="compResultText" class="form-label small fw-bold text-dark">종합 분석 및 향후 자립 방안 결과</label>
+            <textarea class="form-control routine-textarea bg-light" id="compResultText" rows="9" placeholder="[생성] 버튼을 누르면 AI가 해당 기간 동안의 모든 피드백을 요약하고 추후 자립 방안을 제시합니다."></textarea>
+          </div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">닫기</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- [모달 3: 참여자 프로그램 태그 직접 입력 모달] -->
+  <!-- ========================================================================= -->
+  <div class="modal fade" id="customTagModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-dark text-white py-2">
+          <h6 class="modal-title fw-bold" id="customTagModalTitle"><i class="bi bi-tag-fill me-1 text-warning"></i>프로그램 코스 변경</h6>
+          <button type="button" class="btn-close btn-close-white btn-sm" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body p-3">
+          <label for="customTagInput" class="form-label small fw-bold text-dark mb-1">참여 프로그램 태그명</label>
+          <input type="text" class="form-control form-control-sm" id="customTagInput" placeholder="예: 4주-체중감량반">
+          <div class="form-text small text-muted" style="font-size: 0.72rem;">
+            입력 후 확인을 누르면 구글 시트에 즉시 반영됩니다.
+          </div>
+        </div>
+        <div class="modal-footer p-2 bg-light">
+          <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">취소</button>
+          <button type="button" class="btn btn-primary btn-sm px-3" id="btnConfirmCustomTag">확인 및 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================================= -->
+  <!-- [모달 4: GAS Web App 연동 설정 모달] -->
+  <!-- ========================================================================= -->
+  <div class="modal fade" id="apiConfigModal" tabindex="-1" aria-labelledby="apiConfigModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow">
+        <div class="modal-header bg-dark text-white">
+          <h5 class="modal-title fw-bold" id="apiConfigModalLabel">
+            <i class="bi bi-google me-2 text-warning"></i>Google Apps Script 연동 설정
+          </h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <p class="text-secondary small mb-3">
+            구글 스프레드시트의 <code>gas_backend.js</code>를 웹 앱(Web App)으로 배포한 후 발급받은 URL을 입력해 주세요.
+          </p>
+
+          <div class="mb-3">
+            <label for="gasApiUrlInput" class="form-label fw-bold text-dark small">GAS 웹 앱 URL</label>
+            <input type="url" class="form-control" id="gasApiUrlInput" placeholder="https://script.google.com/macros/s/.../exec">
+            <div class="form-text small text-muted">
+              구글 스프레드시트 Apps Script 배포 URL (비어있으면 로컬 Mock 데이터 동작)
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label for="geminiApiKeyInput" class="form-label fw-bold text-dark small">
+              <i class="bi bi-stars text-primary me-1"></i>Google Gemini API Key
+            </label>
+            <input type="password" class="form-control" id="geminiApiKeyInput" placeholder="AIzaSy... (구글 AI 스튜디오 API Key)">
+            <div class="form-text small text-muted">
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-decoration-none">
+                <i class="bi bi-box-arrow-up-right me-1"></i>Google AI Studio에서 무료 발급받기
+              </a>
+              (입력 시 대시보드에서 GAS로 안전하게 전송되어 실시간 AI 생성에 사용됩니다.)
+            </div>
+          </div>
+
+          <div class="alert alert-secondary small mb-0">
+            <strong>배포 옵션 체크리스트:</strong><br>
+            1. 다음 사용자 권한으로 실행: <code>나(내 계정)</code><br>
+            2. 액세스 권한이 있는 사용자: <code>모든 사용자(Anyone)</code>
+          </div>
+        </div>
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="resetGasUrlBtn">초기화 (Mock 모드)</button>
+          <button type="button" class="btn btn-primary btn-sm px-3 fw-semibold" id="saveGasUrlBtn">저장 및 연결</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 전역 로딩 오버레이 -->
+  <div id="loadingOverlay" class="loading-overlay d-none">
+    <div class="spinner-border text-light mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+    <div class="fw-bold fs-5 mb-1" id="loadingOverlayText">AI 처리 중...</div>
+    <div class="small opacity-75 mt-1" id="loadingOverlaySubText">잠시만 기다려 주세요.</div>
+    <button type="button" class="btn btn-sm btn-outline-light mt-3 px-3 py-1 shadow-sm opacity-75" onclick="hideLoadingOverlay()" style="font-size: 0.8rem;">
+      <i class="bi bi-x-circle me-1"></i>로딩 창 닫기 (오프라인 모드로 보기)
+    </button>
+  </div>
+
+  <!-- Bootstrap 5 JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Chart.js 4.x CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <!-- Main Application Logic (app.js) -->
+  <script src="app.js"></script>
+</body>
+</html>
