@@ -28,6 +28,12 @@
         <span>4주 온라인 습관화 코칭 대시보드</span>
       </a>
 
+      <!-- 사이드바 접기/펼치기 토글 버튼 (요청 1) -->
+      <button type="button" class="btn btn-outline-secondary btn-sm text-white border-secondary px-2 py-1 ms-2" id="btnToggleSidebar" onclick="toggleSidebar()" title="목록 사이드바 접기/펼치기">
+        <i class="bi bi-layout-sidebar-inset" id="iconSidebarToggle"></i>
+        <span class="d-none d-md-inline ms-1 small fw-medium" id="textSidebarToggle">목록 접기</span>
+      </button>
+
       <!-- [요구사항 1] 대시보드 메인 뷰 전환 탭: 참여자 관리 vs 지침서 관리 (모달 아님) -->
       <div class="d-flex align-items-center gap-1 ms-lg-3">
         <button type="button" class="view-nav-btn active" id="btnNavViewMembers" onclick="switchDashboardView('members')">
@@ -88,16 +94,21 @@
       <!-- ===================================================================== -->
       <!-- [1. 좌측 사이드바: 탭에 따라 참여자 목록 또는 지침서 목록 표시] -->
       <!-- ===================================================================== -->
-      <div class="col-12 col-md-4 col-xl-3">
+      <div class="col-12 col-md-4 col-xl-3" id="sidebarColumn">
         <div class="sidebar-panel">
           
-          <!-- 사이드바 상단 탭 전환 바 -->
-          <div class="p-2 border-bottom bg-light d-flex gap-1">
-            <button type="button" class="btn btn-sm w-50 sidebar-tab-btn active" id="tabBtnMembers" onclick="switchDashboardView('members')">
-              <i class="bi bi-people me-1"></i>참여자 목록
-            </button>
-            <button type="button" class="btn btn-sm w-50 sidebar-tab-btn text-muted" id="tabBtnGuidelines" onclick="switchDashboardView('guidelines')">
-              <i class="bi bi-journal-text me-1"></i>지침서 목록
+          <!-- 사이드바 상단 탭 전환 바 & 닫기 버튼 -->
+          <div class="p-2 border-bottom bg-light d-flex align-items-center justify-content-between gap-1">
+            <div class="d-flex gap-1 flex-grow-1">
+              <button type="button" class="btn btn-sm w-50 sidebar-tab-btn active" id="tabBtnMembers" onclick="switchDashboardView('members')">
+                <i class="bi bi-people me-1"></i>참여자 목록
+              </button>
+              <button type="button" class="btn btn-sm w-50 sidebar-tab-btn text-muted" id="tabBtnGuidelines" onclick="switchDashboardView('guidelines')">
+                <i class="bi bi-journal-text me-1"></i>지침서 목록
+              </button>
+            </div>
+            <button type="button" class="btn btn-sm btn-light border text-muted px-2 py-1 ms-1" onclick="toggleSidebar()" title="사이드바 왼쪽으로 밀어 접기">
+              <i class="bi bi-chevron-bar-left"></i>
             </button>
           </div>
 
@@ -200,7 +211,7 @@
       <!-- ===================================================================== -->
       <!-- [2. 우측 메인 영역] -->
       <!-- ===================================================================== -->
-      <div class="col-12 col-md-8 col-xl-9">
+      <div class="col-12 col-md-8 col-xl-9" id="mainContentColumn">
 
         <!-- =================================================================== -->
         <!-- [VIEW 1: 참여자 관리 메인 화면] -->
@@ -236,7 +247,9 @@
               </div>
 
               <div class="collapse show" id="collapsePersonalInfo">
-                  <div class="row g-3">
+                <div class="section-body p-3 p-lg-4">
+                  <!-- 상단 기본 인적사항 그리드 -->
+                  <div class="row g-2 g-md-3 mb-3">
                     <div class="col-6 col-md-2">
                       <div class="info-field-box bg-light border-primary-subtle">
                         <div class="info-field-label text-primary"><i class="bi bi-hash me-1"></i>회원번호</div>
@@ -261,26 +274,41 @@
                         <div class="info-field-val text-truncate" id="valJobSchedule">-</div>
                       </div>
                     </div>
+                  </div>
 
-                    <div class="col-6 col-md-3">
-                      <div class="info-field-box">
-                        <div class="info-field-label"><i class="bi bi-hourglass-split me-1"></i>운동 경력</div>
-                        <div class="info-field-val text-truncate" id="valExperience">-</div>
+                  <!-- [요청 2] 하단: 운동 경력, 주당 운동 횟수, 프로그램 참여 목적 독립 카드 (테두리 겹침 완전 해소 및 가시성 극대화) -->
+                  <div class="personal-lifestyle-card p-3 rounded-3 border bg-light">
+                    <div class="row g-3 align-items-center">
+                      <div class="col-6 col-md-3">
+                        <div class="d-flex align-items-center gap-2">
+                          <div class="stat-icon-circle bg-primary-subtle text-primary"><i class="bi bi-hourglass-split"></i></div>
+                          <div class="overflow-hidden">
+                            <div class="small text-muted fw-semibold" style="font-size: 0.75rem;">운동 경력</div>
+                            <div class="fw-bold text-dark text-truncate" id="valExperience">-</div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                      <div class="info-field-box">
-                        <div class="info-field-label"><i class="bi bi-repeat me-1"></i>주당 운동 횟수</div>
-                        <div class="info-field-val" id="valFrequency">-</div>
+                      <div class="col-6 col-md-3">
+                        <div class="d-flex align-items-center gap-2">
+                          <div class="stat-icon-circle bg-success-subtle text-success"><i class="bi bi-repeat"></i></div>
+                          <div class="overflow-hidden">
+                            <div class="small text-muted fw-semibold" style="font-size: 0.75rem;">주당 운동 횟수</div>
+                            <div class="fw-bold text-dark text-truncate" id="valFrequency">-</div>
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                    <div class="col-12 col-md-6">
-                      <div class="info-field-box bg-white">
-                        <div class="info-field-label text-primary"><i class="bi bi-flag-fill me-1"></i>프로그램 참여 목적</div>
-                        <div class="text-dark fw-medium mt-1 text-truncate" id="valGoal">-</div>
+                      <div class="col-12 col-md-6">
+                        <div class="d-flex align-items-start gap-2 ps-md-2 border-start-md">
+                          <div class="stat-icon-circle bg-warning-subtle text-warning-emphasis flex-shrink-0"><i class="bi bi-flag-fill"></i></div>
+                          <div class="flex-grow-1 overflow-hidden">
+                            <div class="small text-primary fw-bold" style="font-size: 0.75rem;">프로그램 참여 목적</div>
+                            <div class="fw-medium text-dark text-break mt-1" style="font-size: 0.9rem;" id="valGoal">-</div>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </div>
+
                 </div>
               </div>
             </section>

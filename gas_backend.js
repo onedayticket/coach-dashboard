@@ -982,7 +982,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-3.8-flash'];
+  return ['gemini-1.5-flash', 'gemini-2.0-flash'];
 }
 
 /**
@@ -1036,7 +1036,7 @@ function callGemini(prompt, systemInstruction, payload) {
 
   // 1. 캐시/구글 서버에서 검증된 실제 텍스트 모델 목록 획득 (최대 상위 3개 후보)
   const supportedModels = getGoogleSupportedTextModels(apiKey);
-  const targetModels = (supportedModels && supportedModels.length > 0) ? supportedModels.slice(0, 3) : ['gemini-3.8-flash'];
+  const targetModels = (supportedModels && supportedModels.length > 0) ? supportedModels.slice(0, 3) : ['gemini-1.5-flash', 'gemini-2.0-flash'];
 
   let lastError = null;
 
@@ -1051,7 +1051,7 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 1500
+        maxOutputTokens: 4096 // [요청 3] 토큰 한도를 1500에서 4096으로 대폭 상향 (글자수 끊김 원천 방지)
       }
     };
     if (systemInstruction) {
@@ -1075,7 +1075,12 @@ function callGemini(prompt, systemInstruction, payload) {
         if (code === 200) {
           const json = JSON.parse(responseText);
           if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
-            const generatedText = json.candidates[0].content.parts[0].text;
+            const candidate = json.candidates[0];
+            const generatedText = candidate.content.parts[0].text;
+            const finishReason = candidate.finishReason || 'STOP';
+            debugInfo.finishReason = finishReason;
+            debugInfo.isTruncated = (finishReason === 'MAX_TOKENS');
+            debugInfo.usage = json.usageMetadata || {};
             return { text: generatedText, debug: debugInfo };
           }
         }

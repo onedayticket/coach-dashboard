@@ -228,6 +228,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initInlineGuidelinesActions();
     initEventListeners();
 
+    // [요청 1] 사이드바 접힘 상태 복원
+    if (localStorage.getItem('coach_dash_sidebar_collapsed') === 'true') {
+      toggleSidebar(true);
+    }
+
     // 데이터 로드 (8초 타임아웃 및 Fail-Safe 적용)
     await loadAllData();
 
@@ -431,7 +436,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   } catch (e) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
-  return ['gemini-3.8-flash'];
+  return ['gemini-1.5-flash', 'gemini-2.0-flash'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -456,7 +461,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
               temperature: 0.7,
               topK: 40,
               topP: 0.95,
-              maxOutputTokens: 4096 // 4096 토큰으로 확장하여 Day 1에서 잘리지 않도록 보장
+              maxOutputTokens: 8192 // [요청 3] 토큰 한도를 8192(기존의 2배)로 대폭 상향하여 글자수 끊김 완벽 방지
             }
           })
         });
@@ -645,9 +650,72 @@ function simulateMockAction(payload) {
 
 /**
  * ==============================================================================
- * [2. 대시보드 메인 뷰 전환 (요구사항 1: 모달 대신 대시보드 인라인 뷰 전환)]
+ * [2. 대시보드 메인 뷰 전환 & 사이드바 접기/펼치기]
  * ==============================================================================
  */
+
+/**
+ * [요청 1] 좌측 사이드바(참여자/지침서 목록) 화면 왼쪽으로 밀어 숨기기/펼치기 토글
+ * - 사이드바 숨김 시 본문 영역(#mainContentColumn)이 12컬럼(전폭 100%)으로 시원하게 확장
+ * - 본문 너비 확장에 맞춰 3개 독립 Chart.js 차트 자동 리사이즈
+ */
+function toggleSidebar(forceState) {
+  const sidebar = document.getElementById('sidebarColumn');
+  const mainCol = document.getElementById('mainContentColumn');
+  const textBtn = document.getElementById('textSidebarToggle');
+  const iconBtn = document.getElementById('iconSidebarToggle');
+  const btnToggle = document.getElementById('btnToggleSidebar');
+
+  if (!sidebar || !mainCol) return;
+
+  const isCurrentlyCollapsed = sidebar.classList.contains('collapsed');
+  const shouldCollapse = (typeof forceState === 'boolean') ? forceState : !isCurrentlyCollapsed;
+
+  if (shouldCollapse) {
+    // 1. 사이드바 숨김 (화면 왼쪽으로 밀어 접기)
+    sidebar.classList.add('collapsed');
+    mainCol.classList.remove('col-md-8', 'col-xl-9');
+    mainCol.classList.add('col-12');
+
+    if (textBtn) textBtn.textContent = '목록 열기';
+    if (iconBtn) {
+      iconBtn.className = 'bi bi-layout-sidebar';
+    }
+    if (btnToggle) {
+      btnToggle.title = '목록 사이드바 다시 펼치기';
+      btnToggle.classList.add('btn-primary');
+      btnToggle.classList.remove('btn-outline-secondary');
+    }
+    localStorage.setItem('coach_dash_sidebar_collapsed', 'true');
+  } else {
+    // 2. 사이드바 복원 (다시 펼치기)
+    sidebar.classList.remove('collapsed');
+    mainCol.classList.remove('col-12');
+    mainCol.classList.add('col-md-8', 'col-xl-9');
+
+    if (textBtn) textBtn.textContent = '목록 접기';
+    if (iconBtn) {
+      iconBtn.className = 'bi bi-layout-sidebar-inset';
+    }
+    if (btnToggle) {
+      btnToggle.title = '목록 사이드바 왼쪽으로 접기';
+      btnToggle.classList.remove('btn-primary');
+      btnToggle.classList.add('btn-outline-secondary');
+    }
+    localStorage.setItem('coach_dash_sidebar_collapsed', 'false');
+  }
+
+  // 본문 너비 변화에 따른 Chart.js 리사이즈
+  setTimeout(() => {
+    window.dispatchEvent(new Event('resize'));
+    if (AppState && AppState.charts) {
+      if (AppState.charts.weight && AppState.charts.weight.resize) AppState.charts.weight.resize();
+      if (AppState.charts.exercise && AppState.charts.exercise.resize) AppState.charts.exercise.resize();
+      if (AppState.charts.diet && AppState.charts.diet.resize) AppState.charts.diet.resize();
+    }
+  }, 150);
+}
+window.toggleSidebar = toggleSidebar;
 
 /**
  * 참여자 관리 뷰 <-> 코칭 지침서 관리 뷰 전환
@@ -1279,9 +1347,9 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
           hideLoadingOverlay();
           setInputValue('inputCurrentExerciseRoutine', directRes.text);
           if (directRes.isTruncated) {
-            showToast(`⚠️ [토큰 한도 끊김 감지] finishReason: MAX_TOKENS | 한도에 걸려 잘렸습니다 (${directRes.text.length}자)`, 'warning', 10000);
+            showToast(`⚠️ [AI 루틴 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${directRes.text.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 루틴 생성 성공] 모델: ${directRes.model} | 상태: ${directRes.finishReason} (${directRes.text.length}자)`, 'success', 5000);
+            showToast(`✓ [AI 맞춤 운동 루틴 생성 완료] (${directRes.text.length}자)`, 'success', 4000);
           }
           return;
         }
@@ -1298,11 +1366,10 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
       if (res && res.routine) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentExerciseRoutine', res.routine);
-          const finishReason = (res.debug && res.debug.finishReason) ? res.debug.finishReason : 'STOP';
           if (res.debug && res.debug.isTruncated) {
-            showToast(`⚠️ [토큰 한도 끊김 감지] finishReason: MAX_TOKENS | 한도에 걸려 잘렸습니다 (${res.routine.length}자)`, 'warning', 10000);
+            showToast(`⚠️ [AI 루틴 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${res.routine.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 루틴 생성 성공] 모델: ${res.debug.model} | 상태: ${finishReason} (${res.routine.length}자)`, 'success', 5000);
+            showToast(`✓ [AI 맞춤 운동 루틴 생성 완료] (${res.routine.length}자)`, 'success', 4000);
           }
         } else {
           // AI 생성 실패 시: 입력칸에 에러 찌꺼기 텍스트를 덮어씌우지 않고 안내 토스트 팝업 제공
@@ -1352,9 +1419,9 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
           hideLoadingOverlay();
           setInputValue('inputCurrentDietPlan', directRes.text);
           if (directRes.isTruncated) {
-            showToast(`⚠️ [토큰 한도 끊김 감지] finishReason: MAX_TOKENS | 한도에 걸려 잘렸습니다 (${directRes.text.length}자)`, 'warning', 10000);
+            showToast(`⚠️ [AI 식단 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${directRes.text.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 식단 생성 성공] 모델: ${directRes.model} | 상태: ${directRes.finishReason} (${directRes.text.length}자)`, 'success', 5000);
+            showToast(`✓ [AI 맞춤 데일리 식단 생성 완료] (${directRes.text.length}자)`, 'success', 4000);
           }
           return;
         }
@@ -1371,11 +1438,10 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
       if (res && res.dietPlan) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentDietPlan', res.dietPlan);
-          const finishReason = (res.debug && res.debug.finishReason) ? res.debug.finishReason : 'STOP';
           if (res.debug && res.debug.isTruncated) {
-            showToast(`⚠️ [토큰 한도 끊김 감지] finishReason: MAX_TOKENS | 한도에 걸려 잘렸습니다 (${res.dietPlan.length}자)`, 'warning', 10000);
+            showToast(`⚠️ [AI 식단 생성] 최대 토큰 한도에 도달하여 일부 내용이 잘렸을 수 있습니다 (${res.dietPlan.length}자)`, 'warning', 8000);
           } else {
-            showToast(`✓ [AI 식단 생성 성공] 모델: ${res.debug.model} | 상태: ${finishReason} (${res.dietPlan.length}자)`, 'success', 5000);
+            showToast(`✓ [AI 맞춤 데일리 식단 생성 완료] (${res.dietPlan.length}자)`, 'success', 4000);
           }
         } else {
           // AI 생성 실패 시: 입력칸에 에러 찌꺼기 텍스트를 덮어씌우지 않고 안내 토스트 팝업 제공
