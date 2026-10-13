@@ -427,20 +427,25 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [초고속 직행 우선순위 정렬] gemini-1.5-flash(1~2초 컷) > gemini-2.0-flash > gemini-1.5-flash-8b
+        // [초고속 직행 우선순위 정렬] gemini-2.5-flash > gemini-2.0-flash > gemini-1.5-flash
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-1.5-flash') return 100;
-          if (lower === 'gemini-2.0-flash') return 90;
-          if (lower.includes('1.5-flash')) return 80;
-          if (lower.includes('flash')) return 50;
+          if (lower.includes('flash')) {
+            if (lower.includes('2.5')) return 100;
+            if (lower.includes('2.0')) return 90;
+            if (lower.includes('1.5')) return 80;
+            return 70;
+          }
+          if (lower.includes('2.5')) return 60;
+          if (lower.includes('2.0')) return 50;
+          if (lower.includes('1.5')) return 40;
           return 10;
         };
 
         textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
         if (textModels.length > 0) {
           const selected = textModels.slice(0, 3);
-          localStorage.setItem('CACHE_GEMINI_TEXT_MODELS_V2', JSON.stringify(selected));
+          localStorage.setItem('CACHE_GEMINI_TEXT_MODELS_V3', JSON.stringify(selected));
           return selected;
         }
       }
@@ -448,7 +453,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   } catch (e) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
-  return ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
+  return ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -459,8 +464,8 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
 
   const startTime = performance.now();
-  // 가장 빠르고 안정적인 모델 순서로 직행
-  const candidateModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
+  // 실시간 지원 검증 모델 목록 조회
+  const candidateModels = await getBrowserSupportedGeminiModels(apiKey);
   let lastErrorDetail = '';
 
   for (const model of candidateModels) {

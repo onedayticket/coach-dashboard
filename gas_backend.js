@@ -964,13 +964,18 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [초고속 직행 우선순위 정렬] gemini-1.5-flash(1~2초 컷) > gemini-2.0-flash > gemini-1.5-flash-8b
+        // [초고속 직행 우선순위 정렬] gemini-2.5-flash > gemini-2.0-flash > gemini-1.5-flash
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-1.5-flash') return 100;
-          if (lower === 'gemini-2.0-flash') return 90;
-          if (lower.includes('1.5-flash')) return 80;
-          if (lower.includes('flash')) return 50;
+          if (lower.includes('flash')) {
+            if (lower.includes('2.5')) return 100;
+            if (lower.includes('2.0')) return 90;
+            if (lower.includes('1.5')) return 80;
+            return 70;
+          }
+          if (lower.includes('2.5')) return 60;
+          if (lower.includes('2.0')) return 50;
+          if (lower.includes('1.5')) return 40;
           return 10;
         };
 
@@ -987,7 +992,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
+  return ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 }
 
 /**
@@ -1041,8 +1046,11 @@ function callGemini(prompt, systemInstruction, payload) {
     return { text: null, debug: debugInfo };
   }
 
-  // [초고속 직행] 무조건 검증된 gemini-1.5-flash를 1순위로 즉시 호출 (불필요한 ListModels 지연 0초)
-  const targetModels = ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
+  // 1. 구글 서버에서 실시간 검증된 실제 텍스트 모델 목록 획득 (404 원천 차단)
+  const supportedModels = getGoogleSupportedTextModels(apiKey);
+  const targetModels = (supportedModels && supportedModels.length > 0)
+    ? supportedModels.slice(0, 3)
+    : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
   let lastError = null;
 
