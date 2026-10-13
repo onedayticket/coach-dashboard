@@ -406,13 +406,23 @@ async function postToGasBackend(payload) {
  * - GAS 서버 왕복 없이 0.8~1.5초 만에 직접 생성 완료
  */
 async function getBrowserSupportedGeminiModels(apiKey) {
-  const cached = localStorage.getItem('CACHE_GEMINI_TEXT_MODELS_V2');
+  // 구버전 캐시들 모두 정리
+  try {
+    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
+    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
+  } catch (e) {}
+
+  const cacheKey = `CACHE_GEMINI_MODELS_V38_${AppState.modelPref || 'auto'}`;
+  const cached = localStorage.getItem(cacheKey);
   if (cached) {
     try {
       const arr = JSON.parse(cached);
       if (Array.isArray(arr) && arr.length > 0) return arr;
     } catch (e) {}
   }
+
+  const isProPref = AppState.modelPref === 'pro';
 
   try {
     const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
@@ -430,20 +440,22 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [503 회피 & Pro 선택 지원] 사용자의 선호 모델에 따라 우선순위 배치
-        let ordered = [];
-        if (AppState.modelPref === 'pro') {
-          ordered = [cluster2, cluster1, cluster3].filter(Boolean);
-        } else if (AppState.modelPref === 'flash') {
-          ordered = [cluster1, cluster3, cluster2].filter(Boolean);
-        } else {
-          ordered = [cluster1, cluster2, cluster3].filter(Boolean);
-        }
-        const uniqueModels = [...new Set(ordered)];
+        // [구글 공식 권장 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
+        const getScore = (m) => {
+          const lower = m.toLowerCase();
+          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return isProPref ? 100 : 90;
+          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return isProPref ? 90 : 100;
+          if (lower.includes('3.8')) return 85;
+          if (lower.includes('pro')) return isProPref ? 70 : 50;
+          if (lower.includes('flash')) return isProPref ? 50 : 70;
+          return 10;
+        };
 
-        if (uniqueModels.length > 0) {
-          localStorage.setItem('CACHE_GEMINI_MODELS_STABLE_V6', JSON.stringify(uniqueModels));
-          return uniqueModels;
+        textModels.sort((a, b) => getScore(b) - getScore(a));
+
+        if (textModels.length > 0) {
+          localStorage.setItem(cacheKey, JSON.stringify(textModels));
+          return textModels;
         }
       }
     }
@@ -451,10 +463,10 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
 
-  if (AppState.modelPref === 'pro') {
-    return ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'];
+  if (isProPref) {
+    return ['gemini-3.8-pro', 'gemini-3.8-flash'];
   }
-  return ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {

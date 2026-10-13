@@ -939,7 +939,7 @@ function getGoogleSupportedTextModels(apiKey) {
   if (!apiKey) return [];
 
   const cache = CacheService.getScriptCache();
-  const cachedJson = cache.get('SUPPORTED_MODELS_CACHE_V6');
+  const cachedJson = cache.get('SUPPORTED_MODELS_CACHE_V38');
   if (cachedJson) {
     try {
       const parsed = JSON.parse(cachedJson);
@@ -964,18 +964,22 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [503 회피 핵심: 서로 다른 물리적 서버 풀(Cross-Cluster)에서 대표 모델 1개씩 선별]
-        const cluster1 = textModels.find(m => m === 'gemini-1.5-flash') || textModels.find(m => m.includes('1.5-flash'));
-        const cluster2 = textModels.find(m => m === 'gemini-1.5-pro') || textModels.find(m => m.includes('1.5-pro'));
-        const cluster3 = textModels.find(m => m === 'gemini-2.0-flash') || textModels.find(m => m.includes('2.0-flash')) || textModels.find(m => m.includes('flash'));
+        // [구글 공식 권장 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
+        const getModelScore = (m) => {
+          const lower = m.toLowerCase();
+          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
+          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return 90;
+          if (lower.includes('3.8')) return 80;
+          if (lower.includes('flash')) return 70;
+          if (lower.includes('pro')) return 60;
+          return 10;
+        };
 
-        const selected = [cluster1, cluster2, cluster3].filter(Boolean);
-        // 중복 제거
-        const uniqueModels = [...new Set(selected)];
+        textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
 
-        if (uniqueModels.length > 0) {
-          cache.put('SUPPORTED_MODELS_CACHE_V6', JSON.stringify(uniqueModels), 21600);
-          return uniqueModels;
+        if (textModels.length > 0) {
+          cache.put('SUPPORTED_MODELS_CACHE_V38', JSON.stringify(textModels), 21600);
+          return textModels;
         }
       }
     }
@@ -983,7 +987,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
 }
 
 /**
@@ -994,7 +998,7 @@ function testAndAuthorizeUrlFetch() {
   Logger.log('현재 등록된 API Key 유무: ' + (apiKey ? '등록됨 (길이: ' + apiKey.length + ')' : '미등록'));
 
   if (apiKey) {
-    CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V6');
+    CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38');
     const models = getGoogleSupportedTextModels(apiKey);
     Logger.log('✓ 구글이 현재 지원하는 실제 텍스트 모델 (' + models.length + '개): ' + models.join(', '));
   } else {
@@ -1008,8 +1012,7 @@ function testAndAuthorizeUrlFetch() {
 }
 
 /**
- * [503 과부하 완벽 대응] Google Gemini API 호출 엔진
- * - 구글 503(High demand) 발생 시 0.8초 백오프 후 다른 서버 클러스터(Flash -> Pro -> 2.0)로 즉시 안전 우회
+ * [Google 공식 권장 gemini-3.8 직행] Gemini API 호출 엔진
  */
 function callGemini(prompt, systemInstruction, payload) {
   const startGasTime = new Date().getTime();
@@ -1033,17 +1036,17 @@ function callGemini(prompt, systemInstruction, payload) {
     return { text: null, debug: debugInfo };
   }
 
-  // 1. 서로 다른 인프라 클러스터 모델 목록 (1.5-flash, 1.5-pro, 2.0-flash)
+  // 1. 구글 권장 최신 모델 (gemini-3.8-flash, gemini-3.8-pro)
   const modelPref = (payload && payload.modelPref) ? payload.modelPref : 'auto';
   const supportedModels = getGoogleSupportedTextModels(apiKey);
   let targetModels = (supportedModels && supportedModels.length > 0)
     ? supportedModels.slice()
-    : ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+    : ['gemini-3.8-flash', 'gemini-3.8-pro'];
 
-  // Pro 선호 시 gemini-1.5-pro를 1순위로 즉시 승격
+  // Pro 선호 시 gemini-3.8-pro를 1순위로 승격
   if (modelPref === 'pro') {
     targetModels.sort((a, b) => (b.includes('pro') ? 1 : 0) - (a.includes('pro') ? 1 : 0));
-  } else if (modelPref === 'flash') {
+  } else {
     targetModels.sort((a, b) => (b.includes('flash') ? 1 : 0) - (a.includes('flash') ? 1 : 0));
   }
 
