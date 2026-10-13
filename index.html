@@ -652,7 +652,7 @@
         <div class="modal-body p-4">
           
           <!-- 피드백 대상 일자 및 요약 -->
-          <div class="alert alert-light border d-flex justify-content-between align-items-center mb-3 py-2">
+          <div class="alert alert-light border d-flex justify-content-between align-items-center mb-2 py-2">
             <div>
               <strong id="dfModalTargetDate" class="text-dark">2026-10-12</strong>
               <span class="text-muted ms-2">| 참여자: <strong id="dfModalTargetName" class="text-primary">-</strong></span>
@@ -661,6 +661,14 @@
               <span class="badge bg-primary-subtle text-primary me-1">체중: <span id="dfModalWeight">-</span>kg</span>
               <span class="badge bg-success-subtle text-success me-1">운동: <span id="dfModalExScore">-</span>점</span>
               <span class="badge bg-warning-subtle text-warning-emphasis">식단: <span id="dfModalDietScore">-</span>점</span>
+            </div>
+          </div>
+
+          <!-- 안내 배너: 생성된 피드백 검토 및 시트 저장 가이드 -->
+          <div class="alert alert-primary-subtle border border-primary-subtle py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-primary-emphasis">
+            <div>
+              <i class="bi bi-info-circle-fill text-primary me-1"></i>
+              <strong>AI 피드백 생성 완료:</strong> 내용을 검토/수정한 후 모달 하단 <strong>[피드백 코멘트 저장]</strong> 버튼을 누르면 구글 시트와 대시보드 표에 즉시 저장됩니다.
             </div>
           </div>
 

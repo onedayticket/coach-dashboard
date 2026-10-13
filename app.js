@@ -1818,11 +1818,15 @@ function initDailyFeedbackModalActions() {
       if (!AppState.currentFeedbackContext || !AppState.selectedMember) return;
 
       const dateStr = AppState.currentFeedbackContext.date;
-      const memberKey = getMemberKey(AppState.selectedMember);
+      const mem = AppState.selectedMember;
+      const memberKey = getMemberKey(mem);
+      const memberName = getMemberName(mem);
+      const memberId = getMemberId(mem);
+      const memberPhone = getMemberPhone(mem);
       const comment = getInputValue('dfModalFeedbackComment');
       const aiData = AppState.currentFeedbackContext.aiData || null;
 
-      // [요구사항 3-2] 점수 및 요약/분석/개선방안 추출 (운동/식단 수정제안은 Feedbacks 저장에서 완전 제외)
+      // 점수 및 요약/분석/개선방안 추출 (수정제안은 Feedbacks 저장에서 완전 제외)
       const exScoreToSave = (aiData && aiData.운동_실행률_점수 !== undefined) ? aiData.운동_실행률_점수 : null;
       const dietScoreToSave = (aiData && aiData.식단_실행률_점수 !== undefined) ? aiData.식단_실행률_점수 : null;
       const summaryToSave = (aiData && aiData.피드백_요약) ? aiData.피드백_요약 : '';
@@ -1831,8 +1835,15 @@ function initDailyFeedbackModalActions() {
 
       showToast('피드백 코멘트를 구글 시트(Feedbacks)에 저장 중...', 'info');
 
-      // 로컬 Feedbacks 배열 즉시 동기화
-      const targetFb = AppState.feedbacks.find(f => (f['이름'] || f.name) === getMemberName(AppState.selectedMember) && String(f['날짜'] || f.date).includes(dateStr));
+      // 로컬 Feedbacks 배열 즉시 스마트 동기화
+      const targetFb = AppState.feedbacks.find(f => {
+        const fName = getMemberName(f);
+        const fDate = getField(f, '날짜', 'date', '일자');
+        const isNameMatch = fName === memberName || (memberKey && fName === memberKey);
+        const isDateMatch = String(fDate).includes(dateStr) || String(dateStr).includes(String(fDate)) || (cleanDateStr(fDate) === cleanDateStr(dateStr));
+        return isNameMatch && isDateMatch;
+      });
+
       if (targetFb) {
         targetFb['피드백 코멘트'] = comment;
         if (exScoreToSave !== null && (!targetFb['운동_실행률_점수'] || targetFb['운동_실행률_점수'] === '-')) {
@@ -1846,11 +1857,14 @@ function initDailyFeedbackModalActions() {
         if (solutionToSave) targetFb['보완점_및_개선방안'] = solutionToSave;
       }
 
-      // [요구사항 3-2] 코멘트 내용, 점수, 피드백_요약, 문제점_분석, 보완점_및_개선방안만 전달
-      // (운동/식단 수정 제안은 절대 포함하지 않음)
+      // [핵심] 백엔드에 이름/회원번호/연락처/날짜/코멘트/점수/요약 전송
       const res = await postToGasBackend({
         action: 'updateFeedbackComment',
         memberKey: memberKey,
+        name: memberName,
+        memberName: memberName,
+        memberId: memberId,
+        phone: memberPhone,
         date: dateStr,
         comment: comment,
         exerciseScore: exScoreToSave,
@@ -1861,10 +1875,14 @@ function initDailyFeedbackModalActions() {
       });
 
       if (res && res.status === 'success') {
-        showToast('피드백 코멘트가 구글 시트에 성공적으로 저장되었습니다!', 'success');
-        renderFeedbackTable(AppState.feedbacks.filter(f => (f['이름'] || f.name) === getMemberName(AppState.selectedMember)));
+        showToast('✓ 피드백 코멘트가 구글 시트에 성공적으로 저장되었습니다!', 'success');
         
-        // [요구사항 4] 피드백 저장 완료 시 상단 전역 알림 뱃지 즉시 갱신
+        // 피드백 테이블 & 3개 독립 차트 즉시 갱신
+        const userFeedbacks = AppState.feedbacks.filter(f => getMemberName(f) === memberName);
+        renderFeedbackTable(userFeedbacks);
+        renderThreeIndependentCharts(userFeedbacks);
+        
+        // 상단 전역 알림 뱃지 즉시 갱신
         updateGlobalNotificationBadge();
 
         const modalEl = document.getElementById('dailyFeedbackModal');
@@ -1872,6 +1890,16 @@ function initDailyFeedbackModalActions() {
           const modal = bootstrap.Modal.getInstance(modalEl);
           if (modal) modal.hide();
         }
+      } else {
+        const errMsg = (res && res.message) ? res.message : '시트 저장 실패';
+        showToast(`⚠️ [시트 저장 오류] ${errMsg}`, 'danger', 7000);
+        console.error('[피드백 코멘트 저장 실패 디버그]', res);
+
+        // 오프라인/Mock 모드이거나 에러 발생 시에도 로컬 화면은 최신 데이터로 반영하여 코칭 연속성 보장
+        const userFeedbacks = AppState.feedbacks.filter(f => getMemberName(f) === memberName);
+        renderFeedbackTable(userFeedbacks);
+        renderThreeIndependentCharts(userFeedbacks);
+        updateGlobalNotificationBadge();
       }
     });
   }
@@ -2268,6 +2296,16 @@ function getMemberId(m) {
 
 function getMemberName(m) {
   return String(getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름') || '무명').trim();
+}
+
+function getMemberPhone(m) {
+  if (!m) return '';
+  return String(getField(m, '전화번호', '연락처', '휴대폰', 'phone', '핸드폰') || '').replace(/[^0-9]/g, '');
+}
+
+function cleanDateStr(d) {
+  if (!d) return '';
+  return String(d).replace(/[^0-9]/g, '');
 }
 
 function isMemberActive(m) {

@@ -778,19 +778,28 @@ function handleUpdateFeedbackComment(ss, payload) {
   const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
   if (!sheet) return createJsonResponse({ status: 'error', message: 'Feedbacks 시트를 찾을 수 없습니다.' });
 
-  const memberKey = String(payload.memberKey || payload.name || '').trim();
+  const memberKey = String(payload.memberKey || '').trim();
+  const memberName = String(payload.memberName || payload.name || '').trim();
+  const memberId = String(payload.memberId || '').trim();
+  const memberPhone = String(payload.phone || '').replace(/[^0-9]/g, '');
   const dateStr = String(payload.date || '').trim();
   const comment = payload.comment || '';
 
   const colMap = getHeaderColumnMap(sheet);
   const nameCol = findColIndex(colMap, [
-    '이름', 'name', '성명', '참여자이름', '참여자 이름', '회원명',
-    '회원번호', '회원 번호'
+    '이름', 'name', '성명', '참여자이름', '참여자 이름', '회원명', '참여자', '참여자성명'
   ]) || 3;
+  const idCol = findColIndex(colMap, [
+    '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호'
+  ]);
+  const phoneCol = findColIndex(colMap, [
+    '전화번호', '연락처', '휴대폰', 'phone', '핸드폰'
+  ]);
   const dateCol = findColIndex(colMap, [
-    '날짜', 'date', '일자', '피드백날짜', '피드백 날짜'
+    '날짜', 'date', '일자', '피드백날짜', '피드백 날짜', '타임스탬프', '제출일시', '작성일자'
   ]) || 2;
-  const commentCol = findColIndex(colMap, [
+  
+  let commentCol = findColIndex(colMap, [
     '피드백 코멘트', '피드백코멘트',
     '코치 피드백', '코치피드백',
     '코칭 코멘트', '코칭코멘트',
@@ -798,35 +807,70 @@ function handleUpdateFeedbackComment(ss, payload) {
     '피드백', '코멘트', 'feedbackComment'
   ]);
 
+  // 시트에 [피드백 코멘트] 열이 없으면 헤더 마지막에 자동 생성하여 실패 방지
   if (!commentCol) {
-    return createJsonResponse({ status: 'error', message: '피드백 시트에 [피드백 코멘트] 열이 존재하지 않습니다.' });
+    commentCol = sheet.getLastColumn() + 1;
+    sheet.getRange(1, commentCol).setValue('피드백 코멘트');
+    colMap['피드백코멘트'] = commentCol;
+    colMap['피드백 코멘트'] = commentCol;
   }
 
   const values = sheet.getDataRange().getValues();
   let targetRow = -1;
 
+  const cleanTargetName = memberName.replace(/\s+/g, '').toLowerCase();
+  const cleanTargetKey = memberKey.replace(/\s+/g, '').toLowerCase();
+  const cleanTargetId = memberId.replace(/\s+/g, '').toLowerCase();
+  const cleanTargetDate = dateStr.replace(/[^0-9]/g, '');
+
   for (let i = 1; i < values.length; i++) {
     const rowName = String(values[i][nameCol - 1] || '').trim();
-    let rowDate = values[i][dateCol - 1];
-    if (rowDate instanceof Date) {
-      rowDate = Utilities.formatDate(rowDate, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
-    } else {
-      rowDate = String(rowDate || '').trim();
-    }
+    const cleanRowName = rowName.replace(/\s+/g, '').toLowerCase();
 
-    if (rowName === memberKey && rowDate.includes(dateStr)) {
+    const rowId = idCol ? String(values[i][idCol - 1] || '').trim().toLowerCase() : '';
+    const rowPhone = phoneCol ? String(values[i][phoneCol - 1] || '').replace(/[^0-9]/g, '') : '';
+
+    // 1. 이름/식별자 매칭 (이름, 회원번호, 연락처 중 하나라도 일치하면 인정)
+    let isNameMatch = false;
+    if (cleanTargetName && cleanRowName === cleanTargetName) isNameMatch = true;
+    else if (cleanTargetKey && cleanRowName === cleanTargetKey) isNameMatch = true;
+    else if (cleanTargetId && rowId && cleanTargetId === rowId) isNameMatch = true;
+    else if (cleanTargetKey && rowId && cleanTargetKey === rowId) isNameMatch = true;
+    else if (memberPhone && rowPhone && memberPhone.endsWith(rowPhone) || (rowPhone && rowPhone.endsWith(memberPhone))) isNameMatch = true;
+    else if (cleanTargetName && cleanRowName && (cleanRowName.includes(cleanTargetName) || cleanTargetName.includes(cleanRowName))) isNameMatch = true;
+
+    // 2. 날짜 매칭 (Date 객체, yyyy-MM-dd, 20261012 숫자 추출 매칭 모두 지원)
+    let rawRowDate = values[i][dateCol - 1];
+    let rowDateStr = '';
+    if (rawRowDate instanceof Date) {
+      rowDateStr = Utilities.formatDate(rawRowDate, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
+    } else {
+      rowDateStr = String(rawRowDate || '').trim();
+    }
+    const cleanRowDate = rowDateStr.replace(/[^0-9]/g, '');
+
+    let isDateMatch = false;
+    if (rowDateStr && dateStr && (rowDateStr.includes(dateStr) || dateStr.includes(rowDateStr))) isDateMatch = true;
+    else if (cleanRowDate && cleanTargetDate && (cleanRowDate.includes(cleanTargetDate) || cleanTargetDate.includes(cleanRowDate))) isDateMatch = true;
+
+    if (isNameMatch && isDateMatch) {
       targetRow = i + 1;
       break;
     }
   }
 
   if (targetRow === -1) {
-    return createJsonResponse({ status: 'error', message: `'${memberKey}' 회원의 ${dateStr} 일자 피드백 행을 찾을 수 없습니다.` });
+    const searchTarget = memberName || memberKey;
+    return createJsonResponse({
+      status: 'error',
+      message: `'${searchTarget}' 회원의 ${dateStr} 일자 피드백 행을 시트에서 찾을 수 없습니다. (시트 전체 ${values.length - 1}개 행 스캔 완료)`
+    });
   }
 
+  // 1. 피드백 코멘트 저장
   sheet.getRange(targetRow, commentCol).setValue(comment);
 
-  // 운동_실행률_점수 및 식단_실행률_점수 열이 있고 점수가 전달되었을 경우 함께 저장
+  // 2. 운동_실행률_점수 및 식단_실행률_점수 열이 전달되었을 경우 함께 저장
   const exScoreCol = findColIndex(colMap, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수']);
   if (exScoreCol && payload.exerciseScore !== undefined && payload.exerciseScore !== null && payload.exerciseScore !== '') {
     sheet.getRange(targetRow, exScoreCol).setValue(payload.exerciseScore);
@@ -837,7 +881,7 @@ function handleUpdateFeedbackComment(ss, payload) {
     sheet.getRange(targetRow, dietScoreCol).setValue(payload.dietScore);
   }
 
-  // [요구사항 3-2] 피드백_요약, 문제점_분석, 보완점_및_개선방안 열이 시트에 존재할 경우 함께 저장
+  // 3. [요구사항 3-2] 피드백_요약, 문제점_분석, 보완점_및_개선방안 열이 시트에 존재할 경우 함께 저장
   // (주의: 운동/식단 수정 제안은 Feedbacks 시트에 자동 저장되지 않으며 오직 코치의 복사 버튼을 통해 Members 시트로만 분리 저장됨)
   const summaryCol = findColIndex(colMap, ['피드백_요약', '피드백요약', '요약', 'feedbackSummary']);
   const summaryVal = payload.피드백_요약 || payload.summary || '';
@@ -859,7 +903,8 @@ function handleUpdateFeedbackComment(ss, payload) {
 
   return createJsonResponse({
     status: 'success',
-    message: `${dateStr} 일자의 피드백 코멘트가 시트에 성공적으로 저장되었습니다.`
+    targetRow: targetRow,
+    message: `${dateStr} 일자의 피드백 코멘트가 시트 ${targetRow}행에 성공적으로 저장되었습니다.`
   });
 }
 
