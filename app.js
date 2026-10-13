@@ -419,13 +419,25 @@ async function getBrowserSupportedGeminiModels(apiKey) {
         const textModels = data.models.filter(m => {
           const name = String(m.name || '').toLowerCase();
           const desc = String(m.description || '').toLowerCase();
-          const isNonText = name.includes('tts') || name.includes('audio') || name.includes('embed') || 
+          // [핵심] 1분 이상 걸리는 thinking(추론) 모델 및 비텍스트 모델 엄격 제외
+          const isSlowOrNonText = name.includes('thinking') || desc.includes('thinking') ||
+                            name.includes('tts') || name.includes('audio') || name.includes('embed') || 
                             name.includes('imagen') || name.includes('aqa') || name.includes('speech') ||
                             desc.includes('audio') || desc.includes('text-to-speech') || desc.includes('embedding');
-          return !isNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
+          return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        textModels.sort((a, b) => (b.toLowerCase().includes('flash') ? 1 : 0) - (a.toLowerCase().includes('flash') ? 1 : 0));
+        // [초고속 직행 우선순위 정렬] gemini-1.5-flash(1~2초 컷) > gemini-2.0-flash > gemini-1.5-flash-8b
+        const getModelScore = (m) => {
+          const lower = m.toLowerCase();
+          if (lower === 'gemini-1.5-flash') return 100;
+          if (lower === 'gemini-2.0-flash') return 90;
+          if (lower.includes('1.5-flash')) return 80;
+          if (lower.includes('flash')) return 50;
+          return 10;
+        };
+
+        textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
         if (textModels.length > 0) {
           const selected = textModels.slice(0, 3);
           localStorage.setItem('CACHE_GEMINI_TEXT_MODELS_V2', JSON.stringify(selected));
@@ -436,7 +448,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   } catch (e) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
-  return ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  return ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -2402,7 +2414,7 @@ let loadingOverlayTimeoutTimer = null;
 let loadingOverlayIntervalTimer = null;
 let loadingOverlayElapsedSec = 0;
 
-function showLoadingOverlay(text, timeoutMs = 60000) {
+function showLoadingOverlay(text, timeoutMs = 120000) {
   const overlay = document.getElementById('loadingOverlay');
   const textEl = document.getElementById('loadingOverlayText');
   const subTextEl = document.getElementById('loadingOverlaySubText');
@@ -2416,18 +2428,18 @@ function showLoadingOverlay(text, timeoutMs = 60000) {
 
   loadingOverlayElapsedSec = 0;
   if (subTextEl) {
-    subTextEl.innerHTML = `처리 중... <strong class="text-warning">0초</strong> 경과 (AI 맞춤 생성은 보통 5~15초 소요됩니다)`;
+    subTextEl.innerHTML = `처리 중... <strong class="text-warning">0초</strong> 경과 (AI 생성은 상황에 따라 수초~최대 1분 정도 소요될 수 있습니다)`;
   }
 
   // 매초 경과 시간 실시간 카운팅
   loadingOverlayIntervalTimer = setInterval(() => {
     loadingOverlayElapsedSec++;
     if (subTextEl) {
-      subTextEl.innerHTML = `처리 중... <strong class="text-warning">${loadingOverlayElapsedSec}초</strong> 경과 (AI 맞춤 생성은 보통 5~15초 소요됩니다)`;
+      subTextEl.innerHTML = `처리 중... <strong class="text-warning">${loadingOverlayElapsedSec}초</strong> 경과 (AI 생성은 상황에 따라 수초~최대 1분 정도 소요될 수 있습니다)`;
     }
   }, 1000);
 
-  // 지정된 타임아웃(기본 60초) 후 자동 해제
+  // 지정된 타임아웃(기본 120초) 후 자동 해제
   loadingOverlayTimeoutTimer = setTimeout(() => {
     hideLoadingOverlay();
     showToast(`⚠️ 요청 시간이 초과되었습니다 (${Math.round(timeoutMs / 1000)}초). 네트워크 상태나 API Key 설정을 확인해 주세요.`, 'warning', 6000);

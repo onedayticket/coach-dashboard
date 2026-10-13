@@ -956,20 +956,25 @@ function getGoogleSupportedTextModels(apiKey) {
         const textModels = json.models.filter(m => {
           const name = String(m.name || '').toLowerCase();
           const desc = String(m.description || '').toLowerCase();
-          const isNonText = name.includes('tts') || name.includes('audio') || name.includes('embed') ||
+          // [핵심] 1분 이상 걸리는 thinking(추론) 모델 및 비텍스트 모델 엄격 제외
+          const isSlowOrNonText = name.includes('thinking') || desc.includes('thinking') ||
+            name.includes('tts') || name.includes('audio') || name.includes('embed') ||
             name.includes('imagen') || name.includes('aqa') || name.includes('speech') ||
             desc.includes('audio') || desc.includes('text-to-speech') || desc.includes('embedding');
-          return !isNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
+          return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // flash 우선 정렬
-        textModels.sort((a, b) => {
-          const aLower = a.toLowerCase();
-          const bLower = b.toLowerCase();
-          const aScore = aLower.includes('flash') ? 2 : 1;
-          const bScore = bLower.includes('flash') ? 2 : 1;
-          return bScore - aScore;
-        });
+        // [초고속 직행 우선순위 정렬] gemini-1.5-flash(1~2초 컷) > gemini-2.0-flash > gemini-1.5-flash-8b
+        const getModelScore = (m) => {
+          const lower = m.toLowerCase();
+          if (lower === 'gemini-1.5-flash') return 100;
+          if (lower === 'gemini-2.0-flash') return 90;
+          if (lower.includes('1.5-flash')) return 80;
+          if (lower.includes('flash')) return 50;
+          return 10;
+        };
+
+        textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
 
         if (textModels.length > 0) {
           // 6시간(21,600초) 캐시
@@ -982,7 +987,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  return ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
 }
 
 /**
@@ -1036,7 +1041,7 @@ function callGemini(prompt, systemInstruction, payload) {
 
   // 1. 캐시/구글 서버에서 검증된 실제 텍스트 모델 목록 획득 (최대 상위 3개 후보)
   const supportedModels = getGoogleSupportedTextModels(apiKey);
-  const targetModels = (supportedModels && supportedModels.length > 0) ? supportedModels.slice(0, 3) : ['gemini-1.5-flash', 'gemini-2.0-flash'];
+  const targetModels = (supportedModels && supportedModels.length > 0) ? supportedModels.slice(0, 3) : ['gemini-1.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-8b'];
 
   let lastError = null;
 
