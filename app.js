@@ -602,7 +602,7 @@ function simulateMockAction(payload) {
         errorMessage: '로컬 Mock 모드 데일리 피드백'
       },
       data: {
-        "피드백_요약": `오늘도 바쁜 일상 속에서 운동(${getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore') || 8}점)과 식단(${getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore') || 8}점)을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다.`,
+        "피드백_요약": `오늘도 바쁜 일상 속에서 운동(${getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore') || 4}점)과 식단(${getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore') || 5}점)을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다.`,
         "문제점_분석": isWeightStall
           ? `최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어 순환 대사가 다소 저하된 상태입니다.`
           : `특이사항 없음`,
@@ -615,8 +615,8 @@ function simulateMockAction(payload) {
         "식단_수정_제안": isWeightStall
           ? `저녁 식단에서 나트륨 섭취를 최소화하고, 칼륨이 풍부한 오이나 토마토 1개를 추가하여 체내 수분 정체 완화`
           : ``,
-        "운동_실행률_점수": parseFloat(getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore')) || 8,
-        "식단_실행률_점수": parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) || 7
+        "운동_실행률_점수": (parseFloat(getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore')) <= 5 ? parseFloat(getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore')) : 4) || 4,
+        "식단_실행률_점수": (parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) <= 5 ? parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) : 5) || 5
       }
     };
   }
@@ -1447,7 +1447,7 @@ function renderThreeIndependentCharts(feedbacks) {
     });
   }
 
-  // 차트 2: 운동 실행률 점수 (점)
+  // 차트 2: 운동 실행률 점수 (점) - 5점 척도 적용
   const ctxEx = document.getElementById('chartExercise');
   if (ctxEx) {
     AppState.charts.exercise = new Chart(ctxEx, {
@@ -1467,11 +1467,11 @@ function renderThreeIndependentCharts(feedbacks) {
           pointBackgroundColor: '#10b981'
         }]
       },
-      options: createSingleChartOptions('점', 0, 10, 2)
+      options: createSingleChartOptions('점', 0, 5, 1)
     });
   }
 
-  // 차트 3: 식단 실행률 점수 (점)
+  // 차트 3: 식단 실행률 점수 (점) - 5점 척도 적용
   const ctxDiet = document.getElementById('chartDiet');
   if (ctxDiet) {
     AppState.charts.diet = new Chart(ctxDiet, {
@@ -1491,7 +1491,7 @@ function renderThreeIndependentCharts(feedbacks) {
           pointBackgroundColor: '#f59e0b'
         }]
       },
-      options: createSingleChartOptions('점', 0, 10, 2)
+      options: createSingleChartOptions('점', 0, 5, 1)
     });
   }
 }
@@ -1534,7 +1534,7 @@ function renderFeedbackTable(feedbacks) {
   if (!feedbacks || feedbacks.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" class="text-center py-4 text-muted small">
+        <td colspan="9" class="text-center py-4 text-muted small">
           제출된 데일리 피드백 기록이 없습니다.
         </td>
       </tr>
@@ -1542,7 +1542,7 @@ function renderFeedbackTable(feedbacks) {
     return;
   }
 
-  // [요구사항 3-1] 날짜 기준 최신순(내림차순) 정렬
+  // [요구사항 5-1] 날짜 기준 최신순(내림차순) 정렬
   const sorted = [...feedbacks].sort((a, b) => {
     const rawA = getField(a, '날짜', 'date', '일자') || '';
     const rawB = getField(b, '날짜', 'date', '일자') || '';
@@ -1555,47 +1555,53 @@ function renderFeedbackTable(feedbacks) {
   let html = '';
   sorted.forEach((fb) => {
     const date = getField(fb, '날짜', 'date', '일자') || '-';
+    const memberName = getMemberName(fb) || (AppState.selectedMember ? getMemberName(AppState.selectedMember) : '-');
     const weight = getField(fb, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight') || '-';
     const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
     const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
-    const exDetail = getField(fb, '운동 내용', '운동내용', 'exerciseDetail') || '-';
-    const dietDetail = getField(fb, '식단 내용', '식단내용', 'dietDetail') || '-';
-    const comment = getField(fb, '회원 일기/코멘트', '회원일기/코멘트', '회원 일기', '회원일기', '코멘트', 'userComment') || '-';
+    
+    // 피드백 요약
     const coachComment = getField(fb, '피드백 코멘트', '피드백코멘트', '코치 피드백', '코치피드백', '코칭 코멘트', 'feedbackComment') || '';
-    const coachCommentStr = coachComment ? String(coachComment).trim() : '';
+    const summary = getField(fb, '피드백_요약', '피드백요약', '요약') || coachComment || '-';
+    
+    // 문제점 분석
+    const problem = getField(fb, '문제점_분석', '문제점분석', '문제점') || '-';
+    
+    // 보완점 및 개선방안
+    const solution = getField(fb, '보완점_및_개선방안', '보완점및개선방안', '보완점', '개선방안') || '-';
 
-    // [요구사항 3-2] 코치 코멘트 작성 여부 판별 (안전한 문자열 비교)
+    const coachCommentStr = coachComment ? String(coachComment).trim() : '';
     const isCompleted = Boolean(coachCommentStr !== '' && coachCommentStr !== '미작성');
 
     html += `
       <tr>
         <td class="text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
-        <td class="text-nowrap fw-bold text-dark">${weight} kg</td>
+        <td class="text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
+        <td class="text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
         <td class="text-nowrap">
-          <span class="badge ${getScoreBadgeClass(exScore)}">${exScore} 점</span>
+          <span class="badge ${getScoreBadgeClass(exScore)}">${exScore !== '-' ? `${exScore} 점` : '-'}</span>
         </td>
         <td class="text-nowrap">
-          <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore} 점</span>
+          <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore !== '-' ? `${dietScore} 점` : '-'}</span>
         </td>
-        <td class="small" style="min-width: 200px;">
-          <div class="text-truncate mb-1"><strong class="text-success">[운동]</strong> ${escapeHtml(exDetail)}</div>
-          <div class="text-truncate"><strong class="text-warning-emphasis">[식단]</strong> ${escapeHtml(dietDetail)}</div>
+        <td class="small" style="min-width: 170px;">
+          <div class="text-truncate text-dark" title="${escapeHtml(summary)}">
+            ${escapeHtml(summary)}
+          </div>
         </td>
-        <td class="small text-muted" style="min-width: 170px;">
-          <div class="p-1 bg-light rounded text-truncate">${escapeHtml(comment)}</div>
+        <td class="small" style="min-width: 150px;">
+          <div class="text-truncate ${problem !== '-' && problem !== '특이사항 없음' ? 'text-danger-emphasis' : 'text-muted'}" title="${escapeHtml(problem)}">
+            ${escapeHtml(problem)}
+          </div>
         </td>
-        <td class="small" style="min-width: 190px;">
-          ${isCompleted ? `
-            <div class="p-1 bg-success-subtle text-success-emphasis rounded border border-success-subtle text-truncate" title="${escapeHtml(coachComment)}">
-              <i class="bi bi-chat-quote-fill me-1"></i>${escapeHtml(coachComment)}
-            </div>
-          ` : `
-            <span class="badge bg-secondary-subtle text-secondary fw-normal">미작성</span>
-          `}
+        <td class="small" style="min-width: 170px;">
+          <div class="text-truncate ${solution !== '-' ? 'text-success-emphasis' : 'text-muted'}" title="${escapeHtml(solution)}">
+            ${escapeHtml(solution)}
+          </div>
         </td>
         <td class="text-center text-nowrap">
           ${isCompleted ? `
-            <!-- [요구사항 3-2 & 3-3] 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
+            <!-- [요구사항 5-2] 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
             <button type="button" class="btn btn-sm btn-success fw-semibold px-2 py-1 shadow-sm text-white"
                     title="피드백 내용 수정하기"
                     onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
@@ -1619,8 +1625,9 @@ function renderFeedbackTable(feedbacks) {
 
 function getScoreBadgeClass(score) {
   const num = parseFloat(score);
-  if (num >= 8) return 'bg-success-subtle text-success border border-success-subtle';
-  if (num >= 6) return 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
+  if (isNaN(num)) return 'bg-secondary-subtle text-secondary border border-secondary-subtle';
+  if (num >= 4.0) return 'bg-success-subtle text-success border border-success-subtle';
+  if (num >= 2.5) return 'bg-warning-subtle text-warning-emphasis border border-warning-subtle';
   return 'bg-danger-subtle text-danger border border-danger-subtle';
 }
 
@@ -1697,8 +1704,8 @@ ${weightHistorySummary}
   "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
   "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
   "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)",
-  "운동_실행률_점수": 8,
-  "식단_실행률_점수": 7
+  "운동_실행률_점수": 4,
+  "식단_실행률_점수": 5
 }
 `;
 
