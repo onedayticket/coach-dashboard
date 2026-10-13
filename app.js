@@ -15,6 +15,7 @@
 // 로컬 스토리지 키
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
 const STORAGE_GEMINI_KEY = 'coach_dash_gemini_key_v1';
+const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
 
 // 기본 Mock 데이터 (시트 미연동 또는 테스트 시 즉각 동작)
 const MOCK_DB = {
@@ -193,6 +194,7 @@ const MOCK_DB = {
 const AppState = {
   gasUrl: localStorage.getItem(STORAGE_GAS_URL_KEY) || '',
   geminiApiKey: localStorage.getItem(STORAGE_GEMINI_KEY) || '',
+  modelPref: localStorage.getItem(STORAGE_MODEL_PREF_KEY) || 'auto',
   isOnline: false,
   currentView: 'members', // 'members' | 'guidelines'
   members: [],
@@ -374,10 +376,11 @@ function formatObjectAsFullProfile(obj, excludeKeys) {
 async function postToGasBackend(payload) {
   const gasUrl = AppState.gasUrl.trim();
 
-  // Gemini API Key를 payload에 자동 주입 (프론트엔드 설정 우선)
+  // Gemini API Key 및 모델 선호도 자동 주입
   if (AppState.geminiApiKey) {
     payload.geminiApiKey = AppState.geminiApiKey;
   }
+  payload.modelPref = AppState.modelPref || 'auto';
 
   if (gasUrl) {
     try {
@@ -427,13 +430,16 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [503 회피 핵심: 서로 다른 물리적 서버 풀(Cross-Cluster)에서 대표 모델 1개씩 선별]
-        const cluster1 = textModels.find(m => m === 'gemini-1.5-flash') || textModels.find(m => m.includes('1.5-flash'));
-        const cluster2 = textModels.find(m => m === 'gemini-1.5-pro') || textModels.find(m => m.includes('1.5-pro'));
-        const cluster3 = textModels.find(m => m === 'gemini-2.0-flash') || textModels.find(m => m.includes('2.0-flash')) || textModels.find(m => m.includes('flash'));
-
-        const selected = [cluster1, cluster2, cluster3].filter(Boolean);
-        const uniqueModels = [...new Set(selected)];
+        // [503 회피 & Pro 선택 지원] 사용자의 선호 모델에 따라 우선순위 배치
+        let ordered = [];
+        if (AppState.modelPref === 'pro') {
+          ordered = [cluster2, cluster1, cluster3].filter(Boolean);
+        } else if (AppState.modelPref === 'flash') {
+          ordered = [cluster1, cluster3, cluster2].filter(Boolean);
+        } else {
+          ordered = [cluster1, cluster2, cluster3].filter(Boolean);
+        }
+        const uniqueModels = [...new Set(ordered)];
 
         if (uniqueModels.length > 0) {
           localStorage.setItem('CACHE_GEMINI_MODELS_STABLE_V6', JSON.stringify(uniqueModels));
@@ -443,6 +449,10 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     }
   } catch (e) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
+  }
+
+  if (AppState.modelPref === 'pro') {
+    return ['gemini-1.5-pro', 'gemini-1.5-flash', 'gemini-2.0-flash'];
   }
   return ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
 }
@@ -2242,20 +2252,31 @@ function initApiSettings() {
   const saveBtn = document.getElementById('saveGasUrlBtn');
   const inputEl = document.getElementById('gasApiUrlInput');
   const geminiInput = document.getElementById('geminiApiKeyInput');
+  const modelSelect = document.getElementById('geminiModelSelect');
   const resetBtn = document.getElementById('resetGasUrlBtn');
 
   if (inputEl) inputEl.value = AppState.gasUrl;
   if (geminiInput) geminiInput.value = AppState.geminiApiKey;
+  if (modelSelect) modelSelect.value = AppState.modelPref || 'auto';
 
   if (saveBtn) {
     saveBtn.addEventListener('click', async () => {
       const val = inputEl ? inputEl.value.trim() : '';
       const gemVal = geminiInput ? geminiInput.value.trim() : '';
+      const modelVal = modelSelect ? modelSelect.value : 'auto';
+
       AppState.gasUrl = val;
       AppState.geminiApiKey = gemVal;
+      AppState.modelPref = modelVal;
+
       localStorage.setItem(STORAGE_GAS_URL_KEY, val);
       localStorage.setItem(STORAGE_GEMINI_KEY, gemVal);
-      showToast('연동 설정 및 Gemini API Key가 안전하게 저장되었습니다.', 'success');
+      localStorage.setItem(STORAGE_MODEL_PREF_KEY, modelVal);
+
+      // 캐시 초기화하여 변경된 모델 즉시 적용
+      localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
+
+      showToast('연동 설정 및 AI 모델 엔진 설정이 안전하게 저장되었습니다.', 'success');
 
       const modalEl = document.getElementById('apiConfigModal');
       if (modalEl && window.bootstrap) {
@@ -2275,10 +2296,14 @@ function initApiSettings() {
       if (confirm('연동 설정을 초기화하고 기본 Mock 데이터 모드로 복귀하시겠습니까?')) {
         localStorage.removeItem(STORAGE_GAS_URL_KEY);
         localStorage.removeItem(STORAGE_GEMINI_KEY);
+        localStorage.removeItem(STORAGE_MODEL_PREF_KEY);
+        localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
         AppState.gasUrl = '';
         AppState.geminiApiKey = '';
+        AppState.modelPref = 'auto';
         if (inputEl) inputEl.value = '';
         if (geminiInput) geminiInput.value = '';
+        if (modelSelect) modelSelect.value = 'auto';
         location.reload();
       }
     });

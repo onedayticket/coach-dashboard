@@ -1034,10 +1034,18 @@ function callGemini(prompt, systemInstruction, payload) {
   }
 
   // 1. 서로 다른 인프라 클러스터 모델 목록 (1.5-flash, 1.5-pro, 2.0-flash)
+  const modelPref = (payload && payload.modelPref) ? payload.modelPref : 'auto';
   const supportedModels = getGoogleSupportedTextModels(apiKey);
-  const targetModels = (supportedModels && supportedModels.length > 0)
-    ? supportedModels
+  let targetModels = (supportedModels && supportedModels.length > 0)
+    ? supportedModels.slice()
     : ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
+
+  // Pro 선호 시 gemini-1.5-pro를 1순위로 즉시 승격
+  if (modelPref === 'pro') {
+    targetModels.sort((a, b) => (b.includes('pro') ? 1 : 0) - (a.includes('pro') ? 1 : 0));
+  } else if (modelPref === 'flash') {
+    targetModels.sort((a, b) => (b.includes('flash') ? 1 : 0) - (a.includes('flash') ? 1 : 0));
+  }
 
   let lastError = null;
 

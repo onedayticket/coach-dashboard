@@ -868,9 +868,23 @@
             <input type="password" class="form-control" id="geminiApiKeyInput" placeholder="AIzaSy... (구글 AI 스튜디오 API Key)">
             <div class="form-text small text-muted">
               <a href="https://aistudio.google.com/app/apikey" target="_blank" class="text-decoration-none">
-                <i class="bi bi-box-arrow-up-right me-1"></i>Google AI Studio에서 무료 발급받기
+                <i class="bi bi-box-arrow-up-right me-1"></i>Google AI Studio에서 API Key 확인/발급
               </a>
-              (입력 시 대시보드에서 GAS로 안전하게 전송되어 실시간 AI 생성에 사용됩니다.)
+            </div>
+          </div>
+
+          <!-- AI 모델 엔진 선택 (Flash vs Pro) -->
+          <div class="mb-3">
+            <label class="form-label fw-bold text-dark small">
+              <i class="bi bi-cpu-fill text-success me-1"></i>AI 코칭 생성 엔진 선택
+            </label>
+            <select class="form-select form-select-sm" id="geminiModelSelect">
+              <option value="auto">⚡ [자동 최적화] Flash 우선 ➔ 과부하 시 Pro 자동 우회 (추천)</option>
+              <option value="pro">💎 [고품질 Pro 모드] gemini-1.5-pro (심층 전문 코칭 분석)</option>
+              <option value="flash">🚀 [초고속 Flash 모드] gemini-1.5-flash (1~2초 즉시 생성)</option>
+            </select>
+            <div class="form-text small text-muted">
+              Gemini Pro 유료 결제 계정은 <strong>[고품질 Pro 모드]</strong> 선택 시 훨씬 전문적이고 깊이 있는 코칭을 제공합니다.
             </div>
           </div>
 
