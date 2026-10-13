@@ -939,7 +939,7 @@ function getGoogleSupportedTextModels(apiKey) {
   if (!apiKey) return [];
 
   const cache = CacheService.getScriptCache();
-  const cachedJson = cache.get('SUPPORTED_TEXT_MODELS_V1');
+  const cachedJson = cache.get('SUPPORTED_MODELS_CACHE_V6');
   if (cachedJson) {
     try {
       const parsed = JSON.parse(cachedJson);
@@ -964,27 +964,18 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [초고속 직행 우선순위 정렬] gemini-2.5-flash > gemini-2.0-flash > gemini-1.5-flash
-        const getModelScore = (m) => {
-          const lower = m.toLowerCase();
-          if (lower.includes('flash')) {
-            if (lower.includes('2.5')) return 100;
-            if (lower.includes('2.0')) return 90;
-            if (lower.includes('1.5')) return 80;
-            return 70;
-          }
-          if (lower.includes('2.5')) return 60;
-          if (lower.includes('2.0')) return 50;
-          if (lower.includes('1.5')) return 40;
-          return 10;
-        };
+        // [503 회피 핵심: 서로 다른 물리적 서버 풀(Cross-Cluster)에서 대표 모델 1개씩 선별]
+        const cluster1 = textModels.find(m => m === 'gemini-1.5-flash') || textModels.find(m => m.includes('1.5-flash'));
+        const cluster2 = textModels.find(m => m === 'gemini-1.5-pro') || textModels.find(m => m.includes('1.5-pro'));
+        const cluster3 = textModels.find(m => m === 'gemini-2.0-flash') || textModels.find(m => m.includes('2.0-flash')) || textModels.find(m => m.includes('flash'));
 
-        textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
+        const selected = [cluster1, cluster2, cluster3].filter(Boolean);
+        // 중복 제거
+        const uniqueModels = [...new Set(selected)];
 
-        if (textModels.length > 0) {
-          // 6시간(21,600초) 캐시
-          cache.put('SUPPORTED_TEXT_MODELS_V1', JSON.stringify(textModels), 21600);
-          return textModels;
+        if (uniqueModels.length > 0) {
+          cache.put('SUPPORTED_MODELS_CACHE_V6', JSON.stringify(uniqueModels), 21600);
+          return uniqueModels;
         }
       }
     }
@@ -992,21 +983,18 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  return ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
 }
 
 /**
  * [원클릭 외부 권한 승인 및 모델 목록 확인]
- * GAS 편집기 상단에서 'testAndAuthorizeUrlFetch'를 선택하고 [실행]을 누르면
- * 외부 통신 권한을 승인하고, 계정에서 실제 지원하는 텍스트 모델 목록을 로그에 출력합니다.
  */
 function testAndAuthorizeUrlFetch() {
   const apiKey = getEffectiveGeminiApiKey(null);
   Logger.log('현재 등록된 API Key 유무: ' + (apiKey ? '등록됨 (길이: ' + apiKey.length + ')' : '미등록'));
 
   if (apiKey) {
-    // 캐시 삭제 후 새로 조회하여 실제 지원 모델 확인
-    CacheService.getScriptCache().remove('SUPPORTED_TEXT_MODELS_V1');
+    CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V6');
     const models = getGoogleSupportedTextModels(apiKey);
     Logger.log('✓ 구글이 현재 지원하는 실제 텍스트 모델 (' + models.length + '개): ' + models.join(', '));
   } else {
@@ -1020,9 +1008,8 @@ function testAndAuthorizeUrlFetch() {
 }
 
 /**
- * [초고속 직행] Google Gemini API 호출 엔진
- * - 구글이 현재 지원한다고 밝힌 실제 모델 중 최우선 모델로 직행 (404 원천 차단)
- * - 캐시를 사용하므로 매번 ListModels를 호출하지 않아 1~2초 내 즉시 생성
+ * [503 과부하 완벽 대응] Google Gemini API 호출 엔진
+ * - 구글 503(High demand) 발생 시 0.8초 백오프 후 다른 서버 클러스터(Flash -> Pro -> 2.0)로 즉시 안전 우회
  */
 function callGemini(prompt, systemInstruction, payload) {
   const startGasTime = new Date().getTime();
@@ -1046,11 +1033,11 @@ function callGemini(prompt, systemInstruction, payload) {
     return { text: null, debug: debugInfo };
   }
 
-  // 1. 구글 서버에서 실시간 검증된 실제 텍스트 모델 목록 획득 (404 원천 차단)
+  // 1. 서로 다른 인프라 클러스터 모델 목록 (1.5-flash, 1.5-pro, 2.0-flash)
   const supportedModels = getGoogleSupportedTextModels(apiKey);
   const targetModels = (supportedModels && supportedModels.length > 0)
-    ? supportedModels.slice(0, 3)
-    : ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    ? supportedModels
+    : ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
 
   let lastError = null;
 
@@ -1065,7 +1052,7 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 4096 // [요청 3] 토큰 한도를 4096으로 대폭 상향 (글자수 끊김 원천 방지)
+        maxOutputTokens: 4096
       }
     };
     if (systemInstruction) {
@@ -1113,7 +1100,14 @@ function callGemini(prompt, systemInstruction, payload) {
         return { text: null, debug: debugInfo };
       }
 
-      Logger.log(`${modelName} 호출 실패: ${lastError}`);
+      Logger.log(`${modelName} 호출 실패 (HTTP ${code}): ${lastError}`);
+
+      // [핵심] 503(High demand) 또는 429 발생 시 0.8초 백오프 후 다른 클러스터 모델로 전환
+      if (code === 503 || code === 429) {
+        Utilities.sleep(800);
+        continue;
+      }
+
     } catch (e) {
       lastError = 'UrlFetchApp 통신 예외: ' + e.toString();
       Logger.log(`${modelName} 통신 예외: ` + e.toString());

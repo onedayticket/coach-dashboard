@@ -427,44 +427,36 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [초고속 직행 우선순위 정렬] gemini-2.5-flash > gemini-2.0-flash > gemini-1.5-flash
-        const getModelScore = (m) => {
-          const lower = m.toLowerCase();
-          if (lower.includes('flash')) {
-            if (lower.includes('2.5')) return 100;
-            if (lower.includes('2.0')) return 90;
-            if (lower.includes('1.5')) return 80;
-            return 70;
-          }
-          if (lower.includes('2.5')) return 60;
-          if (lower.includes('2.0')) return 50;
-          if (lower.includes('1.5')) return 40;
-          return 10;
-        };
+        // [503 회피 핵심: 서로 다른 물리적 서버 풀(Cross-Cluster)에서 대표 모델 1개씩 선별]
+        const cluster1 = textModels.find(m => m === 'gemini-1.5-flash') || textModels.find(m => m.includes('1.5-flash'));
+        const cluster2 = textModels.find(m => m === 'gemini-1.5-pro') || textModels.find(m => m.includes('1.5-pro'));
+        const cluster3 = textModels.find(m => m === 'gemini-2.0-flash') || textModels.find(m => m.includes('2.0-flash')) || textModels.find(m => m.includes('flash'));
 
-        textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
-        if (textModels.length > 0) {
-          const selected = textModels.slice(0, 3);
-          localStorage.setItem('CACHE_GEMINI_TEXT_MODELS_V3', JSON.stringify(selected));
-          return selected;
+        const selected = [cluster1, cluster2, cluster3].filter(Boolean);
+        const uniqueModels = [...new Set(selected)];
+
+        if (uniqueModels.length > 0) {
+          localStorage.setItem('CACHE_GEMINI_MODELS_STABLE_V6', JSON.stringify(uniqueModels));
+          return uniqueModels;
         }
       }
     }
   } catch (e) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
-  return ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+  return ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-2.0-flash'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   const apiKey = (AppState.geminiApiKey || '').trim();
   if (!apiKey) return { text: null, error: 'API 키 미등록' };
 
-  // 구버전 캐시 정리
+  // 구버전 캐시 청소
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
+  localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
 
   const startTime = performance.now();
-  // 실시간 지원 검증 모델 목록 조회
+  // 서로 다른 인프라 클러스터 모델 목록 (1.5-flash, 1.5-pro, 2.0-flash)
   const candidateModels = await getBrowserSupportedGeminiModels(apiKey);
   let lastErrorDetail = '';
 
@@ -514,7 +506,12 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
       } else {
         const errText = await res.text().catch(() => '');
         lastErrorDetail = `[HTTP ${res.status}] ${errText.slice(0, 150)}`;
-        console.warn(`[브라우저 직통 ${model} 응답 오류]`, res.status, errText);
+        console.warn(`[브라우저 직통 ${model} 응답 오류 HTTP ${res.status}]`, errText);
+
+        // 503(High demand) 발생 시 0.8초 백오프 후 다른 클러스터 모델로 전환
+        if (res.status === 503 || res.status === 429) {
+          await new Promise(r => setTimeout(r, 800));
+        }
       }
     } catch (e) {
       lastErrorDetail = `[네트워크 예외] ${e.message}`;
