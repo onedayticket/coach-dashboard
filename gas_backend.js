@@ -308,6 +308,10 @@ function findColIndex(colMap, candidateNames) {
     if (!targetClean || targetClean.length < 2) continue;
     for (let j = 0; j < colKeys.length; j++) {
       const keyClean = String(colKeys[j]).replace(/\s+/g, '').toLowerCase();
+      // [오매칭 원천 차단] 고유 식별(번호, 날짜, 일자, 시간, 타임스탬프) 및 회원 일기 컬럼은 부분 일치에서 제외
+      if (keyClean.includes('번호') || keyClean.includes('날짜') || keyClean.includes('일자') || keyClean.includes('시간') || keyClean.includes('타임스탬프') || keyClean.includes('일기')) {
+        continue;
+      }
       if (keyClean.includes(targetClean) || targetClean.includes(keyClean)) {
         return colMap[colKeys[j]];
       }
@@ -801,10 +805,13 @@ function handleUpdateFeedbackComment(ss, payload) {
   
   let commentCol = findColIndex(colMap, [
     '피드백 코멘트', '피드백코멘트',
+    '피드백 내용', '피드백내용',
     '코치 피드백', '코치피드백',
     '코칭 코멘트', '코칭코멘트',
     '코치 코멘트', '코치코멘트',
-    '피드백', '코멘트', 'feedbackComment'
+    '코칭 내용', '코칭내용',
+    '코치답변', '코치 답변', '답변',
+    'feedbackComment', 'coachComment'
   ]);
 
   // 시트에 [피드백 코멘트] 열이 없으면 헤더 마지막에 자동 생성하여 실패 방지
@@ -899,6 +906,14 @@ function handleUpdateFeedbackComment(ss, payload) {
   const solutionVal = payload.보완점_및_개선방안 || payload.solution || '';
   if (solutionCol && solutionVal) {
     sheet.getRange(targetRow, solutionCol).setValue(solutionVal);
+  }
+
+  // 4. 피드백 상태 컬럼이 시트에 존재할 경우 '완료'로 자동 업데이트
+  const statusCol = findColIndex(colMap, [
+    '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
+  ]);
+  if (statusCol) {
+    sheet.getRange(targetRow, statusCol).setValue('완료');
   }
 
   return createJsonResponse({

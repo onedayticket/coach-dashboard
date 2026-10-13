@@ -571,11 +571,26 @@ function simulateMockAction(payload) {
     const fb = AppState.feedbacks.find(f => (f['이름'] === payload.memberKey || f.name === payload.memberKey) && String(f['날짜'] || f.date).includes(payload.date));
     if (fb) {
       fb['피드백 코멘트'] = payload.comment;
+      fb['피드백코멘트'] = payload.comment;
+      fb['피드백 내용'] = payload.comment;
+      fb['피드백내용'] = payload.comment;
+      fb['피드백 상태'] = '완료';
+      fb['피드백상태'] = '완료';
+      fb['feedbackComment'] = payload.comment;
       if (payload.exerciseScore) fb['운동_실행률_점수'] = payload.exerciseScore;
       if (payload.dietScore) fb['식단_실행률_점수'] = payload.dietScore;
-      if (payload.피드백_요약) fb['피드백_요약'] = payload.피드백_요약;
-      if (payload.문제점_분석) fb['문제점_분석'] = payload.문제점_분석;
-      if (payload.보완점_및_개선방안) fb['보완점_및_개선방안'] = payload.보완점_및_개선방안;
+      if (payload.피드백_요약) {
+        fb['피드백_요약'] = payload.피드백_요약;
+        fb['피드백요약'] = payload.피드백_요약;
+      }
+      if (payload.문제점_분석) {
+        fb['문제점_분석'] = payload.문제점_분석;
+        fb['문제점분석'] = payload.문제점_분석;
+      }
+      if (payload.보완점_및_개선방안) {
+        fb['보완점_및_개선방안'] = payload.보완점_및_개선방안;
+        fb['보완점및개선방안'] = payload.보완점_및_개선방안;
+      }
     }
     return { status: 'success', message: '피드백 코멘트가 저장되었습니다.' };
   }
@@ -1636,6 +1651,67 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
   };
 }
 
+/**
+ * [피드백 완료 여부 지능형 판별기]
+ * - 피드백 코멘트, 피드백 내용, 피드백 요약, 보완점/개선방안, 문제점 분석 등
+ *   피드백 관련 셀에 실제 내용이 존재하면 즉시 '피드백 완료'로 판별하여 새로고침 시에도 완료 상태 유지!
+ */
+function isFeedbackRecordCompleted(fb) {
+  if (!fb || typeof fb !== 'object') return false;
+
+  const invalidTokens = ['', '-', '미작성', '없음', '대기', '미완료', 'null', 'undefined'];
+
+  // 1. 상태 컬럼에 '완료' 키워드가 명시된 경우
+  const status = String(getField(fb, 
+    '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
+  ) || '').trim();
+  if (status && (status.includes('완료') || status.toLowerCase() === 'done' || status.toLowerCase() === 'completed')) {
+    return true;
+  }
+
+  // 2. 피드백 코멘트 / 피드백 내용 셀에 유의미한 내용이 있는 경우
+  const coachComment = String(getField(fb, 
+    '피드백 코멘트', '피드백코멘트', 
+    '피드백 내용', '피드백내용', 
+    '코치 피드백', '코치피드백', 
+    '코칭 코멘트', '코칭코멘트', 
+    '코치 코멘트', '코치코멘트', 
+    '코칭 내용', '코칭내용', 
+    '코치답변', '코치 답변', '답변',
+    'feedbackComment', 'coachComment'
+  ) || '').trim();
+  if (coachComment && !invalidTokens.includes(coachComment)) {
+    return true;
+  }
+
+  // 3. 피드백 요약 셀에 유의미한 내용이 있는 경우
+  const summary = String(getField(fb, 
+    '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary'
+  ) || '').trim();
+  if (summary && !invalidTokens.includes(summary)) {
+    return true;
+  }
+
+  // 4. 보완점 및 개선방안 셀에 유의미한 내용이 있는 경우
+  const solution = String(getField(fb, 
+    '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution'
+  ) || '').trim();
+  if (solution && !invalidTokens.includes(solution)) {
+    return true;
+  }
+
+  // 5. 문제점 분석 셀에 유의미한 내용이 있는 경우 ('특이사항 없음' 등 제외)
+  const problem = String(getField(fb, 
+    '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problem', 'problemAnalysis'
+  ) || '').trim();
+  const invalidProblemTokens = [...invalidTokens, '특이사항 없음', '특이사항없음', '특이사항'];
+  if (problem && !invalidProblemTokens.includes(problem)) {
+    return true;
+  }
+
+  return false;
+}
+
 function renderFeedbackTable(feedbacks) {
   const tbody = document.getElementById('feedbackTableBody');
   if (!tbody) return;
@@ -1669,18 +1745,29 @@ function renderFeedbackTable(feedbacks) {
     const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
     const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
     
+    // 피드백 코멘트
+    const coachComment = getField(fb, 
+      '피드백 코멘트', '피드백코멘트', 
+      '피드백 내용', '피드백내용', 
+      '코치 피드백', '코치피드백', 
+      '코칭 코멘트', '코칭코멘트', 
+      '코치 코멘트', '코치코멘트', 
+      '코칭 내용', '코칭내용', 
+      '코치답변', '코치 답변', '답변',
+      'feedbackComment', 'coachComment'
+    ) || '';
+
     // 피드백 요약
-    const coachComment = getField(fb, '피드백 코멘트', '피드백코멘트', '코치 피드백', '코치피드백', '코칭 코멘트', 'feedbackComment') || '';
-    const summary = getField(fb, '피드백_요약', '피드백요약', '요약') || coachComment || '-';
+    const summary = getField(fb, '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary') || coachComment || '-';
     
     // 문제점 분석
-    const problem = getField(fb, '문제점_분석', '문제점분석', '문제점') || '-';
+    const problem = getField(fb, '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problem', 'problemAnalysis') || '-';
     
     // 보완점 및 개선방안
-    const solution = getField(fb, '보완점_및_개선방안', '보완점및개선방안', '보완점', '개선방안') || '-';
+    const solution = getField(fb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution') || '-';
 
-    const coachCommentStr = coachComment ? String(coachComment).trim() : '';
-    const isCompleted = Boolean(coachCommentStr !== '' && coachCommentStr !== '미작성');
+    // [핵심] 해당 셀에 내용이 있거나 코멘트/요약/보완점/문제점이 작성되어 있다면 피드백 완료로 판정
+    const isCompleted = isFeedbackRecordCompleted(fb);
 
     html += `
       <tr>
@@ -1766,8 +1853,33 @@ async function openDailyFeedbackModal(targetDate) {
   setElementText('dfModalExScore', currentEx || '-');
   setElementText('dfModalDietScore', currentDiet || '-');
 
-  const existingComment = getField(targetFb, '피드백 코멘트', '피드백코멘트', '코치 피드백', '코치피드백', 'feedbackComment') || '';
-  setInputValue('dfModalFeedbackComment', existingComment);
+  const existingComment = getField(targetFb, 
+    '피드백 코멘트', '피드백코멘트', 
+    '피드백 내용', '피드백내용', 
+    '코치 피드백', '코치피드백', 
+    '코칭 코멘트', '코칭코멘트', 
+    '코치 코멘트', '코치코멘트', 
+    '코칭 내용', '코칭내용', 
+    '코치답변', '코치 답변', '답변',
+    'feedbackComment', 'coachComment'
+  ) || '';
+
+  const existingSummary = getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', '요약') || '';
+  const existingProblem = getField(targetFb, '문제점_분석', '문제점 분석', '문제점분석', '문제점') || '';
+  const existingSolution = getField(targetFb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안') || '';
+
+  let initialComment = existingComment;
+  if (!initialComment && (existingSummary || existingSolution)) {
+    let combined = existingSummary;
+    if (existingProblem && existingProblem !== '특이사항 없음') {
+      combined += `\n\n[문제점 분석]\n${existingProblem}`;
+    }
+    if (existingSolution) {
+      combined += `\n\n[보완점 및 개선방안]\n${existingSolution}`;
+    }
+    initialComment = combined.trim();
+  }
+  setInputValue('dfModalFeedbackComment', initialComment);
 
   showLoadingOverlay('AI가 최근 3일 이상의 체중 추이와 전체 설문/피드백 데이터를 종합 분석 중입니다...', 60000);
 
@@ -1859,7 +1971,8 @@ ${weightHistorySummary}
     const dietScoreVal = aiData.식단_실행률_점수;
 
     // 1. 회원 전달용 피드백 코멘트 자동 세팅 (피드백 요약, 문제점 분석, 보완점 및 개선방안)
-    if (!existingComment) {
+    // 기존에 작성된 내역이 없을 때만 AI 생성 결과로 채우고, 이미 작성된 내용이 있으면 보존!
+    if (!initialComment) {
       let fullComment = summary;
       if (problem && problem !== '특이사항 없음') {
         fullComment += `\n\n[문제점 분석]\n${problem}`;
@@ -1955,15 +2068,32 @@ function initDailyFeedbackModalActions() {
 
       if (targetFb) {
         targetFb['피드백 코멘트'] = comment;
+        targetFb['피드백코멘트'] = comment;
+        targetFb['피드백 내용'] = comment;
+        targetFb['피드백내용'] = comment;
+        targetFb['코치 피드백'] = comment;
+        targetFb['코치피드백'] = comment;
+        targetFb['feedbackComment'] = comment;
+        targetFb['피드백 상태'] = '완료';
+        targetFb['피드백상태'] = '완료';
         if (exScoreToSave !== null && (!targetFb['운동_실행률_점수'] || targetFb['운동_실행률_점수'] === '-')) {
           targetFb['운동_실행률_점수'] = exScoreToSave;
         }
         if (dietScoreToSave !== null && (!targetFb['식단_실행률_점수'] || targetFb['식단_실행률_점수'] === '-')) {
           targetFb['식단_실행률_점수'] = dietScoreToSave;
         }
-        if (summaryToSave) targetFb['피드백_요약'] = summaryToSave;
-        if (problemToSave) targetFb['문제점_분석'] = problemToSave;
-        if (solutionToSave) targetFb['보완점_및_개선방안'] = solutionToSave;
+        if (summaryToSave) {
+          targetFb['피드백_요약'] = summaryToSave;
+          targetFb['피드백요약'] = summaryToSave;
+        }
+        if (problemToSave) {
+          targetFb['문제점_분석'] = problemToSave;
+          targetFb['문제점분석'] = problemToSave;
+        }
+        if (solutionToSave) {
+          targetFb['보완점_및_개선방안'] = solutionToSave;
+          targetFb['보완점및개선방안'] = solutionToSave;
+        }
       }
 
       // [핵심] 백엔드에 이름/회원번호/연락처/날짜/코멘트/점수/요약 전송
@@ -2065,9 +2195,7 @@ function updateGlobalNotificationBadge() {
   const pendingFeedbacks = [];
 
   AppState.feedbacks.forEach(fb => {
-    const coachComment = getField(fb, '피드백 코멘트', '피드백코멘트', '코치 피드백', '코치피드백', '코칭 코멘트', 'feedbackComment') || '';
-    const coachCommentStr = coachComment ? String(coachComment).trim() : '';
-    const isCompleted = Boolean(coachCommentStr !== '' && coachCommentStr !== '미작성');
+    const isCompleted = isFeedbackRecordCompleted(fb);
 
     if (!isCompleted) {
       const memberName = getMemberName(fb);
