@@ -837,6 +837,26 @@ function handleUpdateFeedbackComment(ss, payload) {
     sheet.getRange(targetRow, dietScoreCol).setValue(payload.dietScore);
   }
 
+  // [요구사항 3-2] 피드백_요약, 문제점_분석, 보완점_및_개선방안 열이 시트에 존재할 경우 함께 저장
+  // (주의: 운동/식단 수정 제안은 Feedbacks 시트에 자동 저장되지 않으며 오직 코치의 복사 버튼을 통해 Members 시트로만 분리 저장됨)
+  const summaryCol = findColIndex(colMap, ['피드백_요약', '피드백요약', '요약', 'feedbackSummary']);
+  const summaryVal = payload.피드백_요약 || payload.summary || '';
+  if (summaryCol && summaryVal) {
+    sheet.getRange(targetRow, summaryCol).setValue(summaryVal);
+  }
+
+  const problemCol = findColIndex(colMap, ['문제점_분석', '문제점분석', '문제점', 'problemAnalysis']);
+  const problemVal = payload.문제점_분석 || payload.problem || '';
+  if (problemCol && problemVal) {
+    sheet.getRange(targetRow, problemCol).setValue(problemVal);
+  }
+
+  const solutionCol = findColIndex(colMap, ['보완점_및_개선방안', '보완점및개선방안', '보완점', '개선방안', 'improvementSolution']);
+  const solutionVal = payload.보완점_및_개선방안 || payload.solution || '';
+  if (solutionCol && solutionVal) {
+    sheet.getRange(targetRow, solutionCol).setValue(solutionVal);
+  }
+
   return createJsonResponse({
     status: 'success',
     message: `${dateStr} 일자의 피드백 코멘트가 시트에 성공적으로 저장되었습니다.`
@@ -1106,7 +1126,7 @@ function handleAiWorkoutRoutine(ss, payload) {
 당신은 '4주 온라인 운동 습관화 코칭 프로그램'의 전문 수석 트레이너입니다.
 아래 참여자의 전체 사전 설문 응답 프로필과 코칭 지침서를 바탕으로 [주간 맞춤 운동 루틴]을 작성해 주세요.
 
-[참여자 전체 정보 (사전 설문 및 프로필 전 항목)]
+[참여자 정보]
 ${memberFullProfile}
 
 [기본 운동 제안 지침서 (DB)]
@@ -1176,7 +1196,7 @@ function handleAiDietPlan(ss, payload) {
 당신은 '4주 온라인 식단 습관화 코칭 프로그램'의 전문 임상 영양 코치입니다.
 아래 참여자의 전체 사전 설문 응답 프로필과 코칭 지침서를 바탕으로 [맞춤 데일리 식단 가이드]를 작성해 주세요.
 
-[참여자 전체 정보 (사전 설문 및 프로필 전 항목)]
+[참여자 정보]
 ${memberFullProfile}
 
 [기본 식단 제안 지침서 (DB)]
@@ -1264,10 +1284,10 @@ function handleAiDailyFeedback(ss, payload) {
 당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
 아래 참여자의 전체 사전 프로필과 오늘 데일리 피드백 제출 데이터, 그리고 누적된 최근 체중 추이를 분석하여 피드백 결과를 도출해 주세요.
 
-[참여자 프로필 전체 (사전 설문 전 항목)]
+[참여자 정보]
 ${memberFullProfile}
 
-[오늘 피드백 전체 응답 (${curDate} 구글 폼 제출 전 항목)]
+[오늘 피드백]
 ${feedbackFullData}
 
 [누적 피드백 및 체중 변화 추이 (최근)]
@@ -1281,9 +1301,9 @@ ${weightHistorySummary}
 반드시 아래 JSON 형식으로만 응답해 주세요. 다른 설명이나 마크다운 없이 순수 JSON만 출력하십시오:
 {
   "피드백_요약": "오늘 수행한 운동과 식단에 대한 전반적인 칭찬과 요약 (피드백 지침서 반영)",
-  "문제점_분석": "오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석 (없을 경우 긍정적 유지 피드백)",
+  "문제점_분석": "오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석 (없을 경우 '특이사항 없음')",
   "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
-  "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴이나 제안 (불필요시 빈 문자열)",
+  "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
   "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)",
   "운동_실행률_점수": 8,
   "식단_실행률_점수": 7

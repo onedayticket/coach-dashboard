@@ -533,6 +533,11 @@ function simulateMockAction(payload) {
     const fb = AppState.feedbacks.find(f => (f['이름'] === payload.memberKey || f.name === payload.memberKey) && String(f['날짜'] || f.date).includes(payload.date));
     if (fb) {
       fb['피드백 코멘트'] = payload.comment;
+      if (payload.exerciseScore) fb['운동_실행률_점수'] = payload.exerciseScore;
+      if (payload.dietScore) fb['식단_실행률_점수'] = payload.dietScore;
+      if (payload.피드백_요약) fb['피드백_요약'] = payload.피드백_요약;
+      if (payload.문제점_분석) fb['문제점_분석'] = payload.문제점_분석;
+      if (payload.보완점_및_개선방안) fb['보완점_및_개선방안'] = payload.보완점_및_개선방안;
     }
     return { status: 'success', message: '피드백 코멘트가 저장되었습니다.' };
   }
@@ -600,7 +605,7 @@ function simulateMockAction(payload) {
         "피드백_요약": `오늘도 바쁜 일상 속에서 운동(${getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore') || 8}점)과 식단(${getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore') || 8}점)을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다.`,
         "문제점_분석": isWeightStall
           ? `최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어 순환 대사가 다소 저하된 상태입니다.`
-          : `특이 문제점 없이 계획대로 순조롭게 실천 중입니다.`,
+          : `특이사항 없음`,
         "보완점_및_개선방안": isWeightStall
           ? `유산소 운동 비중을 15분 늘리고 저녁 식사의 염분 섭취를 최소화해 보세요. 한 끼의 정체는 4주의 실패가 아니므로 충분한 수분 섭취와 함께 회복탄력성을 유지해 봅시다!`
           : `현재의 페이스를 안정적으로 유지하면서, 피로도가 느껴질 때는 30분 일찍 취침하여 근육 회복을 도와주세요.`,
@@ -611,8 +616,7 @@ function simulateMockAction(payload) {
           ? `저녁 식단에서 나트륨 섭취를 최소화하고, 칼륨이 풍부한 오이나 토마토 1개를 추가하여 체내 수분 정체 완화`
           : ``,
         "운동_실행률_점수": parseFloat(getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore')) || 8,
-        "식단_실행률_점수": parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) || 7,
-        feedbackComment: `오늘도 바쁜 일상 속에서 운동과 식단을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다. 내일도 한 걸음씩 나아가 봅시다!`
+        "식단_실행률_점수": parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) || 7
       }
     };
   }
@@ -1256,7 +1260,7 @@ function initGuidelineRoutineActions() {
 당신은 '4주 온라인 운동 습관화 코칭 프로그램'의 전문 수석 트레이너입니다.
 아래 참여자의 사전 프로필(전체 설문 응답 내역)과 지침서를 바탕으로 [주간 맞춤 운동 루틴]을 작성해 주세요.
 
-[참여자 정보 (사전 설문 전 항목)]
+[참여자 정보]
 ${memberFullProfile}
 
 [기본 운동 제안 지침서 (DB)]
@@ -1329,7 +1333,7 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
 당신은 '4주 온라인 식단 습관화 코칭 프로그램'의 전문 임상 영양 코치입니다.
 아래 참여자의 사전 프로필(전체 설문 응답 내역)과 지침서를 바탕으로 [맞춤 데일리 식단 가이드]를 작성해 주세요.
 
-[참여자 정보 (사전 설문 전 항목)]
+[참여자 정보]
 ${memberFullProfile}
 
 [기본 식단 제안 지침서 (DB)]
@@ -1672,10 +1676,10 @@ async function openDailyFeedbackModal(targetDate) {
 당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
 아래 참여자의 전체 사전 프로필과 오늘 데일리 피드백 제출 데이터, 그리고 누적된 최근 체중 추이를 분석하여 피드백 결과를 도출해 주세요.
 
-[참여자 정보 (사전 설문 전 항목)]
+[참여자 정보]
 ${memberFullProfile}
 
-[오늘 피드백 (${targetDate} 구글 폼 제출 전 항목)]
+[오늘 피드백]
 ${feedbackFullData}
 
 [누적 피드백 및 체중 변화 추이 (최근)]
@@ -1689,9 +1693,9 @@ ${weightHistorySummary}
 반드시 아래 JSON 형식으로만 응답해 주세요. 다른 설명이나 마크다운 없이 순수 JSON만 출력하십시오:
 {
   "피드백_요약": "오늘 수행한 운동과 식단에 대한 전반적인 칭찬과 요약 (피드백 지침서 반영)",
-  "문제점_분석": "오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석 (없을 경우 긍정적 유지 피드백)",
+  "문제점_분석": "오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석 (없을 경우 '특이사항 없음')",
   "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
-  "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴이나 제안 (불필요시 빈 문자열)",
+  "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
   "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)",
   "운동_실행률_점수": 8,
   "식단_실행률_점수": 7
@@ -1731,26 +1735,30 @@ ${weightHistorySummary}
     };
 
     const summary = aiData.피드백_요약 || aiData.feedbackComment || '';
-    const problem = aiData.문제점_분석 || aiData.modificationReason || '';
+    const problem = aiData.문제점_분석 || '';
     const solution = aiData.보완점_및_개선방안 || '';
-    const exProposal = aiData.운동_수정_제안 || aiData.aiExerciseProposal || '';
-    const dietProposal = aiData.식단_수정_제안 || aiData.aiDietProposal || '';
+    const exProposal = aiData.운동_수정_제안 || '';
+    const dietProposal = aiData.식단_수정_제안 || '';
     const exScoreVal = aiData.운동_실행률_점수;
     const dietScoreVal = aiData.식단_실행률_점수;
 
-    // 1. 회원 전달용 피드백 코멘트 자동 세팅 (지침서 기반 종합 문장)
+    // 1. 회원 전달용 피드백 코멘트 자동 세팅 (피드백 요약, 문제점 분석, 보완점 및 개선방안)
     if (!existingComment) {
       let fullComment = summary;
-      if (problem) fullComment += `\n\n[문제점 분석]\n${problem}`;
-      if (solution) fullComment += `\n\n[보완점 및 실천 개선방안]\n${solution}`;
+      if (problem && problem !== '특이사항 없음') {
+        fullComment += `\n\n[문제점 분석]\n${problem}`;
+      }
+      if (solution) {
+        fullComment += `\n\n[보완점 및 개선방안]\n${solution}`;
+      }
       setInputValue('dfModalFeedbackComment', fullComment.trim());
     }
 
     // 2. 상단 점수 배지에 AI 평가 점수 보완 표시 (기존 점수가 비어있을 경우)
-    if (!currentEx && exScoreVal) {
+    if ((!currentEx || currentEx === '-') && exScoreVal) {
       setElementText('dfModalExScore', `${exScoreVal} (AI평가)`);
     }
-    if (!currentDiet && dietScoreVal) {
+    if ((!currentDiet || currentDiet === '-') && dietScoreVal) {
       setElementText('dfModalDietScore', `${dietScoreVal} (AI평가)`);
     }
 
@@ -1761,20 +1769,21 @@ ${weightHistorySummary}
     const badgeEl = document.getElementById('dfModalNeedModifyBadge');
 
     if (reasonEl) {
-      if (problem || solution) {
+      if ((problem && problem !== '특이사항 없음') || solution) {
         reasonEl.innerHTML = `
-          ${problem ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problem)}</div>` : ''}
-          ${solution ? `<div><strong class="text-success-emphasis">[보완 및 개선방안]</strong> ${escapeHtml(solution)}</div>` : ''}
+          ${problem && problem !== '특이사항 없음' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problem)}</div>` : ''}
+          ${solution ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(solution)}</div>` : ''}
         `;
       } else {
-        reasonEl.textContent = '특이 문제점 없음 (현재 루틴 안정적 유지 권장)';
+        reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
       }
     }
 
+    // 4. 운동/식단 수정 제안은 별도 박스에 표시 (자동 저장되지 않음)
     if (exProposalEl) exProposalEl.textContent = exProposal || '제안 내용 없음';
     if (dietProposalEl) dietProposalEl.textContent = dietProposal || '제안 내용 없음';
 
-    const hasProposal = Boolean((exProposal && exProposal.trim()) || (dietProposal && dietProposal.trim()) || aiData.needModification);
+    const hasProposal = Boolean((exProposal && exProposal.trim()) || (dietProposal && dietProposal.trim()));
     if (badgeEl) {
       if (hasProposal) {
         badgeEl.className = 'badge bg-warning text-dark fw-bold';
@@ -1805,29 +1814,43 @@ function initDailyFeedbackModalActions() {
       const memberKey = getMemberKey(AppState.selectedMember);
       const comment = getInputValue('dfModalFeedbackComment');
       const aiData = AppState.currentFeedbackContext.aiData || null;
-      const exScoreToSave = (aiData && aiData.운동_실행률_점수) ? aiData.운동_실행률_점수 : null;
-      const dietScoreToSave = (aiData && aiData.식단_실행률_점수) ? aiData.식단_실행률_점수 : null;
+
+      // [요구사항 3-2] 점수 및 요약/분석/개선방안 추출 (운동/식단 수정제안은 Feedbacks 저장에서 완전 제외)
+      const exScoreToSave = (aiData && aiData.운동_실행률_점수 !== undefined) ? aiData.운동_실행률_점수 : null;
+      const dietScoreToSave = (aiData && aiData.식단_실행률_점수 !== undefined) ? aiData.식단_실행률_점수 : null;
+      const summaryToSave = (aiData && aiData.피드백_요약) ? aiData.피드백_요약 : '';
+      const problemToSave = (aiData && aiData.문제점_분석) ? aiData.문제점_분석 : '';
+      const solutionToSave = (aiData && aiData.보완점_및_개선방안) ? aiData.보완점_및_개선방안 : '';
 
       showToast('피드백 코멘트를 구글 시트(Feedbacks)에 저장 중...', 'info');
 
+      // 로컬 Feedbacks 배열 즉시 동기화
       const targetFb = AppState.feedbacks.find(f => (f['이름'] || f.name) === getMemberName(AppState.selectedMember) && String(f['날짜'] || f.date).includes(dateStr));
       if (targetFb) {
         targetFb['피드백 코멘트'] = comment;
-        if (exScoreToSave && !targetFb['운동_실행률_점수'] && !targetFb['운동 점수']) {
+        if (exScoreToSave !== null && (!targetFb['운동_실행률_점수'] || targetFb['운동_실행률_점수'] === '-')) {
           targetFb['운동_실행률_점수'] = exScoreToSave;
         }
-        if (dietScoreToSave && !targetFb['식단_실행률_점수'] && !targetFb['식단 점수']) {
+        if (dietScoreToSave !== null && (!targetFb['식단_실행률_점수'] || targetFb['식단_실행률_점수'] === '-')) {
           targetFb['식단_실행률_점수'] = dietScoreToSave;
         }
+        if (summaryToSave) targetFb['피드백_요약'] = summaryToSave;
+        if (problemToSave) targetFb['문제점_분석'] = problemToSave;
+        if (solutionToSave) targetFb['보완점_및_개선방안'] = solutionToSave;
       }
 
+      // [요구사항 3-2] 코멘트 내용, 점수, 피드백_요약, 문제점_분석, 보완점_및_개선방안만 전달
+      // (운동/식단 수정 제안은 절대 포함하지 않음)
       const res = await postToGasBackend({
         action: 'updateFeedbackComment',
         memberKey: memberKey,
         date: dateStr,
         comment: comment,
         exerciseScore: exScoreToSave,
-        dietScore: dietScoreToSave
+        dietScore: dietScoreToSave,
+        피드백_요약: summaryToSave,
+        문제점_분석: problemToSave,
+        보완점_및_개선방안: solutionToSave
       });
 
       if (res && res.status === 'success') {
