@@ -1593,8 +1593,9 @@ function renderThreeIndependentCharts(feedbacks) {
           borderWidth: 2.5,
           tension: 0.25,
           fill: true,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          clip: false,
+          pointRadius: 4.5,
+          pointHoverRadius: 7,
           pointBackgroundColor: '#4f46e5'
         }]
       },
@@ -1602,7 +1603,7 @@ function renderThreeIndependentCharts(feedbacks) {
     });
   }
 
-  // 차트 2: 운동 실행률 점수 (점) - 5점 척도 적용
+  // 차트 2: 운동 점수 (점) - 5점 만점 (5점 포인트 잘림 방지: max 5.5, 상단 여백 확보)
   const ctxEx = document.getElementById('chartExercise');
   if (ctxEx) {
     AppState.charts.exercise = new Chart(ctxEx, {
@@ -1610,23 +1611,24 @@ function renderThreeIndependentCharts(feedbacks) {
       data: {
         labels: labels,
         datasets: [{
-          label: '운동 실행률 점수',
+          label: '운동 점수',
           data: exScoreData,
           borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.12)',
           borderWidth: 2.5,
           tension: 0.2,
           fill: true,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          clip: false,
+          pointRadius: 4.5,
+          pointHoverRadius: 7,
           pointBackgroundColor: '#10b981'
         }]
       },
-      options: createSingleChartOptions('점', 0, 5, 1)
+      options: createSingleChartOptions('점', 0, 5.5, 1)
     });
   }
 
-  // 차트 3: 식단 실행률 점수 (점) - 5점 척도 적용
+  // 차트 3: 식단 점수 (점) - 5점 만점 (5점 포인트 잘림 방지: max 5.5, 상단 여백 확보)
   const ctxDiet = document.getElementById('chartDiet');
   if (ctxDiet) {
     AppState.charts.diet = new Chart(ctxDiet, {
@@ -1634,19 +1636,20 @@ function renderThreeIndependentCharts(feedbacks) {
       data: {
         labels: labels,
         datasets: [{
-          label: '식단 실행률 점수',
+          label: '식단 점수',
           data: dietScoreData,
           borderColor: '#f59e0b',
           backgroundColor: 'rgba(245, 158, 11, 0.12)',
           borderWidth: 2.5,
           tension: 0.2,
           fill: true,
-          pointRadius: 4,
-          pointHoverRadius: 6,
+          clip: false,
+          pointRadius: 4.5,
+          pointHoverRadius: 7,
           pointBackgroundColor: '#f59e0b'
         }]
       },
-      options: createSingleChartOptions('점', 0, 5, 1)
+      options: createSingleChartOptions('점', 0, 5.5, 1)
     });
   }
 }
@@ -1655,6 +1658,14 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
   return {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        top: 14,
+        right: 10,
+        bottom: 6,
+        left: 4
+      }
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -1674,7 +1685,11 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
         ticks: {
           stepSize: stepSize || undefined,
           font: { size: 10 },
-          callback: (val) => `${val}${unit}`
+          callback: (val) => {
+            // 5점 척도에서 여백용으로 설정된 5.5 등 초과 눈금은 텍스트 미표시
+            if (val > 5 && maxVal <= 6) return '';
+            return `${val}${unit}`;
+          }
         },
         grid: { color: 'rgba(0, 0, 0, 0.05)' }
       }
