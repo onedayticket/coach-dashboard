@@ -533,21 +533,37 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     try {
-      const res = await fetch(url, {
+      const bodyObj = {
+        contents: [{ parts: [{ text: prompt }] }],
+        systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
+        generationConfig: {
+          temperature: 0.7,
+          topK: 40,
+          topP: 0.95,
+          maxOutputTokens: 4096,
+          thinkingConfig: {
+            thinkingBudget: 512
+          }
+        }
+      };
+
+      let res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined,
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
-          generationConfig: {
-            temperature: 0.7,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048
-          }
-        })
+        body: JSON.stringify(bodyObj)
       });
+
+      // 특정 모델에서 thinkingConfig 미지원으로 HTTP 400 발생 시, thinkingConfig 제거 후 1회 즉시 재시도
+      if (!res.ok && res.status === 400 && bodyObj.generationConfig.thinkingConfig) {
+        delete bodyObj.generationConfig.thinkingConfig;
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined,
+          body: JSON.stringify(bodyObj)
+        });
+      }
 
       if (res.ok) {
         const json = await res.json();

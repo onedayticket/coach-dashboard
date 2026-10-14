@@ -1118,7 +1118,10 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 2048
+        maxOutputTokens: 4096,
+        thinkingConfig: {
+          thinkingBudget: 512
+        }
       }
     };
     if (systemInstruction) {
@@ -1126,16 +1129,30 @@ function callGemini(prompt, systemInstruction, payload) {
     }
 
     try {
-      const response = UrlFetchApp.fetch(url, {
+      let response = UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
         payload: JSON.stringify(bodyObj),
         muteHttpExceptions: true
       });
 
-      const code = response.getResponseCode();
+      let code = response.getResponseCode();
+      let responseText = response.getContentText();
+
+      // 특정 모델에서 thinkingConfig 미지원으로 HTTP 400 발생 시, thinkingConfig 제거 후 1회 즉시 재시도
+      if (code === 400 && bodyObj.generationConfig.thinkingConfig) {
+        delete bodyObj.generationConfig.thinkingConfig;
+        response = UrlFetchApp.fetch(url, {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify(bodyObj),
+          muteHttpExceptions: true
+        });
+        code = response.getResponseCode();
+        responseText = response.getContentText();
+      }
+
       debugInfo.httpStatus = code;
-      const responseText = response.getContentText();
 
       if (code === 200) {
         const json = JSON.parse(responseText);
