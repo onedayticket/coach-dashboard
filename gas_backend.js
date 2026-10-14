@@ -1078,7 +1078,7 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 4096
+        maxOutputTokens: 2048
       }
     };
     if (systemInstruction) {
@@ -1155,10 +1155,16 @@ function formatObjectAsFullProfile(obj, excludeKeys) {
   if (!obj || typeof obj !== 'object') return '등록된 정보 없음';
   const defaultExcludes = ['_rowNumber', '_row', 'id', 'status', 'debug'];
   const excludes = excludeKeys ? defaultExcludes.concat(excludeKeys) : defaultExcludes;
+  const ignoredKeywords = [
+    '타임스탬프', 'timestamp', '마케팅', '동의', '연락처', '인스타', '아이디', 'phone', '전화번호'
+  ];
 
   const lines = [];
   for (const key of Object.keys(obj)) {
     if (excludes.includes(key) || key.startsWith('_')) continue;
+    const lowerKey = String(key).toLowerCase().replace(/\s+/g, '');
+    if (ignoredKeywords.some(kw => lowerKey.includes(kw.toLowerCase()))) continue;
+
     let val = obj[key];
     if (val === null || val === undefined || String(val).trim() === '') {
       val = '(미작성/없음)';
@@ -1381,7 +1387,7 @@ ${weightHistorySummary}
 }
 `;
 
-  const aiResult = callGemini(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. 반드시 유효한 JSON 형식으로만 답하세요.', payload);
+  const aiResult = callGemini(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.', payload);
 
   let parsed = null;
   if (aiResult.text) {
