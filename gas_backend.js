@@ -322,6 +322,24 @@ function findColIndex(colMap, candidateNames) {
 }
 
 /**
+ * 지정된 열 별칭 중 존재하는 열 번호를 찾고, 없다면 시트의 마지막 열 + 1에 standardHeaderName으로 새 열을 생성하여 반환
+ * [방어 로직] 구글 폼 원본 응답 시트에 AI 분석 필드(점수, 요약, 분석, 개선방안 등)가 없더라도 시트에 안전하게 자동 기록
+ */
+function getOrAddColumn(sheet, colMap, standardHeaderName, candidateNames) {
+  if (!sheet) return null;
+  let col = findColIndex(colMap, candidateNames || [standardHeaderName]);
+  if (!col) {
+    col = sheet.getLastColumn() + 1;
+    sheet.getRange(1, col).setValue(standardHeaderName);
+    colMap[standardHeaderName] = col;
+    const clean = standardHeaderName.replace(/\s+/g, '').toLowerCase();
+    colMap[clean] = col;
+  }
+  return col;
+}
+
+
+/**
  * 시트 데이터를 객체 배열로 반환
  * [핵심 보강] 원본 헤더 키(headers[j])와 함께 모든 공백이 제거된 정규화 키(headers[j].replace(/\s+/g, ''))를
  * 동시에 행 객체에 주입하여, 프론트엔드 및 GAS 내부에서 띄어쓰기 여부와 무관하게 접근 보장!
@@ -874,47 +892,69 @@ function handleUpdateFeedbackComment(ss, payload) {
     });
   }
 
-  // 1. 피드백 코멘트 저장
-  sheet.getRange(targetRow, commentCol).setValue(comment);
-
-  // 2. 운동_실행률_점수 및 식단_실행률_점수 열이 전달되었을 경우 함께 저장
-  const exScoreCol = findColIndex(colMap, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수']);
-  if (exScoreCol && payload.exerciseScore !== undefined && payload.exerciseScore !== null && payload.exerciseScore !== '') {
-    sheet.getRange(targetRow, exScoreCol).setValue(payload.exerciseScore);
+  // 1. [방어 로직] 피드백 코멘트 저장 (열이 없으면 시트 마지막에 자동 추가)
+  if (comment) {
+    const commentCol = getOrAddColumn(sheet, colMap, '피드백 코멘트', [
+      '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용',
+      '코치 피드백', '코치피드백', '코칭 코멘트', '코칭코멘트',
+      '코치 코멘트', '코치코멘트', '코칭 내용', '코칭내용',
+      '코치답변', '코치 답변', '답변', 'feedbackComment', 'coachComment'
+    ]);
+    sheet.getRange(targetRow, commentCol).setValue(comment);
   }
 
-  const dietScoreCol = findColIndex(colMap, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수']);
-  if (dietScoreCol && payload.dietScore !== undefined && payload.dietScore !== null && payload.dietScore !== '') {
-    sheet.getRange(targetRow, dietScoreCol).setValue(payload.dietScore);
+  // 2. [방어 로직] 운동_실행률_점수 저장 (열이 없으면 시트 마지막에 자동 추가)
+  const exScoreVal = payload.운동_실행률_점수 !== undefined ? payload.운동_실행률_점수 : payload.exerciseScore;
+  if (exScoreVal !== undefined && exScoreVal !== null && exScoreVal !== '') {
+    const exScoreCol = getOrAddColumn(sheet, colMap, '운동_실행률_점수', [
+      '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
+    ]);
+    sheet.getRange(targetRow, exScoreCol).setValue(exScoreVal);
   }
 
-  // 3. [요구사항 3-2] 피드백_요약, 문제점_분석, 보완점_및_개선방안 열이 시트에 존재할 경우 함께 저장
-  // (주의: 운동/식단 수정 제안은 Feedbacks 시트에 자동 저장되지 않으며 오직 코치의 복사 버튼을 통해 Members 시트로만 분리 저장됨)
-  const summaryCol = findColIndex(colMap, ['피드백_요약', '피드백요약', '요약', 'feedbackSummary']);
-  const summaryVal = payload.피드백_요약 || payload.summary || '';
-  if (summaryCol && summaryVal) {
+  // 3. [방어 로직] 식단_실행률_점수 저장 (열이 없으면 시트 마지막에 자동 추가)
+  const dietScoreVal = payload.식단_실행률_점수 !== undefined ? payload.식단_실행률_점수 : payload.dietScore;
+  if (dietScoreVal !== undefined && dietScoreVal !== null && dietScoreVal !== '') {
+    const dietScoreCol = getOrAddColumn(sheet, colMap, '식단_실행률_점수', [
+      '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
+    ]);
+    sheet.getRange(targetRow, dietScoreCol).setValue(dietScoreVal);
+  }
+
+  // 4. [방어 로직] 피드백_요약 저장 (열이 없으면 시트 마지막에 자동 추가)
+  const summaryVal = payload.피드백_요약 !== undefined ? payload.피드백_요약 : (payload.feedbackSummary || payload.summary || '');
+  if (summaryVal) {
+    const summaryCol = getOrAddColumn(sheet, colMap, '피드백_요약', [
+      '피드백_요약', '피드백 요약', '피드백요약', '요약', 'feedbackSummary', 'summary'
+    ]);
     sheet.getRange(targetRow, summaryCol).setValue(summaryVal);
   }
 
-  const problemCol = findColIndex(colMap, ['문제점_분석', '문제점분석', '문제점', 'problemAnalysis']);
-  const problemVal = payload.문제점_분석 || payload.problem || '';
-  if (problemCol && problemVal) {
+  // 5. [방어 로직] 문제점_분석 저장 (열이 없으면 시트 마지막에 자동 추가)
+  const problemVal = payload.문제점_분석 !== undefined ? payload.문제점_분석 : (payload.problemAnalysis || payload.problem || '');
+  if (problemVal) {
+    const problemCol = getOrAddColumn(sheet, colMap, '문제점_분석', [
+      '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problemAnalysis', 'problem'
+    ]);
     sheet.getRange(targetRow, problemCol).setValue(problemVal);
   }
 
-  const solutionCol = findColIndex(colMap, ['보완점_및_개선방안', '보완점및개선방안', '보완점', '개선방안', 'improvementSolution']);
-  const solutionVal = payload.보완점_및_개선방안 || payload.solution || '';
-  if (solutionCol && solutionVal) {
+  // 6. [방어 로직] 보완점_및_개선방안 저장 (열이 없으면 시트 마지막에 자동 추가)
+  const solutionVal = payload.보완점_및_개선방안 !== undefined ? payload.보완점_및_개선방안 : (payload.improvementSolution || payload.solution || '');
+  if (solutionVal) {
+    const solutionCol = getOrAddColumn(sheet, colMap, '보완점_및_개선방안', [
+      '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'improvementSolution', 'solution'
+    ]);
     sheet.getRange(targetRow, solutionCol).setValue(solutionVal);
   }
 
-  // 4. 피드백 상태 컬럼이 시트에 존재할 경우 '완료'로 자동 업데이트
-  const statusCol = findColIndex(colMap, [
+  // (중요: 운동_수정_제안 및 식단_수정_제안은 Feedbacks 탭에 절대 자동 저장되지 않으며 코치가 복사 버튼을 통해 Members 시트에만 반영됨)
+
+  // 7. [방어 로직] 피드백 상태 컬럼 자동 업데이트 (열이 없으면 시트 마지막에 자동 추가)
+  const statusCol = getOrAddColumn(sheet, colMap, '피드백 상태', [
     '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
   ]);
-  if (statusCol) {
-    sheet.getRange(targetRow, statusCol).setValue('완료');
-  }
+  sheet.getRange(targetRow, statusCol).setValue('완료');
 
   return createJsonResponse({
     status: 'success',
@@ -1392,8 +1432,24 @@ ${weightHistorySummary}
   let parsed = null;
   if (aiResult.text) {
     try {
-      const cleaned = aiResult.text.replace(/```json/g, '').replace(/```/g, '').trim();
-      parsed = JSON.parse(cleaned);
+      let cleaned = aiResult.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) cleaned = jsonMatch[0];
+      const rawJson = JSON.parse(cleaned);
+
+      parsed = {
+        "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
+        "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
+        "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
+        "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
+        "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
+        "운동_실행률_점수": (rawJson['운동_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['운동_실행률_점수'])))
+          ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수'])))
+          : ((!isNaN(parseFloat(curExScore)) && parseFloat(curExScore) <= 5) ? parseFloat(curExScore) : 4),
+        "식단_실행률_점수": (rawJson['식단_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['식단_실행률_점수'])))
+          ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수'])))
+          : ((!isNaN(parseFloat(curDietScore)) && parseFloat(curDietScore) <= 5) ? parseFloat(curDietScore) : 5)
+      };
     } catch (e) {
       Logger.log('JSON 파싱 실패: ' + e.toString());
     }
@@ -1531,7 +1587,8 @@ function setupInitialSheets() {
   if (fbSheet.getLastRow() === 0) {
     fbSheet.appendRow([
       '피드백번호', '날짜', '이름', '공복 몸무게', '운동 점수', '식단 점수',
-      '운동 내용', '식단 내용', '회원 일기/코멘트', '피드백 코멘트'
+      '운동 내용', '식단 내용', '회원 일기/코멘트', '피드백 코멘트',
+      '운동_실행률_점수', '식단_실행률_점수', '피드백_요약', '문제점_분석', '보완점_및_개선방안', '피드백 상태'
     ]);
     fbSheet.appendRow([
       'FB01', '2026-10-08', '김민수', 82.5, 8, 7,

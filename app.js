@@ -101,6 +101,11 @@ const MOCK_DB = {
       '공복 몸무게': 82.5,
       '운동 점수': 8,
       '식단 점수': 7,
+      '운동_실행률_점수': 4.5,
+      '식단_실행률_점수': 4.0,
+      '피드백_요약': '첫날 멋진 출발입니다! 밥 양 조절과 수분 2L 달성 훌륭합니다.',
+      '문제점_분석': '특이사항 없음',
+      '보완점_및_개선방안': '현재의 페이스를 안정적으로 유지해 주세요.',
       '운동 내용': '맨몸 스쿼트 4세트 + 런지 3세트 + 코어 스트레칭 15분',
       '식단 내용': '아침 그릭요거트, 점심 소불고기 백반(밥 반공기), 저녁 닭가슴살 샐러드',
       '회원 일기/코멘트': '첫날이라 긴장 반 설렘 반으로 시작했습니다. 물 2L 마시기 성공!',
@@ -113,6 +118,11 @@ const MOCK_DB = {
       '공복 몸무게': 82.2,
       '운동 점수': 9,
       '식단 점수': 8,
+      '운동_실행률_점수': 5.0,
+      '식단_실행률_점수': 4.5,
+      '피드백_요약': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!',
+      '문제점_분석': '특이사항 없음',
+      '보완점_및_개선방안': '충분한 수분 섭취와 함께 스트레칭을 병행해 주세요.',
       '운동 내용': '인터벌 조깅 30분 (페이스 6:15)',
       '식단 내용': '아침 프로틴 쉐이크, 점심 서브웨이 로티세리(위트빵), 저녁 연어구이 샐러드',
       '회원 일기/코멘트': '러닝 후 땀 흘리니 상쾌하네요. 야식 유혹 참아냈습니다.',
@@ -163,6 +173,11 @@ const MOCK_DB = {
       '공복 몸무게': 58.2,
       '운동 점수': 8,
       '식단 점수': 7,
+      '운동_실행률_점수': 4.5,
+      '식단_실행률_점수': 4.0,
+      '피드백_요약': '디저트 방어 성공 축하드립니다! 의지가 훌륭합니다.',
+      '문제점_분석': '특이사항 없음',
+      '보완점_및_개선방안': '식사 간격을 일정하게 유지하여 허기짐을 방지해 보세요.',
       '운동 내용': '필라테스 코어 35분',
       '식단 내용': '아침 사과, 점심 일반식(구내식당), 저녁 샐러드',
       '회원 일기/코멘트': '디저트 카페 가자는 동료들 유혹 뿌리치고 아메리카노 마셨습니다.',
@@ -583,8 +598,18 @@ function simulateMockAction(payload) {
       fb['피드백 상태'] = '완료';
       fb['피드백상태'] = '완료';
       fb['feedbackComment'] = payload.comment;
-      if (payload.exerciseScore) fb['운동_실행률_점수'] = payload.exerciseScore;
-      if (payload.dietScore) fb['식단_실행률_점수'] = payload.dietScore;
+      const exScore = payload.운동_실행률_점수 !== undefined ? payload.운동_실행률_점수 : payload.exerciseScore;
+      const dietScore = payload.식단_실행률_점수 !== undefined ? payload.식단_실행률_점수 : payload.dietScore;
+      if (exScore !== undefined && exScore !== null && exScore !== '') {
+        fb['운동_실행률_점수'] = exScore;
+        fb['운동실행률점수'] = exScore;
+        fb['운동 점수'] = exScore;
+      }
+      if (dietScore !== undefined && dietScore !== null && dietScore !== '') {
+        fb['식단_실행률_점수'] = dietScore;
+        fb['식단실행률점수'] = dietScore;
+        fb['식단 점수'] = dietScore;
+      }
       if (payload.피드백_요약) {
         fb['피드백_요약'] = payload.피드백_요약;
         fb['피드백요약'] = payload.피드백_요약;
@@ -1748,29 +1773,45 @@ function renderFeedbackTable(feedbacks) {
     const date = getField(fb, '날짜', 'date', '일자') || '-';
     const memberName = getMemberName(fb) || (AppState.selectedMember ? getMemberName(AppState.selectedMember) : '-');
     const weight = getField(fb, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight') || '-';
+
+    // 1. 점수 추출 (fb['운동_실행률_점수'], fb['식단_실행률_점수'] 우선)
     const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
     const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
     
-    // 피드백 코멘트
-    const coachComment = getField(fb, 
-      '피드백 코멘트', '피드백코멘트', 
-      '피드백 내용', '피드백내용', 
-      '코치 피드백', '코치피드백', 
-      '코칭 코멘트', '코칭코멘트', 
-      '코치 코멘트', '코치코멘트', 
-      '코칭 내용', '코칭내용', 
-      '코치답변', '코치 답변', '답변',
-      'feedbackComment', 'coachComment'
-    ) || '';
+    // 2. 텍스트 추출 (fb['피드백_요약'], fb['문제점_분석'], fb['보완점_및_개선방안'] 우선 탐색)
+    let summary = getField(fb, '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary') || '';
+    let problem = getField(fb, '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problem', 'problemAnalysis') || '';
+    let solution = getField(fb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution') || '';
 
-    // 피드백 요약
-    const summary = getField(fb, '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary') || coachComment || '-';
-    
-    // 문제점 분석
-    const problem = getField(fb, '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problem', 'problemAnalysis') || '-';
-    
-    // 보완점 및 개선방안
-    const solution = getField(fb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution') || '-';
+    // 레거시 코치 피드백 코멘트가 있는 경우 분리 파싱 보완
+    if (!summary) {
+      const legacyComment = getField(fb, 
+        '피드백 코멘트', '피드백코멘트', 
+        '피드백 내용', '피드백내용', 
+        '코치 피드백', '코치피드백', 
+        'feedbackComment', 'coachComment'
+      ) || '';
+      if (legacyComment) {
+        if (legacyComment.includes('[문제점 분석]') || legacyComment.includes('[보완점 및 개선방안]')) {
+          const parts = legacyComment.split(/\[문제점 분석\]|\[보완점 및 개선방안\]/);
+          summary = (parts[0] || '').trim();
+          if (!problem && legacyComment.includes('[문제점 분석]')) {
+            const probPart = legacyComment.split('[문제점 분석]')[1].split('[보완점 및 개선방안]')[0];
+            problem = (probPart || '').trim();
+          }
+          if (!solution && legacyComment.includes('[보완점 및 개선방안]')) {
+            const solPart = legacyComment.split('[보완점 및 개선방안]')[1];
+            solution = (solPart || '').trim();
+          }
+        } else {
+          summary = legacyComment.trim();
+        }
+      }
+    }
+
+    if (!summary) summary = '미작성';
+    if (!problem) problem = '미작성';
+    if (!solution) solution = '미작성';
 
     // [핵심] 해당 셀에 내용이 있거나 코멘트/요약/보완점/문제점이 작성되어 있다면 피드백 완료로 판정
     const isCompleted = isFeedbackRecordCompleted(fb);
@@ -1792,18 +1833,18 @@ function renderFeedbackTable(feedbacks) {
           </div>
         </td>
         <td class="small" style="min-width: 150px;">
-          <div class="text-truncate ${problem !== '-' && problem !== '특이사항 없음' ? 'text-danger-emphasis' : 'text-muted'}" title="${escapeHtml(problem)}">
+          <div class="text-truncate ${problem !== '미작성' && problem !== '특이사항 없음' ? 'text-danger-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(problem)}">
             ${escapeHtml(problem)}
           </div>
         </td>
         <td class="small" style="min-width: 170px;">
-          <div class="text-truncate ${solution !== '-' ? 'text-success-emphasis' : 'text-muted'}" title="${escapeHtml(solution)}">
+          <div class="text-truncate ${solution !== '미작성' ? 'text-success-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(solution)}">
             ${escapeHtml(solution)}
           </div>
         </td>
         <td class="text-center text-nowrap">
           ${isCompleted ? `
-            <!-- [요구사항 5-2] 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
+            <!-- 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
             <button type="button" class="btn btn-sm btn-success fw-semibold px-2 py-1 shadow-sm text-white"
                     title="피드백 내용 수정하기"
                     onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
@@ -1938,8 +1979,21 @@ ${weightHistorySummary}
 
       const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.');
       if (directRes && directRes.text) {
-        const cleaned = directRes.text.replace(/```json/g, '').replace(/```/g, '').trim();
-        aiData = JSON.parse(cleaned);
+        let cleaned = directRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+        if (jsonMatch) cleaned = jsonMatch[0];
+        const rawJson = JSON.parse(cleaned);
+
+        // 7개 키 구조 100% 엄격 강제 정규화
+        aiData = {
+          "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
+          "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
+          "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
+          "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
+          "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
+          "운동_실행률_점수": Number.isFinite(parseFloat(rawJson['운동_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수']))) : 4,
+          "식단_실행률_점수": Number.isFinite(parseFloat(rawJson['식단_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수']))) : 5
+        };
       }
     } catch (e) {
       console.warn('[브라우저 직통 AI 데일리 피드백 파싱 실패, GAS 백엔드 대체]', e);
@@ -1968,34 +2022,55 @@ ${weightHistorySummary}
       aiData: aiData
     };
 
-    const summary = aiData.피드백_요약 || aiData.feedbackComment || '';
-    const problem = aiData.문제점_분석 || '';
-    const solution = aiData.보완점_및_개선방안 || '';
-    const exProposal = aiData.운동_수정_제안 || '';
-    const dietProposal = aiData.식단_수정_제안 || '';
-    const exScoreVal = aiData.운동_실행률_점수;
-    const dietScoreVal = aiData.식단_실행률_점수;
+    // 1. 점수 설정: 기존 입력된 점수가 있으면 우선 유지, 없으면 AI 평가 점수로 세팅
+    let initialExScore = (currentEx && currentEx !== '-') ? currentEx : (aiData.운동_실행률_점수 !== undefined ? aiData.운동_실행률_점수 : 4);
+    let initialDietScore = (currentDiet && currentDiet !== '-') ? currentDiet : (aiData.식단_실행률_점수 !== undefined ? aiData.식단_실행률_점수 : 5);
 
-    // 1. 회원 전달용 피드백 코멘트 자동 세팅 (피드백 요약, 문제점 분석, 보완점 및 개선방안)
-    // 기존에 작성된 내역이 없을 때만 AI 생성 결과로 채우고, 이미 작성된 내용이 있으면 보존!
-    if (!initialComment) {
-      let fullComment = summary;
-      if (problem && problem !== '특이사항 없음') {
-        fullComment += `\n\n[문제점 분석]\n${problem}`;
+    setInputValue('dfModalInputExScore', initialExScore);
+    setInputValue('dfModalInputDietScore', initialDietScore);
+    setElementText('dfModalExScore', `${initialExScore}점`);
+    setElementText('dfModalDietScore', `${initialDietScore}점`);
+
+    // 2. 3개 텍스트 영역 (피드백 요약, 문제점 분석, 보완점 및 개선방안) 모달에 각각 바인딩
+    let summaryVal = existingSummary;
+    let problemVal = existingProblem;
+    let solutionVal = existingSolution;
+
+    // 만약 피드백_요약 등의 개별 컬럼은 없으나 기존 레거시 코멘트가 있는 경우 분리 파싱
+    if (!summaryVal && existingComment) {
+      if (existingComment.includes('[문제점 분석]') || existingComment.includes('[보완점 및 개선방안]')) {
+        const parts = existingComment.split(/\[문제점 분석\]|\[보완점 및 개선방안\]/);
+        summaryVal = (parts[0] || '').trim();
+        if (!problemVal && existingComment.includes('[문제점 분석]')) {
+          problemVal = (existingComment.split('[문제점 분석]')[1].split('[보완점 및 개선방안]')[0] || '').trim();
+        }
+        if (!solutionVal && existingComment.includes('[보완점 및 개선방안]')) {
+          solutionVal = (existingComment.split('[보완점 및 개선방안]')[1] || '').trim();
+        }
+      } else {
+        summaryVal = existingComment.trim();
       }
-      if (solution) {
-        fullComment += `\n\n[보완점 및 개선방안]\n${solution}`;
-      }
-      setInputValue('dfModalFeedbackComment', fullComment.trim());
     }
 
-    // 2. 상단 점수 배지에 AI 평가 점수 보완 표시 (기존 점수가 비어있을 경우)
-    if ((!currentEx || currentEx === '-') && exScoreVal) {
-      setElementText('dfModalExScore', `${exScoreVal} (AI평가)`);
+    // 기존 저장된 내용이 없는 신규 피드백일 경우 AI가 분석한 결과로 3개 필드 각각 채우기
+    if (!summaryVal) summaryVal = aiData.피드백_요약 || '';
+    if (!problemVal) problemVal = aiData.문제점_분석 || '특이사항 없음';
+    if (!solutionVal) solutionVal = aiData.보완점_및_개선방안 || '';
+
+    // 모달 내 3개 독립 텍스트 영역에 각각 바인딩!
+    setInputValue('dfModalSummary', summaryVal);
+    setInputValue('dfModalProblem', problemVal);
+    setInputValue('dfModalSolution', solutionVal);
+
+    // 하위 호환성 유지용 전체 통합 코멘트
+    let fullComment = summaryVal;
+    if (problemVal && problemVal !== '특이사항 없음') {
+      fullComment += `\n\n[문제점 분석]\n${problemVal}`;
     }
-    if ((!currentDiet || currentDiet === '-') && dietScoreVal) {
-      setElementText('dfModalDietScore', `${dietScoreVal} (AI평가)`);
+    if (solutionVal) {
+      fullComment += `\n\n[보완점 및 개선방안]\n${solutionVal}`;
     }
+    setInputValue('dfModalFeedbackComment', fullComment.trim());
 
     // 3. AI 체중 추이 분석 및 수정 제안 근거 영역
     const reasonEl = document.getElementById('dfModalModificationReason');
@@ -2003,18 +2078,23 @@ ${weightHistorySummary}
     const dietProposalEl = document.getElementById('dfModalAiDietProposal');
     const badgeEl = document.getElementById('dfModalNeedModifyBadge');
 
+    const aiProblem = aiData.문제점_분석 || '';
+    const aiSolution = aiData.보완점_및_개선방안 || '';
+    const exProposal = aiData.운동_수정_제안 || '';
+    const dietProposal = aiData.식단_수정_제안 || '';
+
     if (reasonEl) {
-      if ((problem && problem !== '특이사항 없음') || solution) {
+      if ((aiProblem && aiProblem !== '특이사항 없음') || aiSolution) {
         reasonEl.innerHTML = `
-          ${problem && problem !== '특이사항 없음' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problem)}</div>` : ''}
-          ${solution ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(solution)}</div>` : ''}
+          ${aiProblem && aiProblem !== '특이사항 없음' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(aiProblem)}</div>` : ''}
+          ${aiSolution ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(aiSolution)}</div>` : ''}
         `;
       } else {
         reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
       }
     }
 
-    // 4. 운동/식단 수정 제안은 별도 박스에 표시 (자동 저장되지 않음)
+    // 4. (중요) 운동/식단 수정 제안은 별도 박스에만 표시 (Feedbacks 시트에 자동 저장되지 않으며 코치가 복사 버튼을 눌러야만 반영)
     if (exProposalEl) exProposalEl.textContent = exProposal || '제안 내용 없음';
     if (dietProposalEl) dietProposalEl.textContent = dietProposal || '제안 내용 없음';
 
@@ -2051,15 +2131,26 @@ function initDailyFeedbackModalActions() {
       const memberName = getMemberName(mem);
       const memberId = getMemberId(mem);
       const memberPhone = getMemberPhone(mem);
-      const comment = getInputValue('dfModalFeedbackComment');
-      const aiData = AppState.currentFeedbackContext.aiData || null;
 
-      // 점수 및 요약/분석/개선방안 추출 (수정제안은 Feedbacks 저장에서 완전 제외)
-      const exScoreToSave = (aiData && aiData.운동_실행률_점수 !== undefined) ? aiData.운동_실행률_점수 : null;
-      const dietScoreToSave = (aiData && aiData.식단_실행률_점수 !== undefined) ? aiData.식단_실행률_점수 : null;
-      const summaryToSave = (aiData && aiData.피드백_요약) ? aiData.피드백_요약 : '';
-      const problemToSave = (aiData && aiData.문제점_분석) ? aiData.문제점_분석 : '';
-      const solutionToSave = (aiData && aiData.보완점_및_개선방안) ? aiData.보완점_및_개선방안 : '';
+      // 모달 UI의 3개 분리 텍스트영역 및 2개 점수 입력값 직접 읽기
+      const summaryToSave = getInputValue('dfModalSummary').trim();
+      const problemToSave = getInputValue('dfModalProblem').trim() || '특이사항 없음';
+      const solutionToSave = getInputValue('dfModalSolution').trim();
+
+      const exScoreInput = getInputValue('dfModalInputExScore');
+      const dietScoreInput = getInputValue('dfModalInputDietScore');
+      const exScoreToSave = exScoreInput !== '' ? parseFloat(exScoreInput) : 4;
+      const dietScoreToSave = dietScoreInput !== '' ? parseFloat(dietScoreInput) : 5;
+
+      // 회원 전달용 통합 코멘트 생성
+      let combinedComment = summaryToSave;
+      if (problemToSave && problemToSave !== '특이사항 없음') {
+        combinedComment += `\n\n[문제점 분석]\n${problemToSave}`;
+      }
+      if (solutionToSave) {
+        combinedComment += `\n\n[보완점 및 개선방안]\n${solutionToSave}`;
+      }
+      combinedComment = combinedComment.trim();
 
       showToast('피드백 코멘트를 구글 시트(Feedbacks)에 저장 중...', 'info');
 
@@ -2073,36 +2164,36 @@ function initDailyFeedbackModalActions() {
       });
 
       if (targetFb) {
-        targetFb['피드백 코멘트'] = comment;
-        targetFb['피드백코멘트'] = comment;
-        targetFb['피드백 내용'] = comment;
-        targetFb['피드백내용'] = comment;
-        targetFb['코치 피드백'] = comment;
-        targetFb['코치피드백'] = comment;
-        targetFb['feedbackComment'] = comment;
+        targetFb['운동_실행률_점수'] = exScoreToSave;
+        targetFb['운동실행률점수'] = exScoreToSave;
+        targetFb['운동 점수'] = exScoreToSave;
+
+        targetFb['식단_실행률_점수'] = dietScoreToSave;
+        targetFb['식단실행률점수'] = dietScoreToSave;
+        targetFb['식단 점수'] = dietScoreToSave;
+
+        targetFb['피드백_요약'] = summaryToSave;
+        targetFb['피드백요약'] = summaryToSave;
+
+        targetFb['문제점_분석'] = problemToSave;
+        targetFb['문제점분석'] = problemToSave;
+
+        targetFb['보완점_및_개선방안'] = solutionToSave;
+        targetFb['보완점및개선방안'] = solutionToSave;
+
+        targetFb['피드백 코멘트'] = combinedComment;
+        targetFb['피드백코멘트'] = combinedComment;
+        targetFb['피드백 내용'] = combinedComment;
+        targetFb['피드백내용'] = combinedComment;
+        targetFb['feedbackComment'] = combinedComment;
         targetFb['피드백 상태'] = '완료';
         targetFb['피드백상태'] = '완료';
-        if (exScoreToSave !== null && (!targetFb['운동_실행률_점수'] || targetFb['운동_실행률_점수'] === '-')) {
-          targetFb['운동_실행률_점수'] = exScoreToSave;
-        }
-        if (dietScoreToSave !== null && (!targetFb['식단_실행률_점수'] || targetFb['식단_실행률_점수'] === '-')) {
-          targetFb['식단_실행률_점수'] = dietScoreToSave;
-        }
-        if (summaryToSave) {
-          targetFb['피드백_요약'] = summaryToSave;
-          targetFb['피드백요약'] = summaryToSave;
-        }
-        if (problemToSave) {
-          targetFb['문제점_분석'] = problemToSave;
-          targetFb['문제점분석'] = problemToSave;
-        }
-        if (solutionToSave) {
-          targetFb['보완점_및_개선방안'] = solutionToSave;
-          targetFb['보완점및개선방안'] = solutionToSave;
-        }
+        targetFb['피드백완료'] = '완료';
+        targetFb['피드백 완료'] = '완료';
       }
 
-      // [핵심] 백엔드에 이름/회원번호/연락처/날짜/코멘트/점수/요약 전송
+      // [핵심] 백엔드에 5가지 필수 데이터 (점수 2개, 텍스트 3개) 및 식별자 전송
+      // (중요: 운동_수정_제안 및 식단_수정_제안은 Feedbacks 탭에 절대 자동 저장되지 않으며 코치가 복사 버튼을 통해 Members 시트에만 반영됨)
       const res = await postToGasBackend({
         action: 'updateFeedbackComment',
         memberKey: memberKey,
@@ -2111,7 +2202,9 @@ function initDailyFeedbackModalActions() {
         memberId: memberId,
         phone: memberPhone,
         date: dateStr,
-        comment: comment,
+        comment: combinedComment,
+        운동_실행률_점수: exScoreToSave,
+        식단_실행률_점수: dietScoreToSave,
         exerciseScore: exScoreToSave,
         dietScore: dietScoreToSave,
         피드백_요약: summaryToSave,

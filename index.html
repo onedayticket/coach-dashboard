@@ -496,11 +496,11 @@
                           <th style="width: 95px;">날짜</th>
                           <th style="width: 80px;">이름</th>
                           <th style="width: 90px;">공복체중</th>
-                          <th style="width: 110px;">운동_실행률_점수</th>
-                          <th style="width: 110px;">식단_실행률_점수</th>
+                          <th style="width: 120px;">운동_실행률_점수</th>
+                          <th style="width: 120px;">식단_실행률_점수</th>
                           <th style="min-width: 180px;">피드백 요약</th>
-                          <th style="min-width: 160px;">문제점_분석</th>
-                          <th style="min-width: 180px;">보완점_및_개선방안</th>
+                          <th style="min-width: 160px;">문제점 분석</th>
+                          <th style="min-width: 180px;">보완점 및 개선방안</th>
                           <th style="width: 125px;" class="text-center">액션 버튼</th>
                         </tr>
                       </thead>
@@ -700,13 +700,54 @@
             </div>
           </div>
 
-          <!-- 1. AI가 생성한 피드백 코멘트 (코치 편집 가능) -->
-          <div class="mb-4">
-            <label for="dfModalFeedbackComment" class="form-label fw-bold text-dark d-flex align-items-center justify-content-between">
-              <span><i class="bi bi-chat-heart text-danger me-1"></i>피드백 코멘트 (회원 전달용)</span>
-              <small class="text-muted fw-normal">피드백/동기부여 지침서 기반 도출</small>
-            </label>
-            <textarea class="form-control" id="dfModalFeedbackComment" rows="5" placeholder="AI가 지침서를 바탕으로 작성한 피드백 코멘트가 로드됩니다. 코치가 직접 다듬고 수정할 수 있습니다."></textarea>
+          <!-- 1. AI 데일리 피드백 3개 핵심 영역 & 점수 (코치 편집 가능) -->
+          <div class="mb-3">
+            <div class="row g-2 mb-2">
+              <div class="col-md-6">
+                <label for="dfModalInputExScore" class="form-label fw-bold text-dark small d-flex justify-content-between align-items-center mb-1">
+                  <span><i class="bi bi-activity text-success me-1"></i>운동 실행률 점수 (0~5점)</span>
+                  <span class="badge bg-success-subtle text-success" id="dfModalExScoreBadge">0~5점</span>
+                </label>
+                <input type="number" class="form-control form-control-sm" id="dfModalInputExScore" min="0" max="5" step="0.5" placeholder="예: 4">
+              </div>
+              <div class="col-md-6">
+                <label for="dfModalInputDietScore" class="form-label fw-bold text-dark small d-flex justify-content-between align-items-center mb-1">
+                  <span><i class="bi bi-egg-fried text-warning-emphasis me-1"></i>식단 실행률 점수 (0~5점)</span>
+                  <span class="badge bg-warning-subtle text-warning-emphasis" id="dfModalDietScoreBadge">0~5점</span>
+                </label>
+                <input type="number" class="form-control form-control-sm" id="dfModalInputDietScore" min="0" max="5" step="0.5" placeholder="예: 5">
+              </div>
+            </div>
+
+            <!-- 피드백 요약 -->
+            <div class="mb-2">
+              <label for="dfModalSummary" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
+                <span><i class="bi bi-chat-heart text-primary me-1"></i>1. 피드백 요약 (칭찬 및 수행 내용 요약)</span>
+                <small class="text-muted fw-normal">피드백 지침서 반영</small>
+              </label>
+              <textarea class="form-control" id="dfModalSummary" rows="3" placeholder="오늘 수행한 운동과 식단에 대한 전반적인 칭찬과 요약이 로드됩니다."></textarea>
+            </div>
+
+            <!-- 문제점 분석 -->
+            <div class="mb-2">
+              <label for="dfModalProblem" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
+                <span><i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>2. 문제점 분석 (아쉬운 점 분석)</span>
+                <small class="text-muted fw-normal">없으면 '특이사항 없음'</small>
+              </label>
+              <textarea class="form-control" id="dfModalProblem" rows="2" placeholder="오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석"></textarea>
+            </div>
+
+            <!-- 보완점 및 개선방안 -->
+            <div class="mb-2">
+              <label for="dfModalSolution" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
+                <span><i class="bi bi-check-circle-fill text-success me-1"></i>3. 보완점 및 개선방안 (실천 솔루션)</span>
+                <small class="text-muted fw-normal">동기부여 지침서 반영</small>
+              </label>
+              <textarea class="form-control" id="dfModalSolution" rows="3" placeholder="문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지"></textarea>
+            </div>
+
+            <!-- 호환성 유지용 숨김 필드 -->
+            <textarea class="d-none" id="dfModalFeedbackComment"></textarea>
           </div>
 
           <!-- 2. AI 체중 추이 분석 및 계획 수정 제안 (근거 제시 필수) -->
