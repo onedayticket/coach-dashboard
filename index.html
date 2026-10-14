@@ -943,14 +943,24 @@
     </div>
   </div>
 
-  <!-- 전역 로딩 오버레이 -->
-  <div id="loadingOverlay" class="loading-overlay d-none">
-    <div class="spinner-border text-light mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
-    <div class="fw-bold fs-5 mb-1" id="loadingOverlayText">AI 처리 중...</div>
-    <div class="small opacity-75 mt-1" id="loadingOverlaySubText">잠시만 기다려 주세요.</div>
-    <button type="button" class="btn btn-sm btn-outline-light mt-3 px-3 py-1 shadow-sm opacity-75" onclick="hideLoadingOverlay()" style="font-size: 0.8rem;">
-      <i class="bi bi-x-circle me-1"></i>로딩 창 닫기 (오프라인 모드로 보기)
-    </button>
+  <!-- 전역 하단 로딩 알림 바 (화면 중앙 차단 해제, 하단 플로팅 표시, 지속 표시 및 요청 취소/중단 기능) -->
+  <div id="loadingOverlay" class="loading-bottom-bar d-none" role="status" aria-live="polite">
+    <div class="loading-bottom-content shadow-lg">
+      <div class="d-flex align-items-center gap-3">
+        <div class="spinner-border text-primary" style="width: 1.5rem; height: 1.5rem;" role="status">
+          <span class="visually-hidden">Loading...</span>
+        </div>
+        <div class="text-start pe-2">
+          <div class="fw-bold text-dark small mb-0" id="loadingOverlayText">AI 처리 중...</div>
+          <div class="text-muted" style="font-size: 0.78rem;" id="loadingOverlaySubText">처리 중... <strong class="text-primary">0초</strong> 경과 (응답 대기 중)</div>
+        </div>
+      </div>
+      <div class="ms-auto ps-2">
+        <button type="button" class="btn btn-outline-danger btn-sm py-1 px-3 fw-bold shadow-sm text-nowrap" id="btnCancelCurrentTask">
+          <i class="bi bi-x-octagon-fill me-1"></i>요청 취소
+        </button>
+      </div>
+    </div>
   </div>
 
   <!-- Bootstrap 5 JS Bundle -->

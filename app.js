@@ -408,13 +408,23 @@ async function postToGasBackend(payload) {
       const response = await fetch(gasUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
       });
       const json = await response.json();
       return json;
     } catch (e) {
+      if (e.name === 'AbortError' || (currentTaskAbortController && currentTaskAbortController.signal.aborted)) {
+        console.log('[GAS POST 요청 취소됨]');
+        return { status: 'cancelled', message: '요청이 사용자에 의해 취소되었습니다.' };
+      }
       console.warn('[GAS POST 통신 실패 - Mock 시뮬레이션]', e);
     }
+  }
+
+  // 사용자가 취소한 상태라면 Mock 시뮬레이션 실행하지 않고 즉시 반환
+  if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+    return { status: 'cancelled', message: '요청이 사용자에 의해 취소되었습니다.' };
   }
 
   // Mock 시뮬레이션
@@ -446,7 +456,9 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   const isProPref = AppState.modelPref === 'pro';
 
   try {
-    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`);
+    const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
+      signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
+    });
     if (listRes.ok) {
       const data = await listRes.json();
       if (data.models && data.models.length > 0) {
@@ -481,6 +493,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
       }
     }
   } catch (e) {
+    if (e.name === 'AbortError') return [];
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
 
@@ -494,6 +507,10 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   const apiKey = (AppState.geminiApiKey || '').trim();
   if (!apiKey) return { text: null, error: 'API 키 미등록' };
 
+  if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+    return { text: null, error: 'ABORTED', isAborted: true };
+  }
+
   // 구버전 캐시 청소
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
@@ -501,15 +518,25 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   const startTime = performance.now();
   // 서로 다른 인프라 클러스터 모델 목록 (1.5-flash, 1.5-pro, 2.0-flash)
   const candidateModels = await getBrowserSupportedGeminiModels(apiKey);
+
+  if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+    return { text: null, error: 'ABORTED', isAborted: true };
+  }
+
   let lastErrorDetail = '';
 
   for (const model of candidateModels) {
+    if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+      return { text: null, error: 'ABORTED', isAborted: true };
+    }
+
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     try {
       const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined,
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           systemInstruction: systemInstruction ? { parts: [{ text: systemInstruction }] } : undefined,
@@ -553,10 +580,17 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
 
         // 503(High demand) 발생 시 0.8초 백오프 후 다른 클러스터 모델로 전환
         if (res.status === 503 || res.status === 429) {
+          if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+            return { text: null, error: 'ABORTED', isAborted: true };
+          }
           await new Promise(r => setTimeout(r, 800));
         }
       }
     } catch (e) {
+      if (e.name === 'AbortError' || (currentTaskAbortController && currentTaskAbortController.signal.aborted)) {
+        console.log('[브라우저 직통 AI 호출 취소됨]');
+        return { text: null, error: 'ABORTED', isAborted: true };
+      }
       lastErrorDetail = `[네트워크 예외] ${e.message}`;
       console.warn(`[브라우저 직통 ${model} 네트워크 예외]`, e);
     }
@@ -1422,6 +1456,11 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
 3. 친절하고 전문적이며 동기부여가 되는 어조로 작성하십시오.`;
 
         const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 회원 맞춤 운동 코칭 전문가입니다.');
+        if (directRes && directRes.isAborted) {
+          hideLoadingOverlay();
+          showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
+          return;
+        }
         if (directRes && directRes.text) {
           hideLoadingOverlay();
           setInputValue('inputCurrentExerciseRoutine', directRes.text);
@@ -1432,6 +1471,11 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
           }
           return;
         } else {
+          if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+            hideLoadingOverlay();
+            showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
+            return;
+          }
           console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
           showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
         }
@@ -1445,6 +1489,10 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
         customExerciseGuideline: customGuideline
       });
       hideLoadingOverlay();
+      if (res && res.status === 'cancelled') {
+        showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
+        return;
+      }
       const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
 
       if (res && res.routine) {
@@ -1499,6 +1547,11 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
 3. 수분 섭취(1.5~2L) 및 폭식 방지 팁을 포함하십시오.`;
 
         const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 회원 맞춤 영양/식단 코칭 전문가입니다.');
+        if (directRes && directRes.isAborted) {
+          hideLoadingOverlay();
+          showToast('식단 생성이 취소되었습니다.', 'info', 3000);
+          return;
+        }
         if (directRes && directRes.text) {
           hideLoadingOverlay();
           setInputValue('inputCurrentDietPlan', directRes.text);
@@ -1509,6 +1562,11 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
           }
           return;
         } else {
+          if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+            hideLoadingOverlay();
+            showToast('식단 생성이 취소되었습니다.', 'info', 3000);
+            return;
+          }
           console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
           showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
         }
@@ -1522,6 +1580,10 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
         customDietGuideline: customGuideline
       });
       hideLoadingOverlay();
+      if (res && res.status === 'cancelled') {
+        showToast('식단 생성이 취소되었습니다.', 'info', 3000);
+        return;
+      }
       const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
 
       if (res && res.dietPlan) {
@@ -1943,7 +2005,7 @@ async function openDailyFeedbackModal(targetDate) {
   }
   setInputValue('dfModalFeedbackComment', initialComment);
 
-  showLoadingOverlay('AI가 최근 3일 이상의 체중 추이와 전체 설문/피드백 데이터를 종합 분석 중입니다...', 60000);
+  showLoadingOverlay('AI가 최근 3일 이상의 체중 추이와 전체 설문/피드백 데이터를 종합 분석 중입니다...');
 
   let aiData = null;
 
@@ -1993,6 +2055,11 @@ ${weightHistorySummary}
 `;
 
       const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.');
+      if (directRes && directRes.isAborted) {
+        hideLoadingOverlay();
+        showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+        return;
+      }
       if (directRes && directRes.text) {
         let cleaned = directRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
@@ -2011,24 +2078,44 @@ ${weightHistorySummary}
         };
       }
     } catch (e) {
+      if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+        hideLoadingOverlay();
+        showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+        return;
+      }
       console.warn('[브라우저 직통 AI 데일리 피드백 파싱 실패, GAS 백엔드 대체]', e);
     }
   }
 
   // 브라우저 직통 미사용 또는 파싱 실패 시 GAS 백엔드 호출
   if (!aiData) {
+    if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+      hideLoadingOverlay();
+      showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+      return;
+    }
     const res = await postToGasBackend({
       action: 'generateDailyFeedback',
       member: mem,
       feedback: targetFb,
       recentFeedbacks: recentFeedbacks
     });
+    if (res && res.status === 'cancelled') {
+      hideLoadingOverlay();
+      showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+      return;
+    }
     if (res && res.status === 'success' && res.data) {
       aiData = res.data;
     }
   }
 
   hideLoadingOverlay();
+
+  if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+    showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+    return;
+  }
 
   if (aiData) {
     AppState.currentFeedbackContext = {
@@ -2454,6 +2541,11 @@ function initComprehensiveFeedbackActions() {
       });
       hideLoadingOverlay();
 
+      if (res && res.status === 'cancelled') {
+        showToast('종합 피드백 생성이 취소되었습니다.', 'info', 3000);
+        return;
+      }
+
       if (res && res.comprehensiveFeedback) {
         setInputValue('compResultText', res.comprehensiveFeedback);
         if (res.isAiGenerated) {
@@ -2597,6 +2689,14 @@ function initEventListeners() {
   initDailyFeedbackModalActions();
   initComprehensiveFeedbackActions();
   initCustomTagModalActions();
+
+  // 하단 플로팅 로딩 바의 [요청 취소] 버튼 이벤트 바인딩
+  const btnCancelTask = document.getElementById('btnCancelCurrentTask');
+  if (btnCancelTask) {
+    btnCancelTask.addEventListener('click', () => {
+      cancelCurrentTask();
+    });
+  }
 }
 
 /**
@@ -2701,8 +2801,15 @@ function setInputValue(id, val) {
 let loadingOverlayTimeoutTimer = null;
 let loadingOverlayIntervalTimer = null;
 let loadingOverlayElapsedSec = 0;
+let currentTaskAbortController = null;
 
-function showLoadingOverlay(text, timeoutMs = 120000) {
+function showLoadingOverlay(text, timeoutMs = null) {
+  // 이전 컨트롤러가 있다면 취소 후 새로 생성
+  if (currentTaskAbortController) {
+    try { currentTaskAbortController.abort(); } catch (e) {}
+  }
+  currentTaskAbortController = new AbortController();
+
   const overlay = document.getElementById('loadingOverlay');
   const textEl = document.getElementById('loadingOverlayText');
   const subTextEl = document.getElementById('loadingOverlaySubText');
@@ -2711,27 +2818,38 @@ function showLoadingOverlay(text, timeoutMs = 120000) {
   if (overlay) overlay.classList.remove('d-none');
 
   // 이전 타이머 초기화
-  if (loadingOverlayTimeoutTimer) clearTimeout(loadingOverlayTimeoutTimer);
-  if (loadingOverlayIntervalTimer) clearInterval(loadingOverlayIntervalTimer);
+  if (loadingOverlayTimeoutTimer) {
+    clearTimeout(loadingOverlayTimeoutTimer);
+    loadingOverlayTimeoutTimer = null;
+  }
+  if (loadingOverlayIntervalTimer) {
+    clearInterval(loadingOverlayIntervalTimer);
+    loadingOverlayIntervalTimer = null;
+  }
 
   loadingOverlayElapsedSec = 0;
   if (subTextEl) {
-    subTextEl.innerHTML = `처리 중... <strong class="text-warning">0초</strong> 경과 (AI 생성은 상황에 따라 수초~최대 1분 정도 소요될 수 있습니다)`;
+    subTextEl.innerHTML = `처리 중... <strong class="text-primary">0초</strong> 경과 (응답 대기 중)`;
   }
 
-  // 매초 경과 시간 실시간 카운팅
+  // 매초 경과 시간 실시간 카운팅 (1분이 지나도 화면 하단에 계속 누적 표시)
   loadingOverlayIntervalTimer = setInterval(() => {
     loadingOverlayElapsedSec++;
     if (subTextEl) {
-      subTextEl.innerHTML = `처리 중... <strong class="text-warning">${loadingOverlayElapsedSec}초</strong> 경과 (AI 생성은 상황에 따라 수초~최대 1분 정도 소요될 수 있습니다)`;
+      const min = Math.floor(loadingOverlayElapsedSec / 60);
+      const sec = loadingOverlayElapsedSec % 60;
+      const timeStr = min > 0 ? `${min}분 ${sec}초` : `${sec}초`;
+      subTextEl.innerHTML = `처리 중... <strong class="text-primary">${timeStr}</strong> 경과 (지연 시 '요청 취소' 가능)`;
     }
   }, 1000);
 
-  // 지정된 타임아웃(기본 120초) 후 자동 해제
-  loadingOverlayTimeoutTimer = setTimeout(() => {
-    hideLoadingOverlay();
-    showToast(`⚠️ 요청 시간이 초과되었습니다 (${Math.round(timeoutMs / 1000)}초). 네트워크 상태나 API Key 설정을 확인해 주세요.`, 'warning', 6000);
-  }, timeoutMs);
+  // 명시적 timeoutMs가 양수 숫자로 지정된 경우에만 타이머 작동 (기본값 null: 1분 이상 지속 표시)
+  if (timeoutMs && typeof timeoutMs === 'number' && timeoutMs > 0) {
+    loadingOverlayTimeoutTimer = setTimeout(() => {
+      cancelCurrentTask();
+      showToast(`⚠️ 요청 시간이 초과되었습니다 (${Math.round(timeoutMs / 1000)}초). 네트워크 상태나 API Key 설정을 확인해 주세요.`, 'warning', 6000);
+    }, timeoutMs);
+  }
 }
 
 function hideLoadingOverlay() {
@@ -2745,6 +2863,19 @@ function hideLoadingOverlay() {
   }
   const overlay = document.getElementById('loadingOverlay');
   if (overlay) overlay.classList.add('d-none');
+}
+
+function cancelCurrentTask() {
+  if (currentTaskAbortController) {
+    try {
+      currentTaskAbortController.abort();
+    } catch (e) {
+      console.warn('[작업 취소 예외]', e);
+    }
+    currentTaskAbortController = null;
+  }
+  hideLoadingOverlay();
+  showToast('요청이 취소되었습니다.', 'info', 3000);
 }
 
 function showToast(msg, type = 'info') {
