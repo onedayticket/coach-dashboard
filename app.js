@@ -1821,24 +1821,24 @@ function renderFeedbackTable(feedbacks) {
         <td class="text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
         <td class="text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
         <td class="text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
-        <td class="text-nowrap">
+        <td class="text-nowrap text-center">
           <span class="badge ${getScoreBadgeClass(exScore)}">${exScore !== '-' ? `${exScore} 점` : '-'}</span>
         </td>
-        <td class="text-nowrap">
+        <td class="text-nowrap text-center">
           <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore !== '-' ? `${dietScore} 점` : '-'}</span>
         </td>
-        <td class="small" style="min-width: 170px;">
-          <div class="text-truncate text-dark" title="${escapeHtml(summary)}">
+        <td class="small" style="min-width: 200px; max-width: 320px;">
+          <div class="feedback-text-cell" title="${escapeHtml(summary)}">
             ${escapeHtml(summary)}
           </div>
         </td>
-        <td class="small" style="min-width: 150px;">
-          <div class="text-truncate ${problem !== '미작성' && problem !== '특이사항 없음' ? 'text-danger-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(problem)}">
+        <td class="small" style="min-width: 180px; max-width: 260px;">
+          <div class="feedback-text-cell ${problem !== '미작성' && problem !== '특이사항 없음' ? 'problem-cell text-danger-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(problem)}">
             ${escapeHtml(problem)}
           </div>
         </td>
-        <td class="small" style="min-width: 170px;">
-          <div class="text-truncate ${solution !== '미작성' ? 'text-success-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(solution)}">
+        <td class="small" style="min-width: 200px; max-width: 320px;">
+          <div class="feedback-text-cell ${solution !== '미작성' ? 'solution-cell text-success-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(solution)}">
             ${escapeHtml(solution)}
           </div>
         </td>

@@ -440,16 +440,72 @@ body {
   font-size: 0.8rem;
   font-weight: 700;
   color: #475569;
-  text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 2px solid #e2e8f0;
-  padding: 0.75rem 1rem;
+  padding: 0.75rem 0.75rem;
 }
 
 .feedback-table td {
-  vertical-align: middle;
+  vertical-align: top;
   font-size: 0.875rem;
-  padding: 0.85rem 1rem;
+  padding: 0.65rem 0.75rem;
+}
+
+/* 피드백 요약 / 문제점 분석 / 보완점 및 개선방안 텍스트 박스: 적정 길이 자동 줄바꿈 및 창 길이(높이) 조절 */
+.feedback-text-cell {
+  white-space: normal !important;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  line-height: 1.5;
+  font-size: 0.835rem;
+  min-height: 48px;
+  max-height: 160px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  resize: vertical; /* 아래 모서리 핸들을 마우스로 드래그하여 상하 길이(높이) 자유 조절 */
+  padding: 6px 9px;
+  border-radius: 6px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.feedback-text-cell:hover,
+.feedback-text-cell:focus {
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.feedback-text-cell.problem-cell {
+  background-color: #fffaf0;
+  border-color: #fed7aa;
+}
+
+.feedback-text-cell.solution-cell {
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.feedback-text-cell::-webkit-scrollbar {
+  width: 5px;
+}
+.feedback-text-cell::-webkit-scrollbar-track {
+  background: transparent;
+}
+.feedback-text-cell::-webkit-scrollbar-thumb {
+  background-color: #cbd5e1;
+  border-radius: 4px;
+}
+.feedback-text-cell::-webkit-scrollbar-thumb:hover {
+  background-color: #94a3b8;
+}
+
+/* 모달 내 텍스트창 자유 조절 */
+#dailyFeedbackModal textarea.form-control {
+  resize: vertical;
+  min-height: 65px;
 }
 
 /* AI 제안 인디케이터 배지 */

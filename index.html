@@ -495,13 +495,13 @@
                         <tr>
                           <th style="width: 95px;">날짜</th>
                           <th style="width: 80px;">이름</th>
-                          <th style="width: 90px;">공복체중</th>
-                          <th style="width: 120px;">운동_실행률_점수</th>
-                          <th style="width: 120px;">식단_실행률_점수</th>
-                          <th style="min-width: 180px;">피드백 요약</th>
-                          <th style="min-width: 160px;">문제점 분석</th>
-                          <th style="min-width: 180px;">보완점 및 개선방안</th>
-                          <th style="width: 125px;" class="text-center">액션 버튼</th>
+                          <th style="width: 85px;">공복체중</th>
+                          <th style="width: 85px;" class="text-center">운동 점수</th>
+                          <th style="width: 85px;" class="text-center">식단 점수</th>
+                          <th style="min-width: 200px; max-width: 320px;">피드백 요약</th>
+                          <th style="min-width: 180px; max-width: 260px;">문제점 분석</th>
+                          <th style="min-width: 200px; max-width: 320px;">보완점 및 개선방안</th>
+                          <th style="width: 120px;" class="text-center">액션 버튼</th>
                         </tr>
                       </thead>
                       <tbody id="feedbackTableBody">
@@ -705,14 +705,14 @@
             <div class="row g-2 mb-2">
               <div class="col-md-6">
                 <label for="dfModalInputExScore" class="form-label fw-bold text-dark small d-flex justify-content-between align-items-center mb-1">
-                  <span><i class="bi bi-activity text-success me-1"></i>운동 실행률 점수 (0~5점)</span>
+                  <span><i class="bi bi-activity text-success me-1"></i>운동 점수 (0~5점)</span>
                   <span class="badge bg-success-subtle text-success" id="dfModalExScoreBadge">0~5점</span>
                 </label>
                 <input type="number" class="form-control form-control-sm" id="dfModalInputExScore" min="0" max="5" step="0.5" placeholder="예: 4">
               </div>
               <div class="col-md-6">
                 <label for="dfModalInputDietScore" class="form-label fw-bold text-dark small d-flex justify-content-between align-items-center mb-1">
-                  <span><i class="bi bi-egg-fried text-warning-emphasis me-1"></i>식단 실행률 점수 (0~5점)</span>
+                  <span><i class="bi bi-egg-fried text-warning-emphasis me-1"></i>식단 점수 (0~5점)</span>
                   <span class="badge bg-warning-subtle text-warning-emphasis" id="dfModalDietScoreBadge">0~5점</span>
                 </label>
                 <input type="number" class="form-control form-control-sm" id="dfModalInputDietScore" min="0" max="5" step="0.5" placeholder="예: 5">
