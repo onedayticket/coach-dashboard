@@ -52,7 +52,30 @@
       </div>
 
       <div class="ms-auto d-flex align-items-center gap-2">
-        <!-- [요구사항 4] 미완료 피드백 전역 알림 드롭다운 -->
+        <!-- [신규: 5단계] 1. AI 초안 작성 알림 드롭다운 (로봇 아이콘) -->
+        <div class="dropdown position-relative me-1" id="aiDraftDropdownContainer">
+          <button type="button" class="btn btn-outline-secondary btn-sm position-relative text-white border-secondary px-2 py-1" id="btnAiDraftNotification" data-bs-toggle="dropdown" aria-expanded="false" title="AI 초안 작성 알림">
+            <i class="bi bi-robot fs-6 text-warning"></i>
+            <span id="unreadAiDraftBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none shadow-sm" style="font-size: 0.68rem; padding: 0.25em 0.5em;">
+              0
+              <span class="visually-hidden">AI 초안 알림</span>
+            </span>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="aiDraftDropdownList" style="min-width: 340px; max-width: 400px; max-height: 420px; overflow-y: auto; z-index: 1055;">
+            <li class="dropdown-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
+              <span class="fw-bold text-dark"><i class="bi bi-robot me-1 text-warning"></i>AI 초안 알림</span>
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-warning text-dark rounded-pill" id="aiDraftListCountBadge">0건</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;" id="btnMarkAllAiDraftsRead" onclick="markAllAiDraftsAsRead()">모두 읽음</button>
+              </div>
+            </li>
+            <div id="aiDraftNotificationItemsContainer">
+              <li class="p-4 text-center text-muted small">새로운 AI 초안 알림이 없습니다. 🤖</li>
+            </div>
+          </ul>
+        </div>
+
+        <!-- [5단계] 2. 미완료 피드백 전역 알림 드롭다운 (종 아이콘) -->
         <div class="dropdown position-relative me-1" id="notificationDropdownContainer">
           <button type="button" class="btn btn-outline-secondary btn-sm position-relative text-white border-secondary px-2 py-1" id="btnNotificationBell" data-bs-toggle="dropdown" aria-expanded="false" title="미완료 피드백 알림">
             <i class="bi bi-bell-fill fs-6"></i>
@@ -61,10 +84,13 @@
               <span class="visually-hidden">미완료 피드백</span>
             </span>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="notificationDropdownList" style="min-width: 330px; max-width: 380px; max-height: 420px; overflow-y: auto; z-index: 1055;">
+          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="notificationDropdownList" style="min-width: 340px; max-width: 400px; max-height: 420px; overflow-y: auto; z-index: 1055;">
             <li class="dropdown-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
               <span class="fw-bold text-dark"><i class="bi bi-clock-history me-1 text-primary"></i>미완료 피드백 대기 목록</span>
-              <span class="badge bg-danger rounded-pill" id="notificationListCountBadge">0건</span>
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-danger rounded-pill" id="notificationListCountBadge">0건</span>
+                <button type="button" class="btn btn-xs btn-outline-secondary py-0 px-2" style="font-size: 0.72rem;" id="btnMarkAllPendingNotisRead" onclick="markAllPendingNotisAsRead()">모두 읽음</button>
+              </div>
             </li>
             <div id="notificationItemsContainer">
               <li class="p-4 text-center text-muted small">대기 중인 피드백이 없습니다. 🎉</li>
@@ -692,12 +718,50 @@
             </div>
           </div>
 
-          <!-- 안내 배너: 생성된 피드백 검토 및 시트 저장 가이드 -->
-          <div class="alert alert-primary-subtle border border-primary-subtle py-2 px-3 mb-3 d-flex align-items-center justify-content-between small text-primary-emphasis">
-            <div>
-              <i class="bi bi-info-circle-fill text-primary me-1"></i>
-              <strong>AI 피드백 생성 완료:</strong> 내용을 검토/수정한 후 모달 하단 <strong>[피드백 코멘트 저장]</strong> 버튼을 누르면 구글 시트와 대시보드 표에 즉시 저장됩니다.
+          <!-- [2단계] 회원의 오늘 제출 원본 설문 내용 요약 박스 (코치 참고용 접기/펼치기) -->
+          <div class="card border bg-light mb-3" id="dfModalMemberRawSubmissionBox">
+            <div class="card-header bg-white py-2 px-3 d-flex justify-content-between align-items-center cursor-pointer" data-bs-toggle="collapse" data-bs-target="#collapseRawSubmission" style="cursor: pointer;">
+              <span class="small fw-bold text-dark d-flex align-items-center">
+                <i class="bi bi-card-checklist text-primary me-2 fs-6"></i>회원 오늘 제출 설문 원본
+                <span class="badge bg-secondary-subtle text-secondary ms-2 fw-normal" id="rawSubmissionBadge">확인하기</span>
+              </span>
+              <span class="badge bg-light text-muted border small"><i class="bi bi-chevron-down me-1"></i>접기/펼치기</span>
             </div>
+            <div class="collapse show" id="collapseRawSubmission">
+              <div class="card-body p-3 bg-white small">
+                <div class="row g-2">
+                  <div class="col-12 col-md-6">
+                    <div class="p-2 border rounded bg-light h-100">
+                      <strong class="text-success d-block mb-1"><i class="bi bi-activity me-1"></i>오늘 운동 내용:</strong>
+                      <div id="rawSubmissionExercise" class="text-secondary text-break" style="white-space: pre-wrap;">-</div>
+                    </div>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="p-2 border rounded bg-light h-100">
+                      <strong class="text-warning-emphasis d-block mb-1"><i class="bi bi-egg-fried me-1"></i>오늘 식단 내용:</strong>
+                      <div id="rawSubmissionDiet" class="text-secondary text-break" style="white-space: pre-wrap;">-</div>
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <div class="p-2 border rounded bg-light">
+                      <strong class="text-primary d-block mb-1"><i class="bi bi-chat-dots me-1"></i>회원 일기 / 코치에게 한마디:</strong>
+                      <div id="rawSubmissionMemo" class="text-secondary text-break" style="white-space: pre-wrap;">-</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- [3단계] 피드백 상태 배너 & [🤖 피드백 하기 (AI 분석/재생성)] 독립 실행 바 -->
+          <div class="alert alert-light border py-2 px-3 mb-3 d-flex flex-wrap align-items-center justify-content-between gap-2">
+            <div class="small text-secondary">
+              <i class="bi bi-info-circle-fill text-primary me-1"></i>
+              <span id="dfModalStatusNotice">저장된 데이터 또는 AI 초안이 표시 중입니다. 필요 시 AI 분석을 다시 요청할 수 있습니다.</span>
+            </div>
+            <button type="button" class="btn btn-warning btn-sm fw-bold shadow-sm text-dark px-3 py-1 text-nowrap" id="btnRunAiDailyFeedback">
+              <i class="bi bi-robot me-1"></i>🤖 피드백 하기 (AI 분석/재생성)
+            </button>
           </div>
 
           <!-- 1. AI 데일리 피드백 3개 핵심 영역 & 점수 (코치 편집 가능) -->

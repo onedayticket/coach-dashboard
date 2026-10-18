@@ -390,11 +390,24 @@ function getGasField(obj, candidateKeys) {
     }
   }
   const keys = Object.keys(obj);
+  // 2순위: 공백 제거 후 완전 일치
   for (let i = 0; i < candidateKeys.length; i++) {
     const cleanCand = String(candidateKeys[i]).replace(/\s+/g, '').toLowerCase();
     for (let j = 0; j < keys.length; j++) {
       const cleanKey = String(keys[j]).replace(/\s+/g, '').toLowerCase();
       if (cleanKey === cleanCand) {
+        const val = obj[keys[j]];
+        if (val !== undefined && val !== null && val !== '') return val;
+      }
+    }
+  }
+  // 3순위: 후보 키가 키에 포함되거나 키가 후보 키에 포함되는 부분 일치 (예: '이름(예:김민수)', '회원이름' 등)
+  for (let i = 0; i < candidateKeys.length; i++) {
+    const cleanCand = String(candidateKeys[i]).replace(/\s+/g, '').toLowerCase();
+    if (cleanCand.length < 2) continue;
+    for (let j = 0; j < keys.length; j++) {
+      const cleanKey = String(keys[j]).replace(/\s+/g, '').toLowerCase();
+      if (cleanKey.includes(cleanCand) || cleanCand.includes(cleanKey)) {
         const val = obj[keys[j]];
         if (val !== undefined && val !== null && val !== '') return val;
       }
@@ -948,7 +961,23 @@ function handleUpdateFeedbackComment(ss, payload) {
     sheet.getRange(targetRow, solutionCol).setValue(solutionVal);
   }
 
-  // (중요: 운동_수정_제안 및 식단_수정_제안은 Feedbacks 탭에 절대 자동 저장되지 않으며 코치가 복사 버튼을 통해 Members 시트에만 반영됨)
+  // 6-1. [모달 표시 보존용] 운동_수정_제안 저장 (Feedbacks 시트 모달 표시용으로만 기록, Members 시트에는 자동 반영 안 됨)
+  const exProposalVal = payload.운동_수정_제안 !== undefined ? payload.운동_수정_제안 : (payload.exerciseProposal || '');
+  if (exProposalVal !== undefined && exProposalVal !== null && exProposalVal !== '') {
+    const exProposalCol = getOrAddColumn(sheet, colMap, '운동_수정_제안', [
+      '운동_수정_제안', '운동 수정 제안', '운동수정제안', '운동수정', 'exerciseProposal'
+    ]);
+    sheet.getRange(targetRow, exProposalCol).setValue(exProposalVal);
+  }
+
+  // 6-2. [모달 표시 보존용] 식단_수정_제안 저장 (Feedbacks 시트 모달 표시용으로만 기록, Members 시트에는 자동 반영 안 됨)
+  const dietProposalVal = payload.식단_수정_제안 !== undefined ? payload.식단_수정_제안 : (payload.dietProposal || '');
+  if (dietProposalVal !== undefined && dietProposalVal !== null && dietProposalVal !== '') {
+    const dietProposalCol = getOrAddColumn(sheet, colMap, '식단_수정_제안', [
+      '식단_수정_제안', '식단 수정 제안', '식단수정제안', '식단수정', 'dietProposal'
+    ]);
+    sheet.getRange(targetRow, dietProposalCol).setValue(dietProposalVal);
+  }
 
   // 7. [방어 로직] 피드백 상태 컬럼 자동 업데이트 (열이 없으면 시트 마지막에 자동 추가)
   const statusCol = getOrAddColumn(sheet, colMap, '피드백 상태', [
@@ -1381,11 +1410,16 @@ ${customDietGuideline ? customDietGuideline : '현재 별도 수정 지침 없�
  * 7. [AI] 데일리 피드백 도출
  * - 피드백 지침서 & 동기부여 지침서 기반
  * - 최근 최소 3일 이상의 누적 체중 변화 추이 및 식단/운동 분석
+/**
+ * 7. [AI] 데일리 피드백 도출 (공통 생성 코어)
+ * - 웹앱 API 요청(handleAiDailyFeedback) 및 구글 폼 제출 트리거(onFormSubmitHandler) 양쪽에서 공통 사용
+ * - 피드백 지침서 & 동기부여 지침서 기반
+ * - 최근 최소 3일 이상의 누적 체중 변화 추이 및 식단/운동 분석
  * - 계획 수정 필요 시 'AI 운동 수정 제안' 및 'AI 식단 수정 제안' 도출 (명확한 '근거' 제시)
  */
-function handleAiDailyFeedback(ss, payload) {
+function generateDailyFeedbackCore(ss, payload) {
   const guidelineSheet = findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']);
-  const guidelines = getGuidelinesData(guidelineSheet);
+  const guidelines = payload.guidelines || getGuidelinesData(guidelineSheet);
 
   const member = payload.member || {};
   const currentFeedback = payload.feedback || {};
@@ -1501,12 +1535,17 @@ ${weightHistorySummary}
     };
   }
 
-  return createJsonResponse({
+  return {
     status: 'success',
     data: parsed,
     isAiGenerated: !!aiResult.text,
     debug: aiResult.debug
-  });
+  };
+}
+
+function handleAiDailyFeedback(ss, payload) {
+  const result = generateDailyFeedbackCore(ss, payload);
+  return createJsonResponse(result);
 }
 
 /**
@@ -1669,3 +1708,393 @@ function createJsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+/**
+ * ==============================================================================
+ * [구글 폼 제출 시 백그라운드 AI 초안 자동 생성 트리거 시스템]
+ * ==============================================================================
+ */
+
+/**
+ * 스프레드시트 양식 제출(onFormSubmit) 트리거를 원클릭으로 설치하는 함수
+ * - Apps Script 상단 함수 드롭다운에서 'installFormSubmitTrigger'를 선택 후 [실행] 클릭 시 등록 완료
+ */
+function installFormSubmitTrigger() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) {
+    Logger.log('[트리거 설치 실패] 활성화된 스프레드시트를 찾을 수 없습니다.');
+    return;
+  }
+
+  // 기존 동일 트리거 중복 설치 방지 정리
+  const triggers = ScriptApp.getProjectTriggers();
+  for (let i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'onFormSubmitHandler') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+
+  // 스프레드시트 양식 제출 이벤트 트리거 생성
+  ScriptApp.newTrigger('onFormSubmitHandler')
+    .forSpreadsheet(ss)
+    .onFormSubmit()
+    .create();
+
+  Logger.log('[트리거 설치 완료] 구글 폼 양식 제출 트리거(onFormSubmitHandler)가 성공적으로 설치되었습니다.');
+}
+
+/**
+ * 구글 폼 제출 시 백그라운드 자동 실행되는 핸들러 함수
+ * - 회원 제출 즉시 AI 초안을 생성하여 Feedbacks 시트에 'AI초안' 상태로 안전하게 기록
+ * - 외부 발송 기능은 배제하고 시트 초안 기록에만 집중
+ */
+function onFormSubmitHandler(e) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    if (!ss) {
+      Logger.log('[onFormSubmitHandler] 활성 스프레드시트 없음');
+      return { status: 'error', message: '활성 스프레드시트 없음' };
+    }
+
+    // [핵심 1] 폼 응답이 기록된 실제 시트 특정
+    let feedbackSheet = null;
+    if (e && e.range) {
+      try {
+        feedbackSheet = e.range.getSheet();
+      } catch (se) {}
+    }
+    if (!feedbackSheet) {
+      feedbackSheet = ss.getSheetByName('feedbacks') || ss.getSheetByName('Feedbacks')
+        || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+    }
+
+    const memberSheet = ss.getSheetByName('Members') || ss.getSheetByName('members')
+      || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+    const guidelineSheet = ss.getSheetByName('Guidelines') || ss.getSheetByName('guidelines')
+      || findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']);
+
+    if (!feedbackSheet) {
+      Logger.log('[onFormSubmitHandler] Feedbacks 시트 탐색 실패');
+      return { status: 'error', message: 'Feedbacks 시트를 찾을 수 없음' };
+    }
+
+    // 1. 방금 제출된 행 번호 감지
+    let targetRow = (e && e.range) ? e.range.getRow() : feedbackSheet.getLastRow();
+    if (targetRow <= 1) targetRow = feedbackSheet.getLastRow();
+    if (targetRow <= 1) {
+      Logger.log('[onFormSubmitHandler] 유효한 피드백 데이터 행이 없습니다.');
+      return { status: 'error', message: '데이터 행 없음' };
+    }
+
+    const lastCol = Math.max(feedbackSheet.getLastColumn(), 1);
+    const headers = feedbackSheet.getRange(1, 1, 1, lastCol).getValues()[0];
+    const rowValues = feedbackSheet.getRange(targetRow, 1, 1, lastCol).getValues()[0];
+
+    // 행 데이터를 객체로 매핑
+    const currentFeedback = {};
+
+    // (A) e.namedValues가 있으면 먼저 반영 (폼 제출 즉시 전달된 답변 배열)
+    if (e && e.namedValues) {
+      for (const k in e.namedValues) {
+        const val = Array.isArray(e.namedValues[k]) ? e.namedValues[k][0] : e.namedValues[k];
+        currentFeedback[k] = val;
+        currentFeedback[String(k).trim().replace(/\s+/g, '')] = val;
+      }
+    }
+
+    // (B) 시트 셀 값으로 보완 매핑
+    for (let j = 0; j < headers.length; j++) {
+      const h = String(headers[j]).trim();
+      if (!h) continue;
+      if (currentFeedback[h] === undefined || currentFeedback[h] === '') {
+        currentFeedback[h] = rowValues[j];
+      }
+      currentFeedback[h.replace(/\s+/g, '')] = rowValues[j];
+    }
+
+    // 회원 이름 추출 (다양한 헤더 동의어 및 부분 매칭)
+    let memberName = getGasField(currentFeedback, [
+      '이름', 'name', '성명', '성함', '회원명', '참여자이름', '회원이름', '참여자명', '참가자이름', '사용자이름'
+    ]);
+
+    // 헤더 직접 스캔 백업
+    if (!memberName) {
+      for (let j = 0; j < headers.length; j++) {
+        const hClean = String(headers[j]).replace(/\s+/g, '').toLowerCase();
+        if (hClean.includes('이름') || hClean.includes('성명') || hClean.includes('성함')) {
+          const val = rowValues[j];
+          if (val && String(val).trim()) {
+            memberName = String(val).trim();
+            break;
+          }
+        }
+      }
+    }
+
+    if (!memberName) {
+      Logger.log(`[onFormSubmitHandler 경고] Row ${targetRow}에서 회원 이름을 특정할 수 없어 임시 명칭을 사용합니다.`);
+      memberName = '회원';
+    }
+
+    Logger.log(`[onFormSubmitHandler 시작] Row ${targetRow} 회원 '${memberName}' (시트: ${feedbackSheet.getName()}) AI 초안 자동 생성 개시`);
+
+    // 2. Members 시트에서 해당 회원의 사전 설문 프로필 조회
+    let memberProfile = { '이름': memberName };
+    if (memberSheet) {
+      const allMembers = getSheetDataWithHeaders(memberSheet);
+      const cleanTargetName = String(memberName).replace(/\s+/g, '').toLowerCase();
+      const found = allMembers.find(m => {
+        const mName = getGasField(m, ['이름', 'name', '성명', '성함', '회원명']);
+        return mName && String(mName).replace(/\s+/g, '').toLowerCase() === cleanTargetName;
+      });
+      if (found) {
+        memberProfile = found;
+      }
+    }
+
+    // 3. Feedbacks 시트에서 해당 회원의 이전 최근 3일 치 기록 추출
+    const allFeedbacks = getSheetDataWithHeaders(feedbackSheet);
+    const cleanTargetName = String(memberName).replace(/\s+/g, '').toLowerCase();
+    const memberFeedbacks = allFeedbacks.filter(f => {
+      const fName = getGasField(f, ['이름', 'name', '성명', '성함', '회원명']);
+      return fName && String(fName).replace(/\s+/g, '').toLowerCase() === cleanTargetName;
+    });
+
+    // 날짜 기준 오름차순 정렬 후 최근 3건
+    memberFeedbacks.sort((a, b) => {
+      const dA = new Date(getGasField(a, ['날짜', 'date', '일자']) || 0);
+      const dB = new Date(getGasField(b, ['날짜', 'date', '일자']) || 0);
+      return dA - dB;
+    });
+    const recentFeedbacks = memberFeedbacks.slice(-3);
+
+    // 4. Guidelines 시트에서 피드백 & 동기부여 지침서 가져오기
+    const guidelines = getGuidelinesData(guidelineSheet);
+
+    // 5. AI 피드백 생성 코어 호출 (callGemini 기반 JSON 도출)
+    const aiPayload = {
+      member: memberProfile,
+      feedback: currentFeedback,
+      recentFeedbacks: recentFeedbacks,
+      guidelines: guidelines
+    };
+
+    const aiRes = generateDailyFeedbackCore(ss, aiPayload);
+    const draftData = aiRes.data;
+
+    if (!draftData) {
+      Logger.log(`[onFormSubmitHandler] Row ${targetRow} AI 초안 도출 실패`);
+      return { status: 'error', message: 'AI 초안 데이터 도출 실패' };
+    }
+
+    // 6. Feedbacks 시트에 각 열을 안전하게 생성/확보(getOrAddColumn)하고 초안 데이터 기록
+    const colMap = getHeaderColumnMap(feedbackSheet);
+
+    // (1) 운동_실행률_점수
+    if (draftData.운동_실행률_점수 !== undefined && draftData.운동_실행률_점수 !== null) {
+      const exScoreCol = getOrAddColumn(feedbackSheet, colMap, '운동_실행률_점수', [
+        '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
+      ]);
+      feedbackSheet.getRange(targetRow, exScoreCol).setValue(draftData.운동_실행률_점수);
+    }
+
+    // (2) 식단_실행률_점수
+    if (draftData.식단_실행률_점수 !== undefined && draftData.식단_실행률_점수 !== null) {
+      const dietScoreCol = getOrAddColumn(feedbackSheet, colMap, '식단_실행률_점수', [
+        '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
+      ]);
+      feedbackSheet.getRange(targetRow, dietScoreCol).setValue(draftData.식단_실행률_점수);
+    }
+
+    // (3) 피드백_요약
+    const summaryCol = getOrAddColumn(feedbackSheet, colMap, '피드백_요약', [
+      '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary'
+    ]);
+    feedbackSheet.getRange(targetRow, summaryCol).setValue(draftData.피드백_요약 || '');
+
+    // (4) 문제점_분석
+    const problemCol = getOrAddColumn(feedbackSheet, colMap, '문제점_분석', [
+      '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problemAnalysis', 'problem'
+    ]);
+    feedbackSheet.getRange(targetRow, problemCol).setValue(draftData.문제점_분석 || '');
+
+    // (5) 보완점_및_개선방안
+    const solutionCol = getOrAddColumn(feedbackSheet, colMap, '보완점_및_개선방안', [
+      '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution'
+    ]);
+    feedbackSheet.getRange(targetRow, solutionCol).setValue(draftData.보완점_및_개선방안 || '');
+
+    // (6) 운동_수정_제안 (모달 표시용으로 Feedbacks 시트에만 기록, Members 시트에는 절대 자동 반영 안 함)
+    const exPropCol = getOrAddColumn(feedbackSheet, colMap, '운동_수정_제안', [
+      '운동_수정_제안', '운동 수정 제안', '운동수정제안', '운동수정', 'exerciseProposal'
+    ]);
+    feedbackSheet.getRange(targetRow, exPropCol).setValue(draftData.운동_수정_제안 || '');
+
+    // (7) 식단_수정_제안 (모달 표시용으로 Feedbacks 시트에만 기록, Members 시트에는 절대 자동 반영 안 함)
+    const dietPropCol = getOrAddColumn(feedbackSheet, colMap, '식단_수정_제안', [
+      '식단_수정_제안', '식단 수정 제안', '식단수정제안', '식단수정', 'dietProposal'
+    ]);
+    feedbackSheet.getRange(targetRow, dietPropCol).setValue(draftData.식단_수정_제안 || '');
+
+    // (8) 피드백 코멘트 (통합 텍스트)
+    let combined = draftData.피드백_요약 || '';
+    if (draftData.문제점_분석 && draftData.문제점_분석 !== '특이사항 없음') {
+      combined += `\n\n[문제점 분석]\n${draftData.문제점_분석}`;
+    }
+    if (draftData.보완점_및_개선방안) {
+      combined += `\n\n[보완점 및 개선방안]\n${draftData.보완점_및_개선방안}`;
+    }
+    const commentCol = getOrAddColumn(feedbackSheet, colMap, '피드백 코멘트', [
+      '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', '코치 피드백', '코치피드백'
+    ]);
+    feedbackSheet.getRange(targetRow, commentCol).setValue(combined.trim());
+
+    // (9) ★핵심: 피드백 상태 컬럼에 'AI초안' 기록
+    const statusCol = getOrAddColumn(feedbackSheet, colMap, '피드백 상태', [
+      '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
+    ]);
+    feedbackSheet.getRange(targetRow, statusCol).setValue('AI초안');
+
+    // (10) AI초안_생성일시 컬럼 기록
+    const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    const aiCreatedCol = getOrAddColumn(feedbackSheet, colMap, 'AI초안_생성일시', [
+      'AI초안_생성일시', 'AI초안 생성일시', 'AI초안생성일시', 'AI생성일시', '초안생성일시'
+    ]);
+    feedbackSheet.getRange(targetRow, aiCreatedCol).setValue(nowStr);
+
+    // ★중요: 변경 사항 즉시 시트에 영구 커밋 (버퍼 플러시)
+    SpreadsheetApp.flush();
+
+    Logger.log(`[onFormSubmitHandler 성공] Row ${targetRow} 회원 '${memberName}' AI초안 정상 기록 완료 (${nowStr})`);
+    return { status: 'success', row: targetRow, member: memberName, date: nowStr };
+  } catch (err) {
+    Logger.log('[onFormSubmitHandler 예외 발생] ' + err.toString());
+    return { status: 'error', error: err.toString() };
+  }
+}
+
+/**
+ * ==============================================================================
+ * [스프레드시트 커스텀 메뉴 & 수동 진단/배치 도구]
+ * ==============================================================================
+ */
+
+/**
+ * 스프레드시트 열릴 때 상단에 [🤖 코칭 자동화] 커스텀 메뉴 등록
+ */
+function onOpen() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.createMenu('🤖 코칭 자동화')
+      .addItem('⚡ 폼 제출 트리거 설치/점검', 'installFormSubmitTrigger')
+      .addSeparator()
+      .addItem('🧪 마지막 추가된 행 AI 초안 생성 테스트', 'testGenerateDraftForLatestRow')
+      .addItem('📝 미처리 피드백 전체 AI 초안 일괄 생성', 'processPendingAiDrafts')
+      .addSeparator()
+      .addItem('🔍 feedbacks 시트 헤더/데이터 진단', 'debugInspectFeedbacksSheet')
+      .addToUi();
+  } catch (e) {
+    Logger.log('[onOpen 메뉴 생성 실패 (비대화형 모드 등)] ' + e.toString());
+  }
+}
+
+/**
+ * [수동 테스트 함수] 스프레드시트의 마지막 피드백 행에 대해 AI 초안 강제 생성
+ * - Apps Script 상단 함수 드롭다운에서 'testGenerateDraftForLatestRow' 선택 후 [실행] 클릭 시 바로 테스트 가능
+ */
+function testGenerateDraftForLatestRow() {
+  Logger.log('=== [수동 테스트] 마지막 피드백 행 AI 초안 생성 시작 ===');
+  const res = onFormSubmitHandler(null);
+  Logger.log('=== [수동 테스트 결과] ' + JSON.stringify(res) + ' ===');
+
+  try {
+    const ui = SpreadsheetApp.getUi();
+    if (res && res.status === 'success') {
+      ui.alert('✓ 테스트 성공', `Row ${res.row} (${res.member} 회원)에 AI 초안이 성공적으로 기록되었습니다!`, ui.ButtonSet.OK);
+    } else {
+      ui.alert('⚠️ 테스트 실패/확인 필요', `결과: ${JSON.stringify(res)}\nApps Script [실행 로그]를 확인해 주세요.`, ui.ButtonSet.OK);
+    }
+  } catch (e) {
+    // UI 없을 경우 로거로만 남김
+  }
+}
+
+/**
+ * [디버그 함수] feedbacks 시트의 1행 헤더와 마지막 행 데이터를 상세 출력
+ */
+function debugInspectFeedbacksSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName('feedbacks') || ss.getSheetByName('Feedbacks')
+    || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!sheet) {
+    Logger.log('[debugInspectFeedbacksSheet] feedbacks 시트를 찾을 수 없습니다.');
+    return;
+  }
+
+  const lastCol = sheet.getLastColumn();
+  const lastRow = sheet.getLastRow();
+  const headers = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+
+  Logger.log(`=== [시트명: ${sheet.getName()}, 총 ${lastRow}행 x ${lastCol}열] ===`);
+  Logger.log('--- 1행 헤더(컬럼명) 목록 ---');
+  headers.forEach((h, idx) => {
+    Logger.log(`Col ${idx + 1} (${String.fromCharCode(65 + (idx % 26))}열): "${h}"`);
+  });
+
+  if (lastRow >= 2) {
+    const rowVals = sheet.getRange(lastRow, 1, 1, Math.max(lastCol, 1)).getValues()[0];
+    Logger.log(`--- 마지막 행 (Row ${lastRow}) 셀 데이터 ---`);
+    rowVals.forEach((val, idx) => {
+      Logger.log(`Col ${idx + 1} [${headers[idx]}]: "${val}"`);
+    });
+  }
+}
+
+/**
+ * [배치 처리 함수] Feedbacks 시트의 미처리 피드백(상태가 '완료'가 아닌 행) 전체 AI 초안 일괄 생성
+ */
+function processPendingAiDrafts() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) return;
+
+  const feedbackSheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!feedbackSheet) {
+    Logger.log('[processPendingAiDrafts] Feedbacks 시트를 찾을 수 없습니다.');
+    return;
+  }
+
+  const lastRow = feedbackSheet.getLastRow();
+  if (lastRow <= 1) {
+    Logger.log('[processPendingAiDrafts] 피드백 데이터 행이 없습니다.');
+    return;
+  }
+
+  const colMap = getHeaderColumnMap(feedbackSheet);
+  const statusCol = colMap['피드백상태'] || colMap['피드백 상태'] || colMap['완료여부'] || colMap['상태'];
+  const summaryCol = colMap['피드백요약'] || colMap['피드백_요약'] || colMap['요약'];
+
+  let processedCount = 0;
+  for (let r = 2; r <= lastRow; r++) {
+    const currentStatus = statusCol ? String(feedbackSheet.getRange(r, statusCol).getValue() || '').trim() : '';
+    const currentSummary = summaryCol ? String(feedbackSheet.getRange(r, summaryCol).getValue() || '').trim() : '';
+
+    // 아직 코치가 완료하지 않았고, AI 초안도 안 채워진 행 탐색
+    if (currentStatus !== '완료' && (!currentStatus || currentStatus === '대기' || !currentSummary)) {
+      Logger.log(`[processPendingAiDrafts] Row ${r} 초안 생성 시도...`);
+      const fakeEvent = {
+        range: feedbackSheet.getRange(r, 1, 1, feedbackSheet.getLastColumn())
+      };
+      onFormSubmitHandler(fakeEvent);
+      processedCount++;
+      Utilities.sleep(600); // API Rate Limit 방어
+    }
+  }
+
+  Logger.log(`[processPendingAiDrafts 완료] 총 ${processedCount}건의 미처리 피드백 초안 작성 완료`);
+
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('✓ 일괄 생성 완료', `총 ${processedCount}건의 피드백에 대해 AI 초안 생성이 완료되었습니다.`, ui.ButtonSet.OK);
+  } catch (e) {}
+}
+

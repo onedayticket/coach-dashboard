@@ -16,6 +16,8 @@
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
 const STORAGE_GEMINI_KEY = 'coach_dash_gemini_key_v1';
 const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
+const STORAGE_READ_AI_DRAFTS_KEY = 'coach_dash_read_ai_drafts_v1';
+const STORAGE_READ_PENDING_NOTIS_KEY = 'coach_dash_read_pending_notis_v1';
 
 // 기본 Mock 데이터 (시트 미연동 또는 테스트 시 즉각 동작)
 const MOCK_DB = {
@@ -135,10 +137,19 @@ const MOCK_DB = {
       '공복 몸무게': 82.0,
       '운동 점수': 6,
       '식단 점수': 6,
+      '운동_실행률_점수': 4.0,
+      '식단_실행률_점수': 4.0,
+      '피드백_요약': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
+      '문제점_분석': '바쁜 업무로 인해 메인 유산소 및 근력 운동을 건너뛰어 대사 자극이 다소 부족했습니다.',
+      '보완점_및_개선방안': '내일은 점심시간 10분 산책과 저녁 15분 홈트레이닝으로 가볍게 보충해 보세요.',
+      '운동_수정_제안': '야근이 잦은 날을 위한 15분 침대/매트 홈트 3종 (버드독, 브릿지, 플랭크)',
+      '식단_수정_제안': '피로 누적 시 비타민 B/C 보충 및 충분한 미온수 섭취',
       '운동 내용': '야근으로 인해 취침 전 폼롤러 스트레칭 20분만 진행',
       '식단 내용': '점심 김치찌개 건더기 위주, 저녁 단호박+닭가슴살 소시지',
       '회원 일기/코멘트': '업무가 너무 바빠 운동을 제대로 못해 아쉽고 피곤합니다.',
-      '피드백 코멘트': ''
+      '피드백 코멘트': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
+      '피드백 상태': 'AI초안',
+      'AI초안_생성일시': '2026-10-10 22:30:00'
     },
     {
       '피드백번호': 'FB04',
@@ -1787,11 +1798,19 @@ function isFeedbackRecordCompleted(fb) {
 
   const invalidTokens = ['', '-', '미작성', '없음', '대기', '미완료', 'null', 'undefined'];
 
-  // 1. 상태 컬럼에 '완료' 키워드가 명시된 경우
   const status = String(getField(fb, 
     '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
   ) || '').trim();
-  if (status && (status.includes('완료') || status.toLowerCase() === 'done' || status.toLowerCase() === 'completed')) {
+  const cleanStatus = status.toLowerCase().replace(/\s+/g, '');
+
+  // ★[핵심 방어: 4단계] 상태가 'AI초안', '초안', '대기', '미완료' 등인 경우 텍스트 존재 여부와 무관하게 무조건 미완료(false) 반환!
+  const draftOrPendingStatuses = ['ai초안', '초안', '초안대기', '대기', '미완료', 'pending', 'draft'];
+  if (draftOrPendingStatuses.includes(cleanStatus)) {
+    return false;
+  }
+
+  // 1. 상태 컬럼에 '완료' 키워드가 명시된 경우
+  if (status && (status.includes('완료') || cleanStatus === 'done' || cleanStatus === 'completed')) {
     return true;
   }
 
@@ -1910,9 +1929,12 @@ function renderFeedbackTable(feedbacks) {
 
     // [핵심] 해당 셀에 내용이 있거나 코멘트/요약/보완점/문제점이 작성되어 있다면 피드백 완료로 판정
     const isCompleted = isFeedbackRecordCompleted(fb);
+    const rawStatus = String(getField(fb, '피드백 상태', '피드백상태', '완료 여부', '완료여부', '진행상태', '상태') || '').trim();
+    const cleanStatus = rawStatus.toLowerCase().replace(/\s+/g, '');
+    const isDraft = (cleanStatus === 'ai초안' || cleanStatus === '초안' || cleanStatus === '초안대기');
 
     html += `
-      <tr>
+      <tr class="${isCompleted ? 'table-light-subtle' : (isDraft ? 'table-info-subtle' : '')}">
         <td class="text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
         <td class="text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
         <td class="text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
@@ -1924,6 +1946,7 @@ function renderFeedbackTable(feedbacks) {
         </td>
         <td class="small" style="min-width: 200px; max-width: 320px;">
           <div class="feedback-text-cell" title="${escapeHtml(summary)}">
+            ${isDraft ? '<span class="badge bg-info text-white me-1" style="font-size: 0.68rem;">AI초안</span>' : ''}
             ${escapeHtml(summary)}
           </div>
         </td>
@@ -1939,11 +1962,18 @@ function renderFeedbackTable(feedbacks) {
         </td>
         <td class="text-center text-nowrap">
           ${isCompleted ? `
-            <!-- 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
+            <!-- [4단계] 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
             <button type="button" class="btn btn-sm btn-success fw-semibold px-2 py-1 shadow-sm text-white"
                     title="피드백 내용 수정하기"
                     onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
               <i class="bi bi-check-circle-fill me-1"></i>✅ 피드백 완료
+            </button>
+          ` : (isDraft ? `
+            <!-- [4단계] AI 초안 상태일 때 파란색 계열 피드백 하기 (초안대기) 버튼 표시 -->
+            <button type="button" class="btn btn-sm btn-info text-white fw-semibold px-2 py-1 shadow-sm"
+                    title="AI 초안 검토 및 피드백 작성하기"
+                    onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
+              <i class="bi bi-file-earmark-text-fill me-1"></i>📝 피드백 하기 (초안대기)
             </button>
           ` : `
             <!-- 미작성 시 파란색 피드백 하기 버튼 표시 -->
@@ -1952,7 +1982,7 @@ function renderFeedbackTable(feedbacks) {
                     onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
               <i class="bi bi-pencil-square me-1"></i>피드백 하기
             </button>
-          `}
+          `)}
         </td>
       </tr>
     `;
@@ -1974,7 +2004,19 @@ function getScoreBadgeClass(score) {
  * [6. 피드백 하기 모달 플로우 (체중 추이 분석, 근거 제시, 선택적 복사 반영)]
  * ==============================================================================
  */
-async function openDailyFeedbackModal(targetDate) {
+/**
+ * ==============================================================================
+ * [6. 피드백 하기 모달 플로우 (체중 추이 분석, 근거 제시, 선택적 복사 반영)]
+ * ==============================================================================
+ */
+
+/**
+ * [2단계] 모달 창 즉시 열기 (0.1초 즉시 오픈, 자동 AI 호출 제거)
+ * - 클릭 시 로딩 오버레이 없이 즉시 모달을 띄우고,
+ *   기존 저장 데이터 또는 백그라운드에서 작성된 'AI초안' 데이터를 그대로 표시
+ * - 상단에 회원의 오늘 제출 원본 설문 답변을 접기/펼치기 박스로 제공
+ */
+function openDailyFeedbackModal(targetDate) {
   if (!AppState.selectedMember) return;
   const mem = AppState.selectedMember;
   const memberName = getMemberName(mem);
@@ -1982,52 +2024,165 @@ async function openDailyFeedbackModal(targetDate) {
   const targetFb = AppState.feedbacks.find(f => getMemberName(f) === memberName && String(getField(f, '날짜', 'date', '일자')).includes(targetDate));
   if (!targetFb) return;
 
-  const recentFeedbacks = AppState.feedbacks
-    .filter(f => getMemberName(f) === memberName)
-    .sort((a, b) => new Date(getField(a, '날짜', 'date', '일자')) - new Date(getField(b, '날짜', 'date', '일자')));
+  AppState.currentFeedbackContext = {
+    date: targetDate,
+    feedback: targetFb
+  };
 
+  // 1. 기본 대상 정보 헤더 세팅
   setElementText('dfModalTargetDate', targetDate);
   setElementText('dfModalTargetName', memberName);
   setElementText('dfModalWeight', getField(targetFb, '공복 몸무게', '공복몸무게', '체중', 'weight') || '-');
 
+  // 2. [2단계] 회원 오늘 제출 설문 원본 박스 바인딩
+  const rawExercise = getField(targetFb, '운동내용', '운동 내용', '오늘의 운동', '운동수행', '운동', 'exerciseContent') || '기록된 운동 내용이 없습니다.';
+  const rawDiet = getField(targetFb, '식단내용', '식단 내용', '오늘의 식단', '식단기록', '식단', 'dietContent', 'mealContent') || '기록된 식단 내용이 없습니다.';
+  const rawMemo = getField(targetFb, '회원 일기/코멘트', '회원일기/코멘트', '회원 일기', '코치에게한마디', '하고싶은말', '코멘트', '메모', 'userComment') || '작성된 코멘트가 없습니다.';
+
+  setElementText('rawSubmissionExercise', rawExercise);
+  setElementText('rawSubmissionDiet', rawDiet);
+  setElementText('rawSubmissionMemo', rawMemo);
+
+  const rawBadge = document.getElementById('rawSubmissionBadge');
+  if (rawBadge) {
+    const hasRaw = (rawExercise !== '기록된 운동 내용이 없습니다.' || rawDiet !== '기록된 식단 내용이 없습니다.' || rawMemo !== '작성된 코멘트가 없습니다.');
+    rawBadge.textContent = hasRaw ? '제출 완료' : '미제출';
+    rawBadge.className = hasRaw ? 'badge bg-success-subtle text-success ms-2 fw-normal' : 'badge bg-secondary-subtle text-secondary ms-2 fw-normal';
+  }
+
+  // 3. 점수 필드 세팅 (기존 저장 점수 또는 초안 점수, 없으면 기본값)
   const currentEx = getField(targetFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
   const currentDiet = getField(targetFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
-  setElementText('dfModalExScore', currentEx || '-');
-  setElementText('dfModalDietScore', currentDiet || '-');
+  const initialExScore = (currentEx && currentEx !== '-' && !isNaN(parseFloat(currentEx))) ? parseFloat(currentEx) : 4;
+  const initialDietScore = (currentDiet && currentDiet !== '-' && !isNaN(parseFloat(currentDiet))) ? parseFloat(currentDiet) : 5;
 
+  setInputValue('dfModalInputExScore', initialExScore);
+  setInputValue('dfModalInputDietScore', initialDietScore);
+  setElementText('dfModalExScore', `${initialExScore}점`);
+  setElementText('dfModalDietScore', `${initialDietScore}점`);
+
+  // 4. 피드백 요약 / 문제점 / 보완점 필드 세팅
+  let summaryVal = getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', '요약') || '';
+  let problemVal = getField(targetFb, '문제점_분석', '문제점 분석', '문제점분석', '문제점') || '';
+  let solutionVal = getField(targetFb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안') || '';
   const existingComment = getField(targetFb, 
-    '피드백 코멘트', '피드백코멘트', 
-    '피드백 내용', '피드백내용', 
-    '코치 피드백', '코치피드백', 
-    '코칭 코멘트', '코칭코멘트', 
-    '코치 코멘트', '코치코멘트', 
-    '코칭 내용', '코칭내용', 
-    '코치답변', '코치 답변', '답변',
-    'feedbackComment', 'coachComment'
+    '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', 
+    '코치 피드백', '코치피드백', '코칭 코멘트', '코칭코멘트', 
+    '코치 코멘트', '코치코멘트', '코칭 내용', '코칭내용', 
+    '코치답변', '코치 답변', '답변', 'feedbackComment', 'coachComment'
   ) || '';
 
-  const existingSummary = getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', '요약') || '';
-  const existingProblem = getField(targetFb, '문제점_분석', '문제점 분석', '문제점분석', '문제점') || '';
-  const existingSolution = getField(targetFb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안') || '';
-
-  let initialComment = existingComment;
-  if (!initialComment && (existingSummary || existingSolution)) {
-    let combined = existingSummary;
-    if (existingProblem && existingProblem !== '특이사항 없음') {
-      combined += `\n\n[문제점 분석]\n${existingProblem}`;
+  if (!summaryVal && existingComment) {
+    if (existingComment.includes('[문제점 분석]') || existingComment.includes('[보완점 및 개선방안]')) {
+      const parts = existingComment.split(/\[문제점 분석\]|\[보완점 및 개선방안\]/);
+      summaryVal = (parts[0] || '').trim();
+      if (!problemVal && existingComment.includes('[문제점 분석]')) {
+        problemVal = (existingComment.split('[문제점 분석]')[1].split('[보완점 및 개선방안]')[0] || '').trim();
+      }
+      if (!solutionVal && existingComment.includes('[보완점 및 개선방안]')) {
+        solutionVal = (existingComment.split('[보완점 및 개선방안]')[1] || '').trim();
+      }
+    } else {
+      summaryVal = existingComment.trim();
     }
-    if (existingSolution) {
-      combined += `\n\n[보완점 및 개선방안]\n${existingSolution}`;
-    }
-    initialComment = combined.trim();
   }
-  setInputValue('dfModalFeedbackComment', initialComment);
+
+  setInputValue('dfModalSummary', summaryVal);
+  setInputValue('dfModalProblem', problemVal || '특이사항 없음');
+  setInputValue('dfModalSolution', solutionVal);
+
+  // 통합 코멘트 숨김 필드
+  let fullComment = summaryVal;
+  if (problemVal && problemVal !== '특이사항 없음') {
+    fullComment += `\n\n[문제점 분석]\n${problemVal}`;
+  }
+  if (solutionVal) {
+    fullComment += `\n\n[보완점 및 개선방안]\n${solutionVal}`;
+  }
+  setInputValue('dfModalFeedbackComment', fullComment.trim());
+
+  // 5. 운동/식단 수정 제안 및 근거 표시
+  const exProposal = getField(targetFb, '운동_수정_제안', '운동 수정 제안', '운동수정제안', 'exerciseProposal') || '';
+  const dietProposal = getField(targetFb, '식단_수정_제안', '식단 수정 제안', '식단수정제안', 'dietProposal') || '';
+
+  const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
+  const dietProposalEl = document.getElementById('dfModalAiDietProposal');
+  const reasonEl = document.getElementById('dfModalModificationReason');
+  const badgeEl = document.getElementById('dfModalNeedModifyBadge');
+
+  if (exProposalEl) exProposalEl.textContent = exProposal || '제안 내용 없음';
+  if (dietProposalEl) dietProposalEl.textContent = dietProposal || '제안 내용 없음';
+
+  const hasProposal = Boolean((exProposal && exProposal.trim()) || (dietProposal && dietProposal.trim()));
+  if (badgeEl) {
+    if (hasProposal) {
+      badgeEl.className = 'badge bg-warning text-dark fw-bold';
+      badgeEl.textContent = '수정 권장';
+    } else {
+      badgeEl.className = 'badge bg-success-subtle text-success fw-bold';
+      badgeEl.textContent = '현재 루틴 유지';
+    }
+  }
+
+  if (reasonEl) {
+    if ((problemVal && problemVal !== '특이사항 없음' && problemVal !== '미작성') || solutionVal) {
+      reasonEl.innerHTML = `
+        ${problemVal && problemVal !== '특이사항 없음' && problemVal !== '미작성' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problemVal)}</div>` : ''}
+        ${solutionVal && solutionVal !== '미작성' ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(solutionVal)}</div>` : ''}
+      `;
+    } else {
+      reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
+    }
+  }
+
+  // 6. 상태 배너 문구 동적 안내
+  const rawStatus = String(getField(targetFb, '피드백 상태', '피드백상태', '완료 여부', '완료여부', '진행상태', '상태') || '').trim();
+  const cleanStatus = rawStatus.toLowerCase().replace(/\s+/g, '');
+  const isDraft = (cleanStatus === 'ai초안' || cleanStatus === '초안' || cleanStatus === '초안대기');
+  const isCompleted = isFeedbackRecordCompleted(targetFb);
+  const statusNoticeEl = document.getElementById('dfModalStatusNotice');
+
+  if (statusNoticeEl) {
+    if (isCompleted) {
+      statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✅ 피드백 완료 상태:</span> 이미 저장된 내용이 표시 중입니다. 수정 후 다시 저장할 수 있습니다.`;
+    } else if (isDraft) {
+      statusNoticeEl.innerHTML = `<span class="text-primary fw-bold">🤖 AI 초안 대기 상태:</span> 백그라운드에서 작성된 AI 초안입니다. 검토 후 <strong>[피드백 코멘트 저장]</strong>을 눌러 최종 완료해 주세요.`;
+    } else {
+      statusNoticeEl.innerHTML = `<span class="text-secondary fw-bold">✏️ 미작성 상태:</span> 직접 작성하거나 우측 <strong>[🤖 피드백 하기 (AI 분석/재생성)]</strong>을 클릭하여 AI 분석을 요청하세요.`;
+    }
+  }
+
+  // 7. 모달 창 즉시 오픈 (지연 없음)
+  const modalEl = document.getElementById('dailyFeedbackModal');
+  if (modalEl && window.bootstrap) {
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modal.show();
+  }
+}
+
+/**
+ * [3단계] 모달 내부 [🤖 피드백 하기 (AI 분석/재생성)] 전용 함수
+ * - 코치가 버튼을 직접 클릭했을 때만 실행되어 AI 분석(브라우저 직통 또는 GAS) 수행
+ * - 모달 내 입력칸들을 새로 생성된 결과로 갱신 (시트 저장은 하단 저장 버튼 클릭 시 처리)
+ */
+async function runAiDailyFeedbackForCurrentModal() {
+  if (!AppState.currentFeedbackContext || !AppState.selectedMember) return;
+
+  const targetDate = AppState.currentFeedbackContext.date;
+  const mem = AppState.selectedMember;
+  const memberName = getMemberName(mem);
+  const targetFb = AppState.currentFeedbackContext.feedback;
+  if (!targetFb) return;
+
+  const recentFeedbacks = AppState.feedbacks
+    .filter(f => getMemberName(f) === memberName)
+    .sort((a, b) => new Date(getField(a, '날짜', 'date', '일자')) - new Date(getField(b, '날짜', 'date', '일자')));
 
   showLoadingOverlay('AI가 최근 3일 이상의 체중 추이와 전체 설문/피드백 데이터를 종합 분석 중입니다...');
 
   let aiData = null;
 
-  // [요구사항 1 & 2] 브라우저 직통 모드 시도 (Gemini API Key가 설정되어 있는 경우 초고속 분석)
+  // 1. 브라우저 직통 모드 시도
   if (AppState.geminiApiKey) {
     try {
       const memberFullProfile = formatObjectAsFullProfile(mem);
@@ -2084,7 +2239,6 @@ ${weightHistorySummary}
         if (jsonMatch) cleaned = jsonMatch[0];
         const rawJson = JSON.parse(cleaned);
 
-        // 7개 키 구조 100% 엄격 강제 정규화
         aiData = {
           "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
           "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
@@ -2105,7 +2259,7 @@ ${weightHistorySummary}
     }
   }
 
-  // 브라우저 직통 미사용 또는 파싱 실패 시 GAS 백엔드 호출
+  // 2. 브라우저 직통 미사용 또는 파싱 실패 시 GAS 백엔드 호출
   if (!aiData) {
     if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
       hideLoadingOverlay();
@@ -2136,53 +2290,25 @@ ${weightHistorySummary}
   }
 
   if (aiData) {
-    AppState.currentFeedbackContext = {
-      date: targetDate,
-      feedback: targetFb,
-      aiData: aiData
-    };
+    AppState.currentFeedbackContext.aiData = aiData;
 
-    // 1. 점수 설정: 기존 입력된 점수가 있으면 우선 유지, 없으면 AI 평가 점수로 세팅
-    let initialExScore = (currentEx && currentEx !== '-') ? currentEx : (aiData.운동_실행률_점수 !== undefined ? aiData.운동_실행률_점수 : 4);
-    let initialDietScore = (currentDiet && currentDiet !== '-') ? currentDiet : (aiData.식단_실행률_점수 !== undefined ? aiData.식단_실행률_점수 : 5);
+    // 모달 입력칸들을 AI 생성 결과로 갱신
+    const exScoreVal = aiData.운동_실행률_점수 !== undefined ? aiData.운동_실행률_점수 : 4;
+    const dietScoreVal = aiData.식단_실행률_점수 !== undefined ? aiData.식단_실행률_점수 : 5;
 
-    setInputValue('dfModalInputExScore', initialExScore);
-    setInputValue('dfModalInputDietScore', initialDietScore);
-    setElementText('dfModalExScore', `${initialExScore}점`);
-    setElementText('dfModalDietScore', `${initialDietScore}점`);
+    setInputValue('dfModalInputExScore', exScoreVal);
+    setInputValue('dfModalInputDietScore', dietScoreVal);
+    setElementText('dfModalExScore', `${exScoreVal}점`);
+    setElementText('dfModalDietScore', `${dietScoreVal}점`);
 
-    // 2. 3개 텍스트 영역 (피드백 요약, 문제점 분석, 보완점 및 개선방안) 모달에 각각 바인딩
-    let summaryVal = existingSummary;
-    let problemVal = existingProblem;
-    let solutionVal = existingSolution;
+    const summaryVal = aiData.피드백_요약 || '';
+    const problemVal = aiData.문제점_분석 || '특이사항 없음';
+    const solutionVal = aiData.보완점_및_개선방안 || '';
 
-    // 만약 피드백_요약 등의 개별 컬럼은 없으나 기존 레거시 코멘트가 있는 경우 분리 파싱
-    if (!summaryVal && existingComment) {
-      if (existingComment.includes('[문제점 분석]') || existingComment.includes('[보완점 및 개선방안]')) {
-        const parts = existingComment.split(/\[문제점 분석\]|\[보완점 및 개선방안\]/);
-        summaryVal = (parts[0] || '').trim();
-        if (!problemVal && existingComment.includes('[문제점 분석]')) {
-          problemVal = (existingComment.split('[문제점 분석]')[1].split('[보완점 및 개선방안]')[0] || '').trim();
-        }
-        if (!solutionVal && existingComment.includes('[보완점 및 개선방안]')) {
-          solutionVal = (existingComment.split('[보완점 및 개선방안]')[1] || '').trim();
-        }
-      } else {
-        summaryVal = existingComment.trim();
-      }
-    }
-
-    // 기존 저장된 내용이 없는 신규 피드백일 경우 AI가 분석한 결과로 3개 필드 각각 채우기
-    if (!summaryVal) summaryVal = aiData.피드백_요약 || '';
-    if (!problemVal) problemVal = aiData.문제점_분석 || '특이사항 없음';
-    if (!solutionVal) solutionVal = aiData.보완점_및_개선방안 || '';
-
-    // 모달 내 3개 독립 텍스트 영역에 각각 바인딩!
     setInputValue('dfModalSummary', summaryVal);
     setInputValue('dfModalProblem', problemVal);
     setInputValue('dfModalSolution', solutionVal);
 
-    // 하위 호환성 유지용 전체 통합 코멘트
     let fullComment = summaryVal;
     if (problemVal && problemVal !== '특이사항 없음') {
       fullComment += `\n\n[문제점 분석]\n${problemVal}`;
@@ -2192,29 +2318,15 @@ ${weightHistorySummary}
     }
     setInputValue('dfModalFeedbackComment', fullComment.trim());
 
-    // 3. AI 체중 추이 분석 및 수정 제안 근거 영역
-    const reasonEl = document.getElementById('dfModalModificationReason');
-    const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
-    const dietProposalEl = document.getElementById('dfModalAiDietProposal');
-    const badgeEl = document.getElementById('dfModalNeedModifyBadge');
-
-    const aiProblem = aiData.문제점_분석 || '';
-    const aiSolution = aiData.보완점_및_개선방안 || '';
+    // 수정 제안 2개 및 근거 영역 갱신
     const exProposal = aiData.운동_수정_제안 || '';
     const dietProposal = aiData.식단_수정_제안 || '';
 
-    if (reasonEl) {
-      if ((aiProblem && aiProblem !== '특이사항 없음') || aiSolution) {
-        reasonEl.innerHTML = `
-          ${aiProblem && aiProblem !== '특이사항 없음' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(aiProblem)}</div>` : ''}
-          ${aiSolution ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(aiSolution)}</div>` : ''}
-        `;
-      } else {
-        reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
-      }
-    }
+    const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
+    const dietProposalEl = document.getElementById('dfModalAiDietProposal');
+    const reasonEl = document.getElementById('dfModalModificationReason');
+    const badgeEl = document.getElementById('dfModalNeedModifyBadge');
 
-    // 4. (중요) 운동/식단 수정 제안은 별도 박스에만 표시 (Feedbacks 시트에 자동 저장되지 않으며 코치가 복사 버튼을 눌러야만 반영)
     if (exProposalEl) exProposalEl.textContent = exProposal || '제안 내용 없음';
     if (dietProposalEl) dietProposalEl.textContent = dietProposal || '제안 내용 없음';
 
@@ -2229,17 +2341,37 @@ ${weightHistorySummary}
       }
     }
 
-    const modalEl = document.getElementById('dailyFeedbackModal');
-    if (modalEl && window.bootstrap) {
-      const modal = new bootstrap.Modal(modalEl);
-      modal.show();
+    if (reasonEl) {
+      if ((problemVal && problemVal !== '특이사항 없음') || solutionVal) {
+        reasonEl.innerHTML = `
+          ${problemVal && problemVal !== '특이사항 없음' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problemVal)}</div>` : ''}
+          ${solutionVal ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(solutionVal)}</div>` : ''}
+        `;
+      } else {
+        reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
+      }
     }
+
+    const statusNoticeEl = document.getElementById('dfModalStatusNotice');
+    if (statusNoticeEl) {
+      statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✨ AI 분석 완료:</span> 최신 분석 결과가 입력되었습니다. 내용을 검토/수정한 후 하단 <strong>[피드백 코멘트 저장]</strong>을 눌러주세요.`;
+    }
+
+    showToast('AI 피드백 분석이 완료되었습니다. 검토 후 저장해 주세요.', 'success');
   } else {
-    showToast('피드백 데이터를 분석하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.', 'warning');
+    showToast('AI 피드백 분석에 실패했습니다. 다시 시도해 주세요.', 'warning');
   }
 }
 
 function initDailyFeedbackModalActions() {
+  // [3단계] 모달 내부 [🤖 피드백 하기 (AI 분석/재생성)] 버튼 클릭 핸들러
+  const btnRunAi = document.getElementById('btnRunAiDailyFeedback');
+  if (btnRunAi) {
+    btnRunAi.addEventListener('click', async () => {
+      await runAiDailyFeedbackForCurrentModal();
+    });
+  }
+
   const btnSaveComment = document.getElementById('btnSaveDailyFeedbackComment');
   if (btnSaveComment) {
     btnSaveComment.addEventListener('click', async () => {
@@ -2261,6 +2393,12 @@ function initDailyFeedbackModalActions() {
       const dietScoreInput = getInputValue('dfModalInputDietScore');
       const exScoreToSave = exScoreInput !== '' ? parseFloat(exScoreInput) : 4;
       const dietScoreToSave = dietScoreInput !== '' ? parseFloat(dietScoreInput) : 5;
+
+      // 수정 제안 내용 (모달 표시 보존용)
+      const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
+      const dietProposalEl = document.getElementById('dfModalAiDietProposal');
+      const exProposalToSave = (exProposalEl && exProposalEl.textContent !== '제안 내용 없음') ? exProposalEl.textContent.trim() : '';
+      const dietProposalToSave = (dietProposalEl && dietProposalEl.textContent !== '제안 내용 없음') ? dietProposalEl.textContent.trim() : '';
 
       // 회원 전달용 통합 코멘트 생성
       let combinedComment = summaryToSave;
@@ -2301,19 +2439,27 @@ function initDailyFeedbackModalActions() {
         targetFb['보완점_및_개선방안'] = solutionToSave;
         targetFb['보완점및개선방안'] = solutionToSave;
 
+        if (exProposalToSave) {
+          targetFb['운동_수정_제안'] = exProposalToSave;
+        }
+        if (dietProposalToSave) {
+          targetFb['식단_수정_제안'] = dietProposalToSave;
+        }
+
         targetFb['피드백 코멘트'] = combinedComment;
         targetFb['피드백코멘트'] = combinedComment;
         targetFb['피드백 내용'] = combinedComment;
         targetFb['피드백내용'] = combinedComment;
         targetFb['feedbackComment'] = combinedComment;
+
+        // [4단계] 코치가 저장을 완료한 경우에만 '완료' 상태로 업데이트
         targetFb['피드백 상태'] = '완료';
         targetFb['피드백상태'] = '완료';
         targetFb['피드백완료'] = '완료';
         targetFb['피드백 완료'] = '완료';
       }
 
-      // [핵심] 백엔드에 5가지 필수 데이터 (점수 2개, 텍스트 3개) 및 식별자 전송
-      // (중요: 운동_수정_제안 및 식단_수정_제안은 Feedbacks 탭에 절대 자동 저장되지 않으며 코치가 복사 버튼을 통해 Members 시트에만 반영됨)
+      // [핵심] 백엔드에 필수 데이터 전송
       const res = await postToGasBackend({
         action: 'updateFeedbackComment',
         memberKey: memberKey,
@@ -2329,8 +2475,14 @@ function initDailyFeedbackModalActions() {
         dietScore: dietScoreToSave,
         피드백_요약: summaryToSave,
         문제점_분석: problemToSave,
-        보완점_및_개선방안: solutionToSave
+        보완점_및_개선방안: solutionToSave,
+        운동_수정_제안: exProposalToSave,
+        식단_수정_제안: dietProposalToSave
       });
+
+      const targetNotiKey = `${memberName}_${dateStr}`;
+      markAiDraftAsRead(targetNotiKey);
+      markPendingNotiAsRead(targetNotiKey);
 
       if (res && res.status === 'success') {
         showToast('✓ 피드백 코멘트가 구글 시트에 성공적으로 저장되었습니다!', 'success');
@@ -2341,7 +2493,7 @@ function initDailyFeedbackModalActions() {
         renderThreeIndependentCharts(userFeedbacks);
         
         // 상단 전역 알림 뱃지 즉시 갱신
-        updateGlobalNotificationBadge();
+        updateGlobalNotificationBadges();
 
         const modalEl = document.getElementById('dailyFeedbackModal');
         if (modalEl && window.bootstrap) {
@@ -2357,7 +2509,13 @@ function initDailyFeedbackModalActions() {
         const userFeedbacks = AppState.feedbacks.filter(f => getMemberName(f) === memberName);
         renderFeedbackTable(userFeedbacks);
         renderThreeIndependentCharts(userFeedbacks);
-        updateGlobalNotificationBadge();
+        updateGlobalNotificationBadges();
+
+        const modalEl = document.getElementById('dailyFeedbackModal');
+        if (modalEl && window.bootstrap) {
+          const modal = bootstrap.Modal.getInstance(modalEl);
+          if (modal) modal.hide();
+        }
       }
     });
   }
@@ -2393,35 +2551,144 @@ function initDailyFeedbackModalActions() {
 
 /**
  * ==============================================================================
- * [요구사항 4: 대시보드 미완료 피드백 전역 알림 기능 (Notification)]
+ * [5단계: 상단 알림 2종 분리 및 로컬스토리지 기반 읽음/모두읽음 관리]
+ * 1) 🤖 AI 초안 작성 알림: status === 'AI초안' 또는 초안 요약 존재 & !completed
+ * 2) 🔔 미완료 피드백 알림: !completed
  * ==============================================================================
  */
-function updateGlobalNotificationBadge() {
-  const badgeEl = document.getElementById('unreadFeedbackBadge');
-  const countBadgeEl = document.getElementById('notificationListCountBadge');
-  const itemsContainer = document.getElementById('notificationItemsContainer');
 
-  if (!AppState.feedbacks || AppState.feedbacks.length === 0) {
-    if (badgeEl) badgeEl.classList.add('d-none');
-    if (countBadgeEl) countBadgeEl.textContent = '0건';
-    if (itemsContainer) {
-      itemsContainer.innerHTML = '<li class="p-3 text-center text-muted small">제출된 피드백 기록이 없습니다.</li>';
-    }
-    return;
+function getReadAiDraftKeys() {
+  try {
+    const raw = localStorage.getItem(STORAGE_READ_AI_DRAFTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
   }
+}
 
-  // 1. 코치 코멘트가 비어있는 피드백 스캔
-  const pendingFeedbacks = [];
+function markAiDraftAsRead(itemKey) {
+  if (!itemKey) return;
+  const list = getReadAiDraftKeys();
+  if (!list.includes(itemKey)) {
+    list.push(itemKey);
+    try {
+      localStorage.setItem(STORAGE_READ_AI_DRAFTS_KEY, JSON.stringify(list));
+    } catch (e) {}
+  }
+  updateGlobalNotificationBadges();
+}
+
+function markAllAiDraftsAsRead() {
+  const currentUnread = getUnreadAiDraftItems();
+  const currentKeys = currentUnread.map(it => it.key);
+  const existing = getReadAiDraftKeys();
+  const merged = Array.from(new Set([...existing, ...currentKeys]));
+  try {
+    localStorage.setItem(STORAGE_READ_AI_DRAFTS_KEY, JSON.stringify(merged));
+  } catch (e) {}
+  updateGlobalNotificationBadges();
+  showToast('모든 AI 초안 알림을 읽음 처리했습니다.', 'info');
+}
+
+function getReadPendingNotiKeys() {
+  try {
+    const raw = localStorage.getItem(STORAGE_READ_PENDING_NOTIS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function markPendingNotiAsRead(itemKey) {
+  if (!itemKey) return;
+  const list = getReadPendingNotiKeys();
+  if (!list.includes(itemKey)) {
+    list.push(itemKey);
+    try {
+      localStorage.setItem(STORAGE_READ_PENDING_NOTIS_KEY, JSON.stringify(list));
+    } catch (e) {}
+  }
+  updateGlobalNotificationBadges();
+}
+
+function markAllPendingNotisAsRead() {
+  const currentUnread = getUnreadPendingItems();
+  const currentKeys = currentUnread.map(it => it.key);
+  const existing = getReadPendingNotiKeys();
+  const merged = Array.from(new Set([...existing, ...currentKeys]));
+  try {
+    localStorage.setItem(STORAGE_READ_PENDING_NOTIS_KEY, JSON.stringify(merged));
+  } catch (e) {}
+  updateGlobalNotificationBadges();
+  showToast('모든 미완료 피드백 알림을 읽음(숨김) 처리했습니다.', 'info');
+}
+
+// 헬퍼: 현재 미완료 및 AI 초안 아이템 목록 추출
+function getUnreadAiDraftItems() {
+  if (!AppState.feedbacks || AppState.feedbacks.length === 0) return [];
+  const readKeys = new Set(getReadAiDraftKeys());
+  const items = [];
 
   AppState.feedbacks.forEach(fb => {
-    const isCompleted = isFeedbackRecordCompleted(fb);
+    // 이미 코치가 저장 완료한 피드백은 제외
+    if (isFeedbackRecordCompleted(fb)) return;
 
-    if (!isCompleted) {
+    const status = String(getField(fb, '피드백 상태', '피드백상태', 'status') || '').trim();
+    const summary = getField(fb, '피드백_요약', '피드백 요약', 'feedbackSummary', 'summary') || '';
+    const isAiDraft = (status === 'AI초안' || (summary && String(summary).trim().length > 0));
+
+    if (isAiDraft) {
       const memberName = getMemberName(fb);
-      const memberPhone = getMemberPhone(fb);
       const date = getField(fb, '날짜', 'date', '일자') || '-';
+      const key = `${memberName}_${date}`;
 
-      // 해당 회원의 memberKey 탐색
+      if (!readKeys.has(key)) {
+        const memberPhone = getMemberPhone(fb);
+        let matchedMem = null;
+        if (AppState.members && AppState.members.length > 0) {
+          matchedMem = AppState.members.find(m => {
+            if (memberPhone && getMemberPhone(m) === memberPhone) return true;
+            return getMemberName(m) === memberName;
+          });
+        }
+        const memberKey = matchedMem ? getMemberKey(matchedMem) : memberName;
+
+        items.push({
+          key,
+          fb,
+          memberName,
+          memberKey,
+          date,
+          summary
+        });
+      }
+    }
+  });
+
+  items.sort((a, b) => {
+    const timeA = new Date(a.date).getTime() || 0;
+    const timeB = new Date(b.date).getTime() || 0;
+    if (timeA !== timeB) return timeB - timeA;
+    return String(b.date).localeCompare(String(a.date));
+  });
+
+  return items;
+}
+
+function getUnreadPendingItems() {
+  if (!AppState.feedbacks || AppState.feedbacks.length === 0) return [];
+  const readKeys = new Set(getReadPendingNotiKeys());
+  const items = [];
+
+  AppState.feedbacks.forEach(fb => {
+    if (isFeedbackRecordCompleted(fb)) return;
+
+    const memberName = getMemberName(fb);
+    const date = getField(fb, '날짜', 'date', '일자') || '-';
+    const key = `${memberName}_${date}`;
+
+    if (!readKeys.has(key)) {
+      const memberPhone = getMemberPhone(fb);
       let matchedMem = null;
       if (AppState.members && AppState.members.length > 0) {
         matchedMem = AppState.members.find(m => {
@@ -2429,68 +2696,136 @@ function updateGlobalNotificationBadge() {
           return getMemberName(m) === memberName;
         });
       }
-
       const memberKey = matchedMem ? getMemberKey(matchedMem) : memberName;
       const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
       const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
       const userComment = getField(fb, '회원 일기/코멘트', '회원일기/코멘트', '회원 일기', '회원일기', '코멘트', 'userComment') || '';
+      const status = String(getField(fb, '피드백 상태', '피드백상태', 'status') || '').trim();
 
-      pendingFeedbacks.push({
+      items.push({
+        key,
         fb,
         memberName,
         memberKey,
         date,
         exScore,
         dietScore,
-        userComment
+        userComment,
+        status
       });
     }
   });
 
-  // 2. 최신 날짜순(내림차순) 정렬
-  pendingFeedbacks.sort((a, b) => {
+  items.sort((a, b) => {
     const timeA = new Date(a.date).getTime() || 0;
     const timeB = new Date(b.date).getTime() || 0;
     if (timeA !== timeB) return timeB - timeA;
     return String(b.date).localeCompare(String(a.date));
   });
 
-  const count = pendingFeedbacks.length;
+  return items;
+}
 
-  // 3. 종 아이콘 빨간색 뱃지 업데이트
-  if (badgeEl) {
-    if (count > 0) {
-      badgeEl.textContent = count > 99 ? '99+' : String(count);
-      badgeEl.classList.remove('d-none');
+function updateGlobalNotificationBadges() {
+  // 1. [AI 초안 알림]
+  const aiBadgeEl = document.getElementById('unreadAiDraftBadge');
+  const aiCountBadgeEl = document.getElementById('aiDraftListCountBadge');
+  const aiItemsContainer = document.getElementById('aiDraftNotificationItemsContainer');
+
+  const aiDraftItems = getUnreadAiDraftItems();
+  const aiCount = aiDraftItems.length;
+
+  if (aiBadgeEl) {
+    if (aiCount > 0) {
+      aiBadgeEl.textContent = aiCount > 99 ? '99+' : String(aiCount);
+      aiBadgeEl.classList.remove('d-none');
     } else {
-      badgeEl.textContent = '0';
-      badgeEl.classList.add('d-none');
+      aiBadgeEl.textContent = '0';
+      aiBadgeEl.classList.add('d-none');
     }
   }
 
-  if (countBadgeEl) {
-    countBadgeEl.textContent = `${count}건`;
+  if (aiCountBadgeEl) {
+    aiCountBadgeEl.textContent = `${aiCount}건`;
   }
 
-  // 4. 드롭다운 대기 리스트 렌더링
-  if (itemsContainer) {
-    if (count === 0) {
-      itemsContainer.innerHTML = `
+  if (aiItemsContainer) {
+    if (aiCount === 0) {
+      aiItemsContainer.innerHTML = `
         <li class="p-4 text-center text-muted small">
-          <i class="bi bi-check-circle-fill text-success fs-5 d-block mb-1"></i>
-          모든 데일리 피드백이 완료되었습니다! 🎉
+          <i class="bi bi-robot text-secondary fs-5 d-block mb-1"></i>
+          새로운 AI 초안 알림이 없습니다. 🤖
         </li>
       `;
     } else {
-      let listHtml = '';
-      pendingFeedbacks.forEach(item => {
-        listHtml += `
+      let aiListHtml = '';
+      aiDraftItems.forEach(item => {
+        aiListHtml += `
           <li class="dropdown-item p-2 px-3 border-bottom cursor-pointer hover-bg-light notification-item"
               style="cursor: pointer;"
-              onclick="handleNotificationClick('${escapeHtml(item.memberKey)}', '${escapeHtml(item.date)}')">
+              onclick="handleAiDraftNotificationClick('${escapeHtml(item.key)}', '${escapeHtml(item.memberKey)}', '${escapeHtml(item.date)}')">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <span class="fw-bold text-dark"><i class="bi bi-robot text-warning me-1"></i>${escapeHtml(item.memberName)}</span>
+              <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">${escapeHtml(item.date)}</span>
+            </div>
+            <div class="small text-dark mb-1">
+              🤖 <strong>${escapeHtml(item.memberName)}</strong> 회원의 <strong>${escapeHtml(item.date)}</strong> 피드백 AI 초안이 작성되었습니다.
+            </div>
+            ${item.summary ? `<div class="small text-muted text-truncate" style="max-width: 320px;">${escapeHtml(item.summary)}</div>` : ''}
+            <div class="text-end mt-1">
+              <span class="badge bg-primary text-white small px-2 py-1"><i class="bi bi-pencil-square me-1"></i>초안 확인/수정 &rarr;</span>
+            </div>
+          </li>
+        `;
+      });
+      aiItemsContainer.innerHTML = aiListHtml;
+    }
+  }
+
+  // 2. [미완료 피드백 알림]
+  const pendingBadgeEl = document.getElementById('unreadFeedbackBadge');
+  const pendingCountBadgeEl = document.getElementById('notificationListCountBadge');
+  const pendingItemsContainer = document.getElementById('notificationItemsContainer');
+
+  const pendingItems = getUnreadPendingItems();
+  const pendingCount = pendingItems.length;
+
+  if (pendingBadgeEl) {
+    if (pendingCount > 0) {
+      pendingBadgeEl.textContent = pendingCount > 99 ? '99+' : String(pendingCount);
+      pendingBadgeEl.classList.remove('d-none');
+    } else {
+      pendingBadgeEl.textContent = '0';
+      pendingBadgeEl.classList.add('d-none');
+    }
+  }
+
+  if (pendingCountBadgeEl) {
+    pendingCountBadgeEl.textContent = `${pendingCount}건`;
+  }
+
+  if (pendingItemsContainer) {
+    if (pendingCount === 0) {
+      pendingItemsContainer.innerHTML = `
+        <li class="p-4 text-center text-muted small">
+          <i class="bi bi-check-circle-fill text-success fs-5 d-block mb-1"></i>
+          대기 중인 피드백 알림이 없습니다! 🎉
+        </li>
+      `;
+    } else {
+      let pendingListHtml = '';
+      pendingItems.forEach(item => {
+        const isDraft = item.status === 'AI초안';
+        pendingListHtml += `
+          <li class="dropdown-item p-2 px-3 border-bottom cursor-pointer hover-bg-light notification-item"
+              style="cursor: pointer;"
+              onclick="handlePendingNotificationClick('${escapeHtml(item.key)}', '${escapeHtml(item.memberKey)}', '${escapeHtml(item.date)}')">
             <div class="d-flex justify-content-between align-items-center mb-1">
               <span class="fw-bold text-dark"><i class="bi bi-person-fill text-primary me-1"></i>${escapeHtml(item.memberName)}</span>
-              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small">${escapeHtml(item.date)}</span>
+              <div class="d-flex align-items-center gap-1">
+                ${isDraft ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle small">AI초안</span>' : ''}
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small">${escapeHtml(item.date)}</span>
+              </div>
             </div>
             <div class="small text-muted text-truncate mb-1" style="max-width: 280px;">
               <span class="text-success fw-semibold">[운동 ${item.exScore}점]</span>
@@ -2503,33 +2838,76 @@ function updateGlobalNotificationBadge() {
           </li>
         `;
       });
-      itemsContainer.innerHTML = listHtml;
+      pendingItemsContainer.innerHTML = pendingListHtml;
     }
   }
 }
 
+function updateGlobalNotificationBadge() {
+  updateGlobalNotificationBadges();
+}
+
 /**
- * [요구사항 4-5] 알림 목록 항목 클릭 시:
- * 해당 회원 상세 페이지로 전환 + 해당 날짜의 피드백 작성 모달 바로 열기
+ * [AI 초안 알림 항목 클릭 시]
+ * 개별 읽음 처리 + 해당 회원 상세 이동 + 해당 날짜 모달 즉시 열기
  */
-function handleNotificationClick(memberKey, targetDate) {
-  // 드롭다운 메뉴 닫기 (Bootstrap dropdown 닫기)
+function handleAiDraftNotificationClick(key, memberKey, targetDate) {
+  markAiDraftAsRead(key);
+
+  const btn = document.getElementById('btnAiDraftNotification');
+  if (btn && window.bootstrap) {
+    const dropdownInstance = bootstrap.Dropdown.getInstance(btn);
+    if (dropdownInstance) dropdownInstance.hide();
+  }
+
+  if (memberKey) {
+    selectMember(memberKey);
+  }
+
+  setTimeout(() => {
+    openDailyFeedbackModal(targetDate);
+  }, 150);
+}
+
+/**
+ * [미완료 피드백 알림 항목 클릭 시]
+ * 개별 읽음(숨김) 처리 + 해당 회원 상세 이동 + 해당 날짜 모달 즉시 열기
+ */
+function handlePendingNotificationClick(key, memberKey, targetDate) {
+  markPendingNotiAsRead(key);
+
   const bellBtn = document.getElementById('btnNotificationBell');
   if (bellBtn && window.bootstrap) {
     const dropdownInstance = bootstrap.Dropdown.getInstance(bellBtn);
     if (dropdownInstance) dropdownInstance.hide();
   }
 
-  // 해당 회원이 존재하면 선택 (참여자 관리 뷰 전환 및 화면 갱신)
   if (memberKey) {
     selectMember(memberKey);
   }
 
-  // 약간의 렌더링 텀 후 피드백 모달 오픈
   setTimeout(() => {
     openDailyFeedbackModal(targetDate);
   }, 150);
 }
+
+// 하위 호환성 유지용
+function handleNotificationClick(memberKey, targetDate) {
+  handlePendingNotificationClick('', memberKey, targetDate);
+}
+
+// 전역 함수 노출
+window.getReadAiDraftKeys = getReadAiDraftKeys;
+window.markAiDraftAsRead = markAiDraftAsRead;
+window.markAllAiDraftsAsRead = markAllAiDraftsAsRead;
+window.getReadPendingNotiKeys = getReadPendingNotiKeys;
+window.markPendingNotiAsRead = markPendingNotiAsRead;
+window.markAllPendingNotisAsRead = markAllPendingNotisAsRead;
+window.updateGlobalNotificationBadges = updateGlobalNotificationBadges;
+window.updateGlobalNotificationBadge = updateGlobalNotificationBadge;
+window.handleAiDraftNotificationClick = handleAiDraftNotificationClick;
+window.handlePendingNotificationClick = handlePendingNotificationClick;
+window.handleNotificationClick = handleNotificationClick;
 
 /**
  * ==============================================================================
