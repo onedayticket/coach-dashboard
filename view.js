@@ -1276,6 +1276,19 @@ function promptGasUrl() {
   }
 }
 
+// 직접 회원번호/이름 조회 핸들러
+function handleDirectMemberSearch(e) {
+  if (e) e.preventDefault();
+  const inputEl = document.getElementById('directMemberInput');
+  const val = (inputEl ? inputEl.value : '').trim();
+  if (!val) return;
+
+  const currentUrl = new URL(window.location.href);
+  currentUrl.searchParams.set('id', val);
+  window.location.href = currentUrl.toString();
+}
+
 // 전역 노출
 window.handleMemberAuthLogin = handleMemberAuthLogin;
+window.handleDirectMemberSearch = handleDirectMemberSearch;
 window.promptGasUrl = promptGasUrl;
