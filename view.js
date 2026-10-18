@@ -589,7 +589,7 @@ function extractFeedbackMemberNo(fb) {
 }
 
 // 캐시 키 정의 (Stale-While-Revalidate 초고속 로딩용)
-const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v2';
+const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v3';
 
 /**
  * 회원 데이터 로드 (캐시 우선 즉시 렌더링 + 백그라운드 최신 동기화)
@@ -621,7 +621,8 @@ async function loadMemberPageData(targetId) {
       const matched = findMemberInList(combinedMembers, targetId);
       if (matched) {
         console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(matched)}`);
-        applyMemberData(matched, [...(cached.feedbacks || []), ...VIEW_MOCK_DB.feedbacks], false);
+        // 실제 캐시된 시트 피드백만 사용 (더미 데이터 혼합 배제)
+        applyMemberData(matched, cached.feedbacks || [], false);
         if (loadingScreen) loadingScreen.classList.add('d-none');
         checkMemberAuthAndDisplay();
         hasRenderedFromCache = true;
@@ -633,7 +634,7 @@ async function loadMemberPageData(targetId) {
   // [2단계: 구글 시트 백엔드(GAS) 최신 데이터 동기화 (넉넉한 25초 타임아웃)]
   // -------------------------------------------------------------------------
   let allMembers = [...VIEW_MOCK_DB.members];
-  let allFeedbacks = [...VIEW_MOCK_DB.feedbacks];
+  let allFeedbacks = [];
   let isSheetSuccess = false;
 
   if (gasUrl) {
@@ -650,14 +651,15 @@ async function loadMemberPageData(targetId) {
         const freshMembers = Array.isArray(json.data.members) ? json.data.members : [];
         const freshFeedbacks = Array.isArray(json.data.feedbacks) ? json.data.feedbacks : [];
 
-        // ★ 핵심: 구글 시트 회원과 샘플 회원을 안전 통합 (둘 다 언제나 접근 가능!)
+        // 회원은 시트 회원 우선 + 테스트 대비 Mock 회원 결합
         allMembers = [...freshMembers, ...VIEW_MOCK_DB.members];
-        allFeedbacks = [...freshFeedbacks, ...VIEW_MOCK_DB.feedbacks];
+        // ★ 피드백은 100% 실제 구글 시트 피드백만 사용! (M001, M002 더미 피드백 혼입 완전 차단)
+        allFeedbacks = freshFeedbacks;
         isSheetSuccess = true;
 
-        console.log(`[회원 뷰어] GAS 최신 동기화 성공! 시트 회원: ${freshMembers.length}명, 통합 회원: ${allMembers.length}명`);
+        console.log(`[회원 뷰어] GAS 최신 동기화 성공! 시트 회원: ${freshMembers.length}명, 실제 시트 피드백: ${allFeedbacks.length}건`);
 
-        // 캐시 업데이트
+        // 캐시 업데이트 (순수 시트 데이터만 캐싱)
         try {
           const cachePayload = {
             members: freshMembers,
@@ -672,6 +674,13 @@ async function loadMemberPageData(targetId) {
       console.warn('[회원 뷰어] GAS 통신 대기 초과 또는 실패, 안전 백업 모드로 전환:', e);
     }
   }
+
+  // 시트 연결 실패 시에만 순수 오프라인 Mock DB 사용
+  if (!isSheetSuccess) {
+    allMembers = VIEW_MOCK_DB.members;
+    allFeedbacks = VIEW_MOCK_DB.feedbacks;
+  }
+
 
   // -------------------------------------------------------------------------
   // [3단계: 최종 회원 매칭 및 마이페이지 활성화]
