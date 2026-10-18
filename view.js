@@ -791,14 +791,14 @@ function updatePersonalInfoPanel(mem) {
 
   const memberId = getMemberNo(mem);
   const name = getMemberName(mem);
-  const age = getField(mem, '나이', 'age') || '-';
+  const age = getField(mem, '나이', '연령', 'age') || '-';
   const gender = getField(mem, '성별', 'gender') || '-';
-  const height = getField(mem, '키', 'height') || '-';
-  const weight = getField(mem, '시작 체중', '시작체중', '체중', '공복 몸무게', '공복몸무게', 'weight') || '-';
-  const job = getField(mem, '직업/근무시간', '직업', '근무시간', 'job') || '-';
+  const height = getField(mem, '키', '신장', 'height') || '-';
+  const weight = getField(mem, '시작 체중', '시작체중', '체중', '공복 몸무게', '공복몸무게', '현재체중', 'weight') || '-';
+  const job = getField(mem, '직업/근무시간', '직업', '근무시간', '직업및근무시간', '근무 형태', '근무형태', '직무', 'job') || '-';
   const exp = getField(mem, '운동 경력', '운동경력', '운동 경험', '운동경험', '경력', 'experience') || '-';
-  const freq = getField(mem, '주당 운동 횟수', '주당운동횟수', '주당 운동횟수', '운동 횟수', '운동횟수', 'frequency') || '-';
-  const goal = getField(mem, '참여목적', '목표', 'goal', '목적') || '-';
+  const freq = getField(mem, '주당 운동 횟수', '주당운동횟수', '주당 운동횟수', '운동 횟수', '운동횟수', '주당 횟수', '주당횟수', '주당운동', 'frequency') || '-';
+  const goal = getField(mem, '참여목적', '참여 목적', '프로그램 참여 목적', '목표', 'goal', '목적') || '-';
   const status = getField(mem, '상태', 'status') || '유효';
   const tag = getMemberTag(mem);
 
@@ -1177,23 +1177,52 @@ function getMemberTag(m) {
   return String(getField(m, '태그', 'tag', 'tags', '분류', '코스', '프로그램', '프로그램명') || '4주-체중감량반').trim();
 }
 
-function getField(obj, ...candidateKeys) {
+/**
+ * [코치 대시보드(app.js)와 100% 동일한 3단계 다단계 필드 추출기]
+ * 1단계: 원본 키 직접 일치
+ * 2단계: 공백 및 줄바꿈 제거 후 100% 완전 일치 비교
+ * 3단계: 부분 일치 비교 (2글자 이상 키워드가 헤더에 포함되어 있거나 헤더가 키워드를 포함)
+ * 구글 폼 사전 설문 질문이 긴 문장 형태여도 정확하게 감지!
+ */
+function getField(obj, ...candidates) {
   if (!obj || typeof obj !== 'object') return '';
-  for (const cand of candidateKeys) {
-    if (obj[cand] !== undefined && obj[cand] !== null && String(obj[cand]).trim() !== '') {
-      return obj[cand];
+
+  // 1단계: 원본 키 직접 일치
+  for (let i = 0; i < candidates.length; i++) {
+    const key = candidates[i];
+    if (obj[key] !== undefined && obj[key] !== null && String(obj[key]).trim() !== '') {
+      return obj[key];
     }
   }
+
   const keys = Object.keys(obj);
-  for (const cand of candidateKeys) {
-    const cleanCand = cand.replace(/\s+/g, '').toLowerCase();
-    for (const k of keys) {
-      if (k.replace(/\s+/g, '').toLowerCase() === cleanCand) {
-        const val = obj[k];
+
+  // 2단계: 공백(\s+) 및 줄바꿈 제거 후 100% 일치 비교 (대소문자 무관)
+  for (let i = 0; i < candidates.length; i++) {
+    const cleanCand = String(candidates[i]).replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (!cleanCand) continue;
+    for (let j = 0; j < keys.length; j++) {
+      const cleanK = String(keys[j]).replace(/[\s\r\n]+/g, '').toLowerCase();
+      if (cleanK === cleanCand) {
+        const val = obj[keys[j]];
         if (val !== undefined && val !== null && String(val).trim() !== '') return val;
       }
     }
   }
+
+  // 3단계: 부분 일치 (2글자 이상 키워드 포함 비교)
+  for (let i = 0; i < candidates.length; i++) {
+    const cleanCand = String(candidates[i]).replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (!cleanCand || cleanCand.length < 2) continue;
+    for (let j = 0; j < keys.length; j++) {
+      const cleanK = String(keys[j]).replace(/[\s\r\n]+/g, '').toLowerCase();
+      if (cleanK.includes(cleanCand) || cleanCand.includes(cleanK)) {
+        const val = obj[keys[j]];
+        if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+      }
+    }
+  }
+
   return '';
 }
 
