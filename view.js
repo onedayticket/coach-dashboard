@@ -225,35 +225,97 @@ let CurrentMemberState = {
 };
 
 /**
- * 초기화 진입점
+ * [초정밀 모바일 & 크로스플랫폼 URL 회원 식별자 추출기]
+ * 1. 대소문자 완전 무시 (?id, ?ID, ?Id, ?memberId, ?member_id, ?no, ?name, ?user)
+ * 2. 해시태그 (#id=..., #M001, #김민수) 및 쿼리 단독값 (?M001, ?김민수) 완벽 감지
+ * 3. 메신저(카카오톡, 문자 등) 복사 과정에서 끝에 붙은 슬래시, 해시, 따옴표 자동 정제
+ * 4. 이중 URL 디코딩 안전 방어
  */
-document.addEventListener('DOMContentLoaded', async () => {
-  const urlParams = new URLSearchParams(window.location.search);
-  let rawId = (urlParams.get('id') || urlParams.get('memberId') || urlParams.get('member') || '').trim();
+function extractMemberIdSmartly() {
+  const href = window.location.href;
+  const search = window.location.search || '';
+  const hash = window.location.hash || '';
 
-  // 만약 쿼리스트링 대신 hash(#id=M001 또는 #M001) 형태로 들어왔을 경우도 유연하게 지원
-  if (!rawId && window.location.hash) {
-    const hashStr = window.location.hash.replace(/^#\/?/, '').trim();
-    if (hashStr.includes('=')) {
-      const hashParams = new URLSearchParams(hashStr);
-      rawId = (hashParams.get('id') || hashParams.get('memberId') || hashParams.get('member') || '').trim();
-    } else if (hashStr) {
-      rawId = hashStr;
+  const TARGET_KEYS = ['id', 'memberid', 'member_id', 'member', 'user', 'name', 'no', 'num', 'code'];
+
+  // 1. URLSearchParams 전체 키 대소문자 무시 검색 (표준 ?id=...)
+  if (search) {
+    try {
+      const urlParams = new URLSearchParams(search);
+      for (const [key, val] of urlParams.entries()) {
+        const cleanKey = key.trim().toLowerCase();
+        if (TARGET_KEYS.includes(cleanKey)) {
+          const cleanVal = cleanParamVal(val);
+          if (cleanVal) return cleanVal;
+        }
+      }
+    } catch (e) {}
+  }
+
+  // 2. 해시(#) 내 파라미터 검사 (#id=... 또는 #M001)
+  if (hash) {
+    const rawHash = hash.replace(/^#\/?/, '').trim();
+    if (rawHash.includes('=')) {
+      try {
+        const hashParams = new URLSearchParams(rawHash);
+        for (const [key, val] of hashParams.entries()) {
+          const cleanKey = key.trim().toLowerCase();
+          if (TARGET_KEYS.includes(cleanKey)) {
+            const cleanVal = cleanParamVal(val);
+            if (cleanVal) return cleanVal;
+          }
+        }
+      } catch (e) {}
+    } else if (rawHash && !rawHash.includes('&') && !rawHash.includes('/')) {
+      const cleanVal = cleanParamVal(rawHash);
+      if (cleanVal) return cleanVal;
     }
   }
 
-  // 혹시 id 끝에 '#'이나 공백이 붙어있을 경우 깔끔하게 제거
-  rawId = rawId.replace(/#+$/, '').trim();
+  // 3. 정규식 전체 URL 스캔 (인앱 브라우저 트래킹 파라미터 방어)
+  const regex = /[?&#](?:id|memberid|member_id|member|user|name|no)=([^&#\s\/\?]+)/i;
+  const match = href.match(regex);
+  if (match && match[1]) {
+    const cleanVal = cleanParamVal(match[1]);
+    if (cleanVal) return cleanVal;
+  }
 
-  let targetId = rawId;
+  // 4. 쿼리스트링에 키 없이 값만 들어온 경우 (예: ?M001 또는 ?김민수)
+  if (search && search.length > 1) {
+    const rawQuery = search.substring(1).trim();
+    if (!rawQuery.includes('=') && !rawQuery.includes('&')) {
+      const cleanVal = cleanParamVal(rawQuery);
+      if (cleanVal) return cleanVal;
+    }
+  }
+
+  return '';
+}
+
+function cleanParamVal(val) {
+  if (!val) return '';
+  let str = String(val).trim();
+  // 끝에 붙은 특수기호(#, /, ?, &, ", ') 제거
+  str = str.replace(/[\/#'"?&]+$/, '').trim();
   try {
-    targetId = decodeURIComponent(rawId);
+    str = decodeURIComponent(str);
   } catch (e) {}
-  targetId = targetId.replace(/#+$/, '').trim();
+  str = str.replace(/[\/#'"?&]+$/, '').trim();
+  return str;
+}
+
+/**
+ * 초기화 진입점
+ */
+document.addEventListener('DOMContentLoaded', async () => {
+  const targetId = extractMemberIdSmartly();
 
   // 1. 회원 ID가 URL에 없는 경우
   if (!targetId) {
-    showInvalidAccessScreen();
+    showInvalidAccessScreen(`
+      <strong>URL에 회원 식별 정보가 없습니다.</strong><br>
+      주소 끝에 <code>?id=회원번호</code>(예: <code>?id=M001</code>)를 포함하여 접속해 주세요.
+    `);
     return;
   }
 
@@ -262,12 +324,27 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /**
- * 올바르지 않은 접근 화면 표시
+ * 올바르지 않은 접근 화면 표시 (원인별 지능형 힌트 제공)
  */
-function showInvalidAccessScreen() {
-  document.getElementById('invalidAccessScreen')?.classList.remove('d-none');
+function showInvalidAccessScreen(reasonHint = '') {
+  document.getElementById('pageLoadingScreen')?.classList.add('d-none');
+  const invalidScreen = document.getElementById('invalidAccessScreen');
+  if (invalidScreen) {
+    invalidScreen.classList.remove('d-none');
+  }
   document.getElementById('memberPageContent')?.classList.add('d-none');
+
+  const reasonEl = document.getElementById('invalidAccessReasonHint');
+  if (reasonEl) {
+    if (reasonHint) {
+      reasonEl.innerHTML = reasonHint;
+      reasonEl.classList.remove('d-none');
+    } else {
+      reasonEl.classList.add('d-none');
+    }
+  }
 }
+
 
 /**
  * ==============================================================================
@@ -618,10 +695,32 @@ async function loadMemberPageData(targetId) {
       checkMemberAuthAndDisplay();
     } else {
       console.warn(`[회원 뷰어] 회원 ID '${targetId}'를 어디에서도 찾을 수 없습니다.`);
-      showInvalidAccessScreen();
+      
+      let hint = '';
+      if (!gasUrl) {
+        hint = `
+          <div class="mb-1"><strong>📱 모바일 기기 구글 시트 연결 필요</strong></div>
+          <div class="text-secondary mb-2" style="font-size: 0.8rem;">
+            현재 모바일 기기에는 구글 스프레드시트 배포 URL이 저장되어 있지 않아 실제 시트 조회가 불가능합니다. (PC 브라우저에만 저장되어 있음)
+          </div>
+          <div class="small">
+            • <strong>해결 방법 1 (추천):</strong> 코치님 PC 화면 상단의 <strong>[모바일 링크 복사]</strong> 버튼을 눌러 카카오톡으로 전송받은 완전한 링크로 접속해 주세요.<br>
+            • <strong>해결 방법 2:</strong> 아래 <strong>[구글 시트 연동 설정]</strong> 버튼을 눌러 구글 Apps Script 배포 URL을 입력해 주세요.
+          </div>
+        `;
+      } else {
+        hint = `
+          <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
+          <div class="text-secondary small mt-1">
+            구글 시트 및 샘플 데이터에서 해당 회원번호나 이름을 찾지 못했습니다. 본인의 회원번호가 맞는지 다시 확인해 주세요.
+          </div>
+        `;
+      }
+      showInvalidAccessScreen(hint);
     }
   }
 }
+
 
 /**
  * 회원 목록에서 targetId와 일치하는 회원 검색 (회원번호 우선 ➔ 이름 ➔ 부분 일치)
@@ -1368,7 +1467,33 @@ function promptGasUrl() {
   }
 }
 
+// 모바일 기기에서도 즉시 열리는 완전한 회원 전용 링크 복사 함수
+function copyFullMemberLink() {
+  const member = CurrentMemberState.member;
+  const memberId = member ? (getMemberNo(member) || getMemberName(member)) : (extractMemberIdSmartly() || 'M001');
+  const gasUrl = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
+
+  const baseUrl = window.location.origin + window.location.pathname;
+  let fullUrl = `${baseUrl}?id=${encodeURIComponent(memberId)}`;
+  
+  if (gasUrl) {
+    fullUrl += `&gas=${encodeURIComponent(gasUrl)}`;
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullUrl).then(() => {
+      alert(`[모바일 전용 링크 복사 완료]\n\n카카오톡이나 문자메시지로 전송해 주세요:\n${fullUrl}\n\n※ 모바일에서 이 링크를 누르면 구글 시트 연동 정보가 자동 동기화되어 즉시 정상 접속됩니다.`);
+    }).catch(() => {
+      prompt('아래 링크를 복사하여 모바일에 전달해 주세요:', fullUrl);
+    });
+  } else {
+    prompt('아래 링크를 복사하여 모바일에 전달해 주세요:', fullUrl);
+  }
+}
+
 // 전역 노출
 window.handleMemberAuthLogin = handleMemberAuthLogin;
 window.promptGasUrl = promptGasUrl;
+window.copyFullMemberLink = copyFullMemberLink;
+
 

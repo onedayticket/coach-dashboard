@@ -31,8 +31,12 @@
         </a>
       </div>
 
-      <!-- 상단 우측 피드백 폼 바로가기 버튼 (상시 노출) -->
+      <!-- 상단 우측 피드백 폼 바로가기 및 공유 버튼 -->
       <div class="d-flex align-items-center gap-2">
+        <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3 py-1 small d-none d-md-inline-flex align-items-center gap-1" id="btnCopyMobileLink" onclick="copyFullMemberLink()" title="모바일 기기에서도 즉시 열리는 전용 링크 복사">
+          <i class="bi bi-phone"></i>
+          <span>모바일 링크 복사</span>
+        </button>
         <a href="https://forms.gle/oVfkyFefqmw21Kqn9" target="_blank" rel="noopener noreferrer" 
            class="cta-feedback-btn d-inline-flex align-items-center gap-2 text-decoration-none small" 
            id="btnTopFeedbackForm" title="구글 폼으로 데일리 피드백 제출">
@@ -73,13 +77,28 @@
             <i class="bi bi-shield-lock-fill text-warning display-3"></i>
           </div>
           <h4 class="fw-bold text-dark mb-2">올바르지 않은 접근입니다</h4>
-          <p class="text-muted mb-4 leading-relaxed">
+          <p class="text-muted mb-4 leading-relaxed" id="invalidAccessMainDesc">
             코치님께 전달받으신 <strong>본인 전용 마이페이지 링크</strong>를 확인해 주세요.<br>
             <span class="small text-secondary">(주소 끝에 <code>?id=회원번호</code>가 포함되어 있어야 합니다)</span>
           </p>
-          <div class="alert alert-light border small text-start mb-0">
+
+          <!-- 동적 진단 안내 상자 (모바일 환경 등) -->
+          <div class="alert alert-warning border small text-start mb-3 d-none" id="invalidAccessReasonHint">
+            <!-- JS에서 동적으로 진단 결과 및 해결 방법 주입 -->
+          </div>
+
+          <div class="alert alert-light border small text-start mb-3">
             <i class="bi bi-info-circle me-1 text-primary"></i><strong>안내:</strong><br>
             전용 링크를 분실하셨거나 접속에 어려움이 있으신 경우, 담당 코치님께 카카오톡/메신저로 본인 전용 링크 재전송을 요청해 주세요.
+          </div>
+
+          <div class="d-flex justify-content-center gap-2 pt-2 border-top">
+            <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" onclick="promptGasUrl()">
+              <i class="bi bi-gear-fill me-1"></i>구글 시트 연동 설정
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3" onclick="window.location.reload()">
+              <i class="bi bi-arrow-clockwise me-1"></i>다시 시도
+            </button>
           </div>
         </div>
       </div>
