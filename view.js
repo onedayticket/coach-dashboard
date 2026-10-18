@@ -16,7 +16,8 @@
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
 
 // 기본 구글 Apps Script 웹앱 연동 URL (회원이 별도 파라미터나 설정 없이도 전용 링크로 즉시 직결되는 기본 백엔드 주소)
-const DEFAULT_GAS_API_URL = '';
+const DEFAULT_GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzkKdXbM2KNOC2PvBcOtzxR13wt5Em_JUQdvotr22wdb2hxwYTc2eGZmzSHUArqGSNYWQ/exec';
+
 
 
 // 오프라인/테스트용 기본 Mock DB (app.js의 MOCK_DB와 완전 동기화)
