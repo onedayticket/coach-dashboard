@@ -250,7 +250,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       toggleSidebar(true);
     }
 
-    // 데이터 로드 (8초 타임아웃 및 Fail-Safe 적용)
+    // 데이터 로드 (구글 시트 콜드스타트 대비 35초 안전 타임아웃 및 Fail-Safe 적용)
     await loadAllData();
 
     // 초기 렌더링
@@ -282,15 +282,16 @@ async function loadAllData() {
   if (gasUrl) {
     let controller = null;
     let timeoutTimer = null;
+    const GAS_TIMEOUT_MS = 35000; // 구글 서버 콜드스타트 및 시트 3종(회원/피드백/지침서) 로딩 지연을 감안하여 35초로 넉넉하게 연장
 
     try {
-      showLoadingOverlay('구글 시트에서 최신 데이터를 가져오는 중...', 10000);
+      showLoadingOverlay('구글 시트에서 최신 데이터를 가져오는 중...', GAS_TIMEOUT_MS);
 
-      // [핵심] 10초 타임아웃 컨트롤러 장착 (구글 서버 지연 시 무한 로딩 방지)
+      // [핵심] 구글 서버 콜드스타트 감안 35초 타임아웃 컨트롤러 장착 (무한 대기 방지)
       controller = new AbortController();
       timeoutTimer = setTimeout(() => {
         controller.abort();
-      }, 10000);
+      }, GAS_TIMEOUT_MS);
 
       const response = await fetch(`${gasUrl}?action=getAll`, {
         method: 'GET',
@@ -336,8 +337,9 @@ async function loadAllData() {
     } catch (e) {
       if (timeoutTimer) clearTimeout(timeoutTimer);
       if (e.name === 'AbortError') {
-        console.warn('[GAS 연동 8초 타임아웃 - Mock 데이터로 전환]');
-        showToast('⚠️ 구글 시트 응답 시간 초과(8초). 로컬 Mock 데이터로 표시합니다.', 'warning', 6000);
+        const sec = Math.round(GAS_TIMEOUT_MS / 1000);
+        console.warn(`[GAS 연동 ${sec}초 타임아웃 - Mock 데이터로 전환]`);
+        showToast(`⚠️ 구글 시트 응답 시간 초과(${sec}초). 로컬 Mock 데이터로 표시합니다.`, 'warning', 6000);
       } else {
         console.warn('[GAS 연동 실패 - Mock 데이터로 전환]', e);
         showToast(`⚠️ 구글 시트 통신 오류 (${e.message}). 로컬 Mock 데이터로 표시합니다.`, 'warning', 6000);
