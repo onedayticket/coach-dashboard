@@ -284,6 +284,19 @@
 
   </main>
 
+  <!-- 하단 데이터 연동 상태 푸터 -->
+  <footer class="container-xl py-4 mt-4 text-center text-muted small border-top">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+      <span class="text-secondary">4주 온라인 습관화 코칭 회원 전용 마이페이지</span>
+      <div class="d-flex align-items-center gap-2">
+        <span id="dataConnectionStatusBadge" class="badge bg-light text-secondary border">데이터 연결 확인 중...</span>
+        <button type="button" class="btn btn-link btn-sm p-0 text-muted text-decoration-none" style="font-size: 0.75rem;" onclick="promptGasUrl()" title="구글 스프레드시트 연동 URL 설정">
+          <i class="bi bi-gear-fill me-1"></i>연동설정
+        </button>
+      </div>
+    </div>
+  </footer>
+
   <!-- ========================================================================= -->
   <!-- [3. 핸드폰 뒷 4자리 보안 인증 모달 (memberAuthModal)] -->
   <!-- ========================================================================= -->

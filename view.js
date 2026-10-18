@@ -273,6 +273,8 @@ async function loadMemberPageData(targetId) {
     } catch (e) {}
   }
 
+  console.log(`[회원 뷰어] 데이터 로드 시도: gasUrl=${gasUrl ? gasUrl.substring(0, 40) + '...' : '(없음/Mock)'}, targetId=${targetId}`);
+
   if (gasUrl) {
     try {
       const fetchUrl = `${gasUrl}?action=getAll&t=${Date.now()}`;
@@ -281,44 +283,86 @@ async function loadMemberPageData(targetId) {
       if (json && json.status === 'success' && json.data) {
         allMembers = Array.isArray(json.data.members) ? json.data.members : [];
         allFeedbacks = Array.isArray(json.data.feedbacks) ? json.data.feedbacks : [];
+        console.log(`[회원 뷰어] GAS 통신 성공! 시트에서 가져온 회원: ${allMembers.length}명, 피드백: ${allFeedbacks.length}건`);
+      } else {
+        console.warn('[회원 뷰어] GAS 응답 오류:', json);
       }
     } catch (e) {
-      console.warn('[회원 뷰어] GAS 연동 실패, Mock 데이터로 진행합니다.', e);
+      console.warn('[회원 뷰어] GAS 연동 실패(CORS/네트워크), Mock 데이터로 진행합니다.', e);
     }
+  } else {
+    console.warn('[회원 뷰어] GAS URL이 설정되지 않아 로컬 Mock DB로 동작합니다. 시트와 실시간 연동하려면 주소 뒤에 &gas=GAS배포URL 을 붙이거나 브라우저에 저장해 주세요.');
   }
 
   // 데이터가 없거나 로드 실패 시 Mock DB 사용
-  if (!allMembers || allMembers.length === 0) {
+  const isUsingMock = (!allMembers || allMembers.length === 0);
+  if (isUsingMock) {
     allMembers = VIEW_MOCK_DB.members;
     allFeedbacks = VIEW_MOCK_DB.feedbacks;
   }
 
-  // 회원 매칭 (회원번호 우선 ➔ 이름 ➔ 보조 키)
+  // 하단 연동 상태 뱃지 업데이트
+  const statusBadge = document.getElementById('dataConnectionStatusBadge');
+  if (statusBadge) {
+    if (isUsingMock) {
+      statusBadge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle';
+      statusBadge.textContent = '🟡 오프라인 Mock 모드';
+      statusBadge.title = '구글 시트 연동 URL이 설정되지 않아 샘플 데이터가 표시 중입니다. [연동설정]을 눌러 실제 시트 URL을 입력해 주세요.';
+    } else {
+      statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+      statusBadge.textContent = `🟢 구글 시트 실시간 연동됨 (${allMembers.length}명 / 피드백 ${allFeedbacks.length}건)`;
+      statusBadge.title = '구글 스프레드시트와 실시간으로 정상 연결되었습니다.';
+    }
+  }
+
+  // 회원 매칭 (회원번호 우선 ➔ 이름 ➔ 부분 일치)
   const cleanTargetId = targetId.replace(/\s+/g, '').toLowerCase();
   const matchedMember = allMembers.find(m => {
     const no = String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').replace(/\s+/g, '').toLowerCase();
-    const name = String(getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름') || '').replace(/\s+/g, '').toLowerCase();
-    return no === cleanTargetId || name === cleanTargetId;
+    const name = String(getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름', '성함') || '').replace(/\s+/g, '').toLowerCase();
+    return no === cleanTargetId || name === cleanTargetId || (name && cleanTargetId && (name.includes(cleanTargetId) || cleanTargetId.includes(name)));
   });
 
   if (!matchedMember) {
+    console.warn(`[회원 뷰어] '${targetId}'에 해당하는 회원을 찾을 수 없습니다. (전체 회원 수: ${allMembers.length}명)`);
     showInvalidAccessScreen();
     return;
   }
 
   CurrentMemberState.member = matchedMember;
 
-  // 피드백 필터링 (코치 대시보드와 동일: 이름 및 회원번호 동시 매칭)
+  // 피드백 필터링 (다양한 열 이름 및 부분 일치 지원)
   const memberName = getMemberName(matchedMember);
   const memberNo = getMemberNo(matchedMember);
+  const memberPhone = getMemberPhoneLast4(matchedMember);
   const cleanMemberName = memberName.replace(/\s+/g, '').toLowerCase();
   const cleanMemberNo = memberNo.replace(/\s+/g, '').toLowerCase();
 
   CurrentMemberState.feedbacks = allFeedbacks.filter(f => {
-    const fName = String(getField(f, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름') || '').replace(/\s+/g, '').toLowerCase();
-    const fNo = String(getField(f, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').replace(/\s+/g, '').toLowerCase();
-    return (fName && fName === cleanMemberName) || (fNo && fNo === cleanMemberNo);
+    const fName = String(getField(f, 
+      '이름', 'name', '성명', '성함', '회원명', '참여자이름', '참여자 이름', 
+      '참여자성함', '회원이름', '참가자이름', '신청자', '작성자', '회원'
+    ) || '').replace(/\s+/g, '').toLowerCase();
+
+    const fNo = String(getField(f, 
+      '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호'
+    ) || '').replace(/\s+/g, '').toLowerCase();
+
+    const fPhone = String(getField(f, '연락처', '전화번호', '휴대폰', '핸드폰', 'phone') || '').replace(/[^0-9]/g, '');
+
+    // 1. 회원번호 일치
+    if (cleanMemberNo && fNo && (fNo === cleanMemberNo || fNo.includes(cleanMemberNo))) return true;
+    
+    // 2. 이름 일치 (완전 일치 또는 포함)
+    if (cleanMemberName && fName && (fName === cleanMemberName || fName.includes(cleanMemberName) || cleanMemberName.includes(fName))) return true;
+
+    // 3. 휴대폰 뒷 4자리 일치
+    if (memberPhone && memberPhone !== '0000' && fPhone && fPhone.slice(-4) === memberPhone) return true;
+
+    return false;
   });
+
+  console.log(`[회원 뷰어] 회원 매칭 완료: ${memberName}(${memberNo}), 필터링된 피드백: ${CurrentMemberState.feedbacks.length}건 (전체 ${allFeedbacks.length}건 중)`);
 
   // 3. 본인 인증 체크 (휴대폰 번호 뒷 4자리)
   checkMemberAuthAndDisplay();
@@ -855,5 +899,26 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+// 구글 Apps Script 웹앱 연동 URL 수동 설정 헬퍼
+function promptGasUrl() {
+  const current = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
+  const input = prompt(
+    '구글 스프레드시트 Apps Script 웹 앱 배포 URL을 입력해 주세요:\n(예: https://script.google.com/macros/s/.../exec)\n\n※ 비워두고 확인을 누르면 오프라인 Mock 모드로 전환됩니다.',
+    current
+  );
+  if (input !== null) {
+    const trimmed = input.trim();
+    if (trimmed) {
+      localStorage.setItem(STORAGE_GAS_URL_KEY, trimmed);
+      alert('연동 URL이 브라우저에 저장되었습니다. 최신 구글 시트 데이터를 불러옵니다.');
+    } else {
+      localStorage.removeItem(STORAGE_GAS_URL_KEY);
+      alert('연동 URL이 초기화되었습니다 (오프라인 Mock 모드).');
+    }
+    window.location.reload();
+  }
+}
+
 // 전역 노출
 window.handleMemberAuthLogin = handleMemberAuthLogin;
+window.promptGasUrl = promptGasUrl;
