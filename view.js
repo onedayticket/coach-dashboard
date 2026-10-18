@@ -15,6 +15,10 @@
 // 로컬 스토리지 키 (코치 대시보드와 연동)
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
 
+// 기본 구글 Apps Script 웹앱 연동 URL (회원이 별도 파라미터나 설정 없이도 전용 링크로 즉시 직결되는 기본 백엔드 주소)
+const DEFAULT_GAS_API_URL = '';
+
+
 // 오프라인/테스트용 기본 Mock DB (app.js의 MOCK_DB와 완전 동기화)
 const VIEW_MOCK_DB = {
   members: [
@@ -595,7 +599,8 @@ async function loadMemberPageData(targetId) {
   const urlParams = new URLSearchParams(window.location.search);
   const urlGas = (urlParams.get('gas') || urlParams.get('apiUrl') || urlParams.get('gasUrl') || '').trim();
   const storageGas = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
-  const gasUrl = urlGas || storageGas;
+  const gasUrl = urlGas || storageGas || DEFAULT_GAS_API_URL;
+
 
   if (urlGas && urlGas !== storageGas) {
     try {
@@ -712,7 +717,27 @@ function findMemberInList(members, targetId) {
   const cleanTargetId = String(targetId || '').replace(/[\s\r\n]+/g, '').toLowerCase();
   if (!cleanTargetId) return null;
 
+  // 0순위: 행(Row)의 어떤 셀이라도 cleanTargetId와 일치하는 값이 있는지 전수 검사
+  // (열 이름이 'No.', 'ID', '번호', '순번' 등 무엇이든 'M000' 값이 들어있는 행을 100% 매칭)
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
+    if (m && typeof m === 'object') {
+      const vals = Object.values(m);
+      for (let j = 0; j < vals.length; j++) {
+        const v = vals[j];
+        if (v !== undefined && v !== null && String(v).trim() !== '') {
+          const cleanV = String(v).replace(/[\s\r\n]+/g, '').toLowerCase();
+          if (cleanV === cleanTargetId) {
+            console.log(`[회원 뷰어] 셀 직접 일치 매칭 성공: ${cleanTargetId}`);
+            return m;
+          }
+        }
+      }
+    }
+  }
+
   // 1순위: 회원번호 열 또는 키 직접 일치
+
   for (let i = 0; i < members.length; i++) {
     const m = members[i];
     const no = String(findValByKeywords(m, ['회원번호']) ||
