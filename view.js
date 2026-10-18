@@ -229,12 +229,27 @@ let CurrentMemberState = {
  */
 document.addEventListener('DOMContentLoaded', async () => {
   const urlParams = new URLSearchParams(window.location.search);
-  const rawId = (urlParams.get('id') || urlParams.get('memberId') || urlParams.get('member') || '').trim();
+  let rawId = (urlParams.get('id') || urlParams.get('memberId') || urlParams.get('member') || '').trim();
+
+  // 만약 쿼리스트링 대신 hash(#id=M001 또는 #M001) 형태로 들어왔을 경우도 유연하게 지원
+  if (!rawId && window.location.hash) {
+    const hashStr = window.location.hash.replace(/^#\/?/, '').trim();
+    if (hashStr.includes('=')) {
+      const hashParams = new URLSearchParams(hashStr);
+      rawId = (hashParams.get('id') || hashParams.get('memberId') || hashParams.get('member') || '').trim();
+    } else if (hashStr) {
+      rawId = hashStr;
+    }
+  }
+
+  // 혹시 id 끝에 '#'이나 공백이 붙어있을 경우 깔끔하게 제거
+  rawId = rawId.replace(/#+$/, '').trim();
+
   let targetId = rawId;
   try {
     targetId = decodeURIComponent(rawId);
   } catch (e) {}
-  targetId = targetId.trim();
+  targetId = targetId.replace(/#+$/, '').trim();
 
   // 1. 회원 ID가 URL에 없는 경우
   if (!targetId) {
