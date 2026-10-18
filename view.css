@@ -374,3 +374,21 @@ body {
   border: 1px solid #cbd5e1;
   letter-spacing: -0.2px;
 }
+
+/* ========================================================================= */
+/* [초고속 로딩 스크린 디자인] */
+/* ========================================================================= */
+#pageLoadingScreen {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-card {
+  background: #ffffff;
+  border-radius: 1.5rem;
+  padding: 3rem 2rem;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
+  border: 1px solid #e2e8f0;
+}
