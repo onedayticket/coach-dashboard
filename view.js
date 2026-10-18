@@ -218,6 +218,9 @@ const VIEW_MOCK_DB = {
 let CurrentMemberState = {
   member: null,
   feedbacks: [],
+  rawFeedbacksTotal: 0,
+  rawMembersTotal: 0,
+  isUsingMock: false,
   charts: {
     weight: null,
     exercise: null,
@@ -256,6 +259,49 @@ function showInvalidAccessScreen() {
 }
 
 /**
+ * 피드백 행 객체에서 회원 이름 관대하게 추출 (질문형 헤더, '이름' 포함 컬럼 자동 감지)
+ */
+function extractFeedbackMemberName(f) {
+  if (!f) return '';
+  // 1. 표준 헤더 우선 탐색
+  const directVal = getField(f, 
+    '이름', 'name', '성명', '성함', '회원명', '참여자이름', '참여자 이름', 
+    '참여자성함', '회원이름', '참가자이름', '신청자', '작성자', '회원'
+  );
+  if (directVal) return String(directVal).trim();
+
+  // 2. 헤더 키에 '이름', '성명', '성함'이 포함된 열 동적 스캔 (구글 폼 긴 질문 대응)
+  const keys = Object.keys(f);
+  for (const k of keys) {
+    const cleanK = k.replace(/\s+/g, '').toLowerCase();
+    if ((cleanK.includes('이름') || cleanK.includes('성명') || cleanK.includes('성함')) && !cleanK.includes('코치')) {
+      if (f[k]) return String(f[k]).trim();
+    }
+  }
+  return '';
+}
+
+/**
+ * 피드백 행 객체에서 회원번호 관대하게 추출
+ */
+function extractFeedbackMemberNo(f) {
+  if (!f) return '';
+  const directVal = getField(f, 
+    '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호'
+  );
+  if (directVal) return String(directVal).trim();
+
+  const keys = Object.keys(f);
+  for (const k of keys) {
+    const cleanK = k.replace(/\s+/g, '').toLowerCase();
+    if (cleanK.includes('회원번호') || cleanK.includes('회원id') || cleanK.includes('고유번호')) {
+      if (f[k]) return String(f[k]).trim();
+    }
+  }
+  return '';
+}
+
+/**
  * 회원 데이터 로드 (구글 시트 연동 시 실시간 조회)
  */
 async function loadMemberPageData(targetId) {
@@ -291,7 +337,7 @@ async function loadMemberPageData(targetId) {
       console.warn('[회원 뷰어] GAS 연동 실패(CORS/네트워크), Mock 데이터로 진행합니다.', e);
     }
   } else {
-    console.warn('[회원 뷰어] GAS URL이 설정되지 않아 로컬 Mock DB로 동작합니다. 시트와 실시간 연동하려면 주소 뒤에 &gas=GAS배포URL 을 붙이거나 브라우저에 저장해 주세요.');
+    console.warn('[회원 뷰어] GAS URL이 설정되지 않아 로컬 Mock DB로 동작합니다.');
   }
 
   // 데이터가 없거나 로드 실패 시 Mock DB 사용
@@ -301,6 +347,10 @@ async function loadMemberPageData(targetId) {
     allFeedbacks = VIEW_MOCK_DB.feedbacks;
   }
 
+  CurrentMemberState.rawMembersTotal = allMembers.length;
+  CurrentMemberState.rawFeedbacksTotal = allFeedbacks.length;
+  CurrentMemberState.isUsingMock = isUsingMock;
+
   // 하단 연동 상태 뱃지 업데이트
   const statusBadge = document.getElementById('dataConnectionStatusBadge');
   if (statusBadge) {
@@ -309,9 +359,16 @@ async function loadMemberPageData(targetId) {
       statusBadge.textContent = '🟡 오프라인 Mock 모드';
       statusBadge.title = '구글 시트 연동 URL이 설정되지 않아 샘플 데이터가 표시 중입니다. [연동설정]을 눌러 실제 시트 URL을 입력해 주세요.';
     } else {
-      statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
-      statusBadge.textContent = `🟢 구글 시트 실시간 연동됨 (${allMembers.length}명 / 피드백 ${allFeedbacks.length}건)`;
-      statusBadge.title = '구글 스프레드시트와 실시간으로 정상 연결되었습니다.';
+      if (allFeedbacks.length === 0) {
+        // [핵심 진단] 회원은 읽었으나 피드백 시트가 비어있거나 찾지 못한 경우
+        statusBadge.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle';
+        statusBadge.textContent = `🟢 시트 연동됨 (${allMembers.length}명 / ⚠️ 피드백 시트 확인 필요)`;
+        statusBadge.title = '회원 정보는 성공적으로 불러왔으나 Feedbacks 시트를 찾지 못했거나 내용이 없습니다. 구글 스프레드시트의 피드백 탭 이름을 "Feedbacks"로 변경해 주세요.';
+      } else {
+        statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+        statusBadge.textContent = `🟢 구글 시트 실시간 연동됨 (${allMembers.length}명 / 피드백 ${allFeedbacks.length}건)`;
+        statusBadge.title = '구글 스프레드시트와 실시간으로 정상 연결되었습니다.';
+      }
     }
   }
 
@@ -339,22 +396,21 @@ async function loadMemberPageData(targetId) {
   const cleanMemberNo = memberNo.replace(/\s+/g, '').toLowerCase();
 
   CurrentMemberState.feedbacks = allFeedbacks.filter(f => {
-    const fName = String(getField(f, 
-      '이름', 'name', '성명', '성함', '회원명', '참여자이름', '참여자 이름', 
-      '참여자성함', '회원이름', '참가자이름', '신청자', '작성자', '회원'
-    ) || '').replace(/\s+/g, '').toLowerCase();
-
-    const fNo = String(getField(f, 
-      '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호'
-    ) || '').replace(/\s+/g, '').toLowerCase();
-
+    const fName = extractFeedbackMemberName(f).replace(/\s+/g, '').toLowerCase();
+    const fNo = extractFeedbackMemberNo(f).replace(/\s+/g, '').toLowerCase();
     const fPhone = String(getField(f, '연락처', '전화번호', '휴대폰', '핸드폰', 'phone') || '').replace(/[^0-9]/g, '');
 
     // 1. 회원번호 일치
     if (cleanMemberNo && fNo && (fNo === cleanMemberNo || fNo.includes(cleanMemberNo))) return true;
     
-    // 2. 이름 일치 (완전 일치 또는 포함)
-    if (cleanMemberName && fName && (fName === cleanMemberName || fName.includes(cleanMemberName) || cleanMemberName.includes(fName))) return true;
+    // 2. 이름 일치 (완전 일치 또는 괄호 제거 후 포함 비교)
+    if (cleanMemberName && fName) {
+      const pureFName = fName.split('(')[0].trim();
+      const pureMemName = cleanMemberName.split('(')[0].trim();
+      if (fName === cleanMemberName || pureFName === pureMemName || fName.includes(pureMemName) || pureMemName.includes(pureFName)) {
+        return true;
+      }
+    }
 
     // 3. 휴대폰 뒷 4자리 일치
     if (memberPhone && memberPhone !== '0000' && fPhone && fPhone.slice(-4) === memberPhone) return true;
@@ -475,32 +531,27 @@ function unlockAndRenderMemberPage() {
   const member = CurrentMemberState.member;
   const feedbacks = CurrentMemberState.feedbacks;
 
-  // 1. 상단 네비 & 히어로 정보 바인딩
+  // 1. 코치 대시보드 인적사항 완전 일치 패널 렌더링
+  updatePersonalInfoPanel(member);
+
+  // 2. 상단 네비 & 히어로 정보 및 체중 계산 바인딩
   const memberName = getMemberName(member) || '회원';
-  const memberTag = getField(member, '태그', 'tag', '코스', '분류', '프로그램') || '4주 습관화 코칭';
+  const memberTag = getMemberTag(member);
   const memberNo = getMemberNo(member);
-  const memberPurpose = getField(member, '참여목적', '목적', 'purpose') || '건강한 운동 및 식단 습관 형성';
-  const memberJob = getField(member, '직업/근무시간', '직업', '근무시간') || '직장인';
-  const memberExp = getField(member, '운동 경력', '운동경력') || '초보';
-  const memberFreq = getField(member, '주당 운동 횟수', '운동횟수') || '주 2~3회';
 
   document.title = `${memberName}님의 4주 코칭 마이페이지`;
   setText('navMemberNameBadge', `${memberName}님 마이페이지`);
   setText('heroMemberTag', memberTag);
   setText('heroMemberNo', memberNo ? `No. ${memberNo}` : '');
   setText('heroMemberName', memberName);
-  setText('heroMemberPurpose', `🎯 참여 목적: ${memberPurpose}`);
-  setText('heroMemberJob', memberJob);
-  setText('heroMemberExp', memberExp);
-  setText('heroMemberFreq', memberFreq);
 
   // 체중 계산
-  const startWeight = parseFloat(getField(member, '시작 체중', '시작체중', '체중') || 0);
+  const startWeight = parseFloat(getField(member, '시작 체중', '시작체중', '체중', 'weight') || 0);
   let latestWeight = startWeight;
 
   if (feedbacks && feedbacks.length > 0) {
     const sortedFbs = feedbacks.slice().sort((a, b) => new Date(getField(b, '날짜') || 0) - new Date(getField(a, '날짜') || 0));
-    const recentW = parseFloat(getField(sortedFbs[0], '공복 몸무게', '공복몸무게', '체중') || 0);
+    const recentW = parseFloat(getField(sortedFbs[0], '공복 몸무게', '공복몸무게', '체중', 'weight') || 0);
     if (recentW > 0) latestWeight = recentW;
   }
 
@@ -517,22 +568,67 @@ function unlockAndRenderMemberPage() {
       diffBox.textContent = `+${diff.toFixed(1)} kg`;
       diffBox.className = 'fs-5 text-white fw-bold ms-2';
     } else {
-      diffBox.textContent = `변화 유지 중 (0.0 kg)`;
+      diffBox.textContent = `0.0 kg (유지)`;
       diffBox.className = 'fs-5 text-white fw-bold ms-2';
     }
   }
 
-  // 2. 운동 루틴 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
+  // 3. 운동 루틴 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
   renderWorkoutRoutineBox(member);
 
-  // 3. 식단 플랜 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
+  // 4. 식단 플랜 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
   renderDietPlanBox(member);
 
-  // 4. 데일리 데이터 추이 3개의 독립 꺾은선 차트 (코치 대시보드와 동일)
+  // 5. 데일리 데이터 추이 3개의 독립 꺾은선 차트 (코치 대시보드와 동일)
   renderThreeIndependentCharts(feedbacks);
 
-  // 5. 일자별 피드백 누적 테이블 렌더링 (코치 대시보드 목록 기준 그대로 가져옴)
+  // 6. 일자별 피드백 누적 테이블 렌더링 (코치 대시보드 목록 기준 그대로 가져옴)
   renderFeedbackTable(feedbacks);
+}
+
+/**
+ * [코치 대시보드와 100% 동일] 인적 사항 패널 렌더링
+ */
+function updatePersonalInfoPanel(mem) {
+  if (!mem) return;
+
+  const memberId = getMemberNo(mem);
+  const name = getMemberName(mem);
+  const age = getField(mem, '나이', 'age') || '-';
+  const gender = getField(mem, '성별', 'gender') || '-';
+  const height = getField(mem, '키', 'height') || '-';
+  const weight = getField(mem, '시작 체중', '시작체중', '체중', '공복 몸무게', '공복몸무게', 'weight') || '-';
+  const job = getField(mem, '직업/근무시간', '직업', '근무시간', 'job') || '-';
+  const exp = getField(mem, '운동 경력', '운동경력', '운동 경험', '운동경험', '경력', 'experience') || '-';
+  const freq = getField(mem, '주당 운동 횟수', '주당운동횟수', '주당 운동횟수', '운동 횟수', '운동횟수', 'frequency') || '-';
+  const goal = getField(mem, '참여목적', '목표', 'goal', '목적') || '-';
+  const status = getField(mem, '상태', 'status') || '유효';
+  const tag = getMemberTag(mem);
+
+  setText('valMemberId', memberId);
+  setText('valNameAgeGender', `${name} (${age}세 / ${gender})`);
+  setText('valHeightWeight', `${height} cm / ${weight} kg`);
+  setText('valJobSchedule', `${job}`);
+  setText('valExperience', `${exp}`);
+  setText('valFrequency', `${freq}`);
+  setText('valGoal', `${goal}`);
+
+  const badgeMemberId = document.getElementById('badgeMemberId');
+  if (badgeMemberId) {
+    badgeMemberId.textContent = memberId;
+  }
+
+  const badgeStatus = document.getElementById('badgeMemberStatus');
+  if (badgeStatus) {
+    const isActive = (status === '유효' || status.toLowerCase() === 'active');
+    badgeStatus.textContent = status;
+    badgeStatus.className = `badge ${isActive ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary border border-secondary-subtle'} fw-normal`;
+  }
+
+  const badgeTag = document.getElementById('badgeMemberTag');
+  if (badgeTag) {
+    badgeTag.innerHTML = `<i class="bi bi-tag-fill text-primary me-1"></i>${escapeHtml(tag)}`;
+  }
 }
 
 /**
@@ -744,12 +840,36 @@ function renderFeedbackTable(feedbacks) {
   if (!tbody) return;
 
   if (!feedbacks || feedbacks.length === 0) {
+    const isMock = CurrentMemberState.isUsingMock;
+    const totalFbs = CurrentMemberState.rawFeedbacksTotal;
+    let hintMsg = '';
+
+    if (!isMock && totalFbs === 0) {
+      hintMsg = `
+        <div class="alert alert-warning border small text-start mt-3 mb-0" style="max-width: 600px; margin: 0 auto;">
+          <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i><strong>피드백 시트(Feedbacks) 확인 필요:</strong><br>
+          스프레드시트에서 회원 정보는 성공적으로 불러왔으나, <strong>피드백 시트(Feedbacks) 데이터를 찾지 못했습니다.</strong><br>
+          • 구글 시트의 피드백 탭 이름이 <code>Feedbacks</code> 또는 <code>피드백</code>으로 되어 있는지 확인해 주세요.<br>
+          • (구글 폼 생성 기본 시트명인 <code>설문지 응답 1</code>로 되어 있다면 탭 이름을 <strong>Feedbacks</strong>로 변경해 주시면 즉시 연결됩니다.)
+        </div>
+      `;
+    } else if (!isMock && totalFbs > 0) {
+      hintMsg = `
+        <div class="alert alert-info border small text-start mt-3 mb-0" style="max-width: 600px; margin: 0 auto;">
+          <i class="bi bi-info-circle-fill me-1 text-primary"></i><strong>피드백 매칭 안내:</strong><br>
+          피드백 시트(총 ${totalFbs}건)는 접근되었으나, 현재 회원님(<strong>${getMemberName(CurrentMemberState.member)}</strong>)의 이름 또는 회원번호와 일치하는 제출 기록이 없습니다.<br>
+          새로운 일지를 제출해 주시면 자동으로 집계되어 표시됩니다.
+        </div>
+      `;
+    }
+
     tbody.innerHTML = `
       <tr>
         <td colspan="6" class="text-center py-5 text-muted small">
           <i class="bi bi-chat-square-dots fs-3 d-block mb-2 text-secondary"></i>
           제출된 데일리 피드백 기록이 없습니다.<br>
           상단의 <strong>[📝 오늘의 데일리 피드백 제출하기]</strong> 버튼을 통해 오늘 첫 일지를 작성해 보세요! 👏
+          ${hintMsg}
         </td>
       </tr>
     `;
@@ -862,6 +982,11 @@ function getMemberName(m) {
 
 function getMemberNo(m) {
   return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').trim();
+}
+
+function getMemberTag(m) {
+  if (!m) return '4주-체중감량반';
+  return String(getField(m, '태그', 'tag', 'tags', '분류', '코스', '프로그램', '프로그램명') || '4주-체중감량반').trim();
 }
 
 function getField(obj, ...candidateKeys) {

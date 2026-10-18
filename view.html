@@ -73,58 +73,126 @@
   <!-- ========================================================================= -->
   <main class="container-xl py-3 py-md-4 d-none" id="memberPageContent">
 
-    <!-- [A] 히어로 환영 섹션 & 인적사항 요약 카드 -->
+    <!-- [A] 상단 히어로 환영 헤더 & 체중 요약 카드 -->
     <div class="member-hero-card mb-4">
       <div class="row align-items-center g-3">
-        <div class="col-12 col-md-7">
+        <div class="col-12 col-md-6">
           <div class="d-flex align-items-center gap-2 mb-2">
             <span class="badge bg-warning text-dark px-3 py-1 fw-bold rounded-pill" id="heroMemberTag">프로그램 참여반</span>
-            <span class="text-white-50 small" id="heroMemberNo">회원번호</span>
+            <span class="badge bg-white-subtle text-white font-monospace" id="heroMemberNo">회원번호</span>
           </div>
-          <h2 class="fw-extrabold mb-2 text-white">
-            <span id="heroMemberName">회원</span>님, 오늘도 응원합니다! 💪
+          <h2 class="fw-extrabold mb-1 text-white">
+            <span id="heroMemberName">회원</span>님, 오늘도 힘찬 하루 보내세요! 💪
           </h2>
-          <p class="text-white-50 mb-3 small leading-relaxed" id="heroMemberPurpose">
-            참여 목적을 불러오는 중입니다...
+          <p class="text-white-50 mb-0 small leading-relaxed">
+            나를 변화시키는 4주간의 특별한 여정, 코치님이 늘 곁에서 1:1로 함께합니다.
           </p>
-          <div class="d-flex flex-wrap gap-2 text-white small">
-            <span class="badge bg-white-subtle text-white border border-white-subtle px-3 py-2 rounded-pill">
-              <i class="bi bi-briefcase me-1"></i><span id="heroMemberJob">-</span>
-            </span>
-            <span class="badge bg-white-subtle text-white border border-white-subtle px-3 py-2 rounded-pill">
-              <i class="bi bi-activity me-1"></i><span id="heroMemberExp">-</span>
-            </span>
-            <span class="badge bg-white-subtle text-white border border-white-subtle px-3 py-2 rounded-pill">
-              <i class="bi bi-calendar-check me-1"></i><span id="heroMemberFrequency">-</span>
-            </span>
-          </div>
         </div>
 
         <!-- 체중 변화 인포그래픽 -->
-        <div class="col-12 col-md-5">
+        <div class="col-12 col-md-6">
           <div class="row g-2">
-            <div class="col-6">
-              <div class="weight-stat-pill text-center">
-                <div class="text-white-50 small mb-1">시작 체중</div>
-                <div class="fs-4 fw-bold text-white"><span id="heroStartWeight">0</span><span class="fs-6 fw-normal ms-1">kg</span></div>
+            <div class="col-4">
+              <div class="weight-stat-pill text-center py-2 px-1">
+                <div class="text-white-50 small" style="font-size: 0.72rem;">시작 체중</div>
+                <div class="fs-5 fw-bold text-white"><span id="heroStartWeight">0</span><span class="fs-6 fw-normal ms-1">kg</span></div>
               </div>
             </div>
-            <div class="col-6">
-              <div class="weight-stat-pill text-center">
-                <div class="text-white-50 small mb-1">최근 체중</div>
-                <div class="fs-4 fw-bold text-warning"><span id="heroCurrentWeight">0</span><span class="fs-6 fw-normal ms-1">kg</span></div>
+            <div class="col-4">
+              <div class="weight-stat-pill text-center py-2 px-1">
+                <div class="text-white-50 small" style="font-size: 0.72rem;">최근 체중</div>
+                <div class="fs-5 fw-bold text-warning"><span id="heroCurrentWeight">0</span><span class="fs-6 fw-normal ms-1">kg</span></div>
               </div>
             </div>
-            <div class="col-12">
-              <div class="weight-stat-pill text-center py-2" id="weightDiffBox">
-                <span class="small text-white-50">체중 변화:</span>
-                <strong class="fs-5 text-white ms-2" id="heroWeightDiff">-0.0 kg</strong>
+            <div class="col-4">
+              <div class="weight-stat-pill text-center py-2 px-1" id="weightDiffBox">
+                <div class="text-white-50 small" style="font-size: 0.72rem;">체중 변화</div>
+                <div class="fs-5 fw-bold text-white"><span id="heroWeightDiff">0.0 kg</span></div>
               </div>
             </div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- ----------------------------------------------------------------- -->
+    <!-- [코치 대시보드 인적사항 완전 일치] 인적 사항 (사전 설문 기반) -->
+    <!-- ----------------------------------------------------------------- -->
+    <section class="member-content-card mb-4" id="panelPersonalInfo">
+      <div class="member-card-header bg-white border-bottom">
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+          <i class="bi bi-person-vcard text-primary fs-5"></i>
+          <h5 class="member-card-title text-dark">인적 사항 (사전 설문)</h5>
+          <span class="badge bg-dark text-white font-monospace" id="badgeMemberId">-</span>
+          <span class="badge bg-success-subtle text-success border border-success-subtle fw-normal" id="badgeMemberStatus">유효</span>
+          <span class="git-tag-pill" id="badgeMemberTag"><i class="bi bi-tag-fill text-primary"></i>-</span>
+        </div>
+      </div>
+
+      <div class="p-3 p-lg-4">
+        <!-- 상단 기본 인적사항 그리드 (회원번호, 이름/나이/성별, 키/시작 체중, 직업/근무시간) -->
+        <div class="row g-2 g-md-3 mb-3">
+          <div class="col-6 col-md-2">
+            <div class="info-field-box bg-light border-primary-subtle">
+              <div class="info-field-label text-primary"><i class="bi bi-hash me-1"></i>회원번호</div>
+              <div class="info-field-val font-monospace text-primary fw-bold" id="valMemberId">-</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="info-field-box">
+              <div class="info-field-label"><i class="bi bi-person me-1"></i>이름 / 나이 / 성별</div>
+              <div class="info-field-val" id="valNameAgeGender">-</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-2">
+            <div class="info-field-box">
+              <div class="info-field-label"><i class="bi bi-rulers me-1"></i>키 / 시작 체중</div>
+              <div class="info-field-val" id="valHeightWeight">-</div>
+            </div>
+          </div>
+          <div class="col-6 col-md-4">
+            <div class="info-field-box">
+              <div class="info-field-label"><i class="bi bi-briefcase me-1"></i>직업 / 근무시간</div>
+              <div class="info-field-val text-truncate" id="valJobSchedule">-</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 하단: 운동 경력, 주당 운동 횟수, 프로그램 참여 목적 독립 카드 -->
+        <div class="personal-lifestyle-card p-3 rounded-3 border bg-light">
+          <div class="row g-3 align-items-center">
+            <div class="col-6 col-md-3">
+              <div class="d-flex align-items-center gap-2">
+                <div class="stat-icon-circle bg-primary-subtle text-primary"><i class="bi bi-hourglass-split"></i></div>
+                <div class="overflow-hidden">
+                  <div class="small text-muted fw-semibold" style="font-size: 0.75rem;">운동 경력</div>
+                  <div class="fw-bold text-dark text-truncate" id="valExperience">-</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-6 col-md-3">
+              <div class="d-flex align-items-center gap-2">
+                <div class="stat-icon-circle bg-success-subtle text-success"><i class="bi bi-repeat"></i></div>
+                <div class="overflow-hidden">
+                  <div class="small text-muted fw-semibold" style="font-size: 0.75rem;">주당 운동 횟수</div>
+                  <div class="fw-bold text-dark text-truncate" id="valFrequency">-</div>
+                </div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="d-flex align-items-start gap-2 ps-md-2 border-start-md">
+                <div class="stat-icon-circle bg-warning-subtle text-warning-emphasis flex-shrink-0"><i class="bi bi-flag-fill"></i></div>
+                <div class="flex-grow-1 overflow-hidden">
+                  <div class="small text-primary fw-bold" style="font-size: 0.75rem;">프로그램 참여 목적</div>
+                  <div class="fw-medium text-dark text-break mt-1" style="font-size: 0.9rem;" id="valGoal">-</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
 
     <!-- [B] 모바일 상단 눈에 띄는 피드백 제출 배너 -->
     <div class="card border-0 shadow-sm p-3 mb-4 bg-warning-subtle border border-warning-subtle" style="border-radius: 1rem;">
