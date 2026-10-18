@@ -583,7 +583,6 @@ function extractFeedbackMemberNo(fb) {
   return String(val || '').trim();
 }
 
-/**
 // 캐시 키 정의 (Stale-While-Revalidate 초고속 로딩용)
 const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v2';
 
@@ -598,6 +597,7 @@ async function loadMemberPageData(targetId) {
   const urlGas = (urlParams.get('gas') || urlParams.get('apiUrl') || urlParams.get('gasUrl') || '').trim();
   const storageGas = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
   const gasUrl = urlGas || storageGas;
+
 
   if (urlGas && urlGas !== storageGas) {
     try {
@@ -723,19 +723,79 @@ async function loadMemberPageData(targetId) {
 
 
 /**
- * 회원 목록에서 targetId와 일치하는 회원 검색 (회원번호 우선 ➔ 이름 ➔ 부분 일치)
+ * 회원 목록에서 targetId와 일치하는 회원 검색 (초강력 스마트 매칭)
+ * 1. 등록된 회원번호 열 직접 매칭 (M001, M002 등)
+ * 2. 시트 행 순번 자동 매칭: 시트에 회원번호 열이 비어있어도 1번째 회원은 M001, M1, 1 매칭!
+ * 3. 이름 100% 일치 및 괄호/특수문자 제거 이름 매칭 (김민수)
+ * 4. 전화번호 뒷 4자리 매칭
  */
 function findMemberInList(members, targetId) {
-  if (!members || !Array.isArray(members)) return null;
-  const cleanTargetId = String(targetId || '').replace(/\s+/g, '').toLowerCase();
+  if (!members || !Array.isArray(members) || members.length === 0) return null;
+  const cleanTargetId = String(targetId || '').replace(/[\s\r\n]+/g, '').toLowerCase();
   if (!cleanTargetId) return null;
 
-  return members.find(m => {
-    const no = String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').replace(/\s+/g, '').toLowerCase();
-    const name = String(getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름', '성함') || '').replace(/\s+/g, '').toLowerCase();
-    return no === cleanTargetId || name === cleanTargetId || (name && cleanTargetId && (name.includes(cleanTargetId) || cleanTargetId.includes(name)));
-  }) || null;
+  // 1순위: 회원번호 열 또는 키 직접 일치
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
+    const no = String(findValByKeywords(m, ['회원번호']) ||
+                      findValByKeywords(m, ['고유번호']) ||
+                      getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (no && no === cleanTargetId) return m;
+
+    // 만약 M001 <-> 1 형태의 숫자 일치
+    const targetDigits = cleanTargetId.replace(/[^0-9]/g, '');
+    const noDigits = no.replace(/[^0-9]/g, '');
+    if (targetDigits && noDigits && targetDigits === noDigits && (cleanTargetId.startsWith('m') || no.startsWith('m'))) {
+      return m;
+    }
+  }
+
+  // 2순위: 시트 순번(Row Index) 매칭 (시트에 회원번호 열이 없는 경우 대비)
+  // 예: targetId가 'M001', 'M1', '1' 이면 1번째 회원(index 0) 매칭!
+  const targetNumMatch = cleanTargetId.match(/^m?0*([1-9][0-9]*)$/i);
+  if (targetNumMatch) {
+    const seqNum = parseInt(targetNumMatch[1], 10);
+    const targetIdx = seqNum - 1;
+    if (targetIdx >= 0 && targetIdx < members.length) {
+      console.log(`[회원 뷰어] 순번 기반 회원 매칭 성공: index ${targetIdx} (targetId: ${cleanTargetId})`);
+      return members[targetIdx];
+    }
+  }
+
+  // 3순위: 이름 매칭 (완전 일치 또는 괄호 제거 순수 이름 일치)
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
+    const rawName = String(findValByKeywords(m, ['이름'], ['코치']) ||
+                           findValByKeywords(m, ['성명']) ||
+                           findValByKeywords(m, ['성함']) ||
+                           getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름', '성함') || '').replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (!rawName) continue;
+
+    if (rawName === cleanTargetId) return m;
+
+    // 괄호 제거 (예: '김민수(일반반)' -> '김민수')
+    const pureName = rawName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+    const pureTarget = cleanTargetId.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+    if (pureName && pureTarget && (pureName === pureTarget || pureName.includes(pureTarget) || pureTarget.includes(pureName))) {
+      return m;
+    }
+  }
+
+  // 4순위: 전화번호 뒷 4자리 매칭 (혹시 01012345678이나 5678로 URL에 들어온 경우)
+  if (cleanTargetId.length >= 4) {
+    const targetLast4 = cleanTargetId.slice(-4);
+    for (let i = 0; i < members.length; i++) {
+      const m = members[i];
+      const phoneLast4 = getMemberPhoneLast4(m);
+      if (phoneLast4 && phoneLast4 !== '0000' && phoneLast4 === targetLast4) {
+        return m;
+      }
+    }
+  }
+
+  return null;
 }
+
 
 /**
  * 특정 회원의 피드백 필터링
