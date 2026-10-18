@@ -591,13 +591,11 @@ const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v2';
  */
 async function loadMemberPageData(targetId) {
   const loadingScreen = document.getElementById('pageLoadingScreen');
-  let hasRenderedFromCache = false;
 
   const urlParams = new URLSearchParams(window.location.search);
   const urlGas = (urlParams.get('gas') || urlParams.get('apiUrl') || urlParams.get('gasUrl') || '').trim();
   const storageGas = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
   const gasUrl = urlGas || storageGas;
-
 
   if (urlGas && urlGas !== storageGas) {
     try {
@@ -608,33 +606,34 @@ async function loadMemberPageData(targetId) {
   // -------------------------------------------------------------------------
   // [1단계: 초고속 캐시 검사 (0.05초 즉시 로딩)]
   // -------------------------------------------------------------------------
-  let cachedData = null;
+  let hasRenderedFromCache = false;
   try {
     const rawCache = localStorage.getItem(CACHE_KEY_VIEW_DATA) || sessionStorage.getItem(CACHE_KEY_VIEW_DATA);
     if (rawCache) {
-      cachedData = JSON.parse(rawCache);
+      const cached = JSON.parse(rawCache);
+      const combinedMembers = [...(cached.members || []), ...VIEW_MOCK_DB.members];
+      const matched = findMemberInList(combinedMembers, targetId);
+      if (matched) {
+        console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(matched)}`);
+        applyMemberData(matched, [...(cached.feedbacks || []), ...VIEW_MOCK_DB.feedbacks], false);
+        if (loadingScreen) loadingScreen.classList.add('d-none');
+        checkMemberAuthAndDisplay();
+        hasRenderedFromCache = true;
+      }
     }
   } catch (e) {}
 
-  if (cachedData && Array.isArray(cachedData.members) && cachedData.members.length > 0) {
-    const cachedMember = findMemberInList(cachedData.members, targetId);
-    if (cachedMember) {
-      console.log(`[회원 뷰어] ⚡ 캐시 데이터 발견! 0.05초 즉시 렌더링 실행: ${getMemberName(cachedMember)}`);
-      applyMemberData(cachedMember, cachedData.feedbacks || [], false);
-      if (loadingScreen) loadingScreen.classList.add('d-none');
-      checkMemberAuthAndDisplay();
-      hasRenderedFromCache = true;
-    }
-  }
+  // -------------------------------------------------------------------------
+  // [2단계: 구글 시트 백엔드(GAS) 최신 데이터 동기화 (넉넉한 25초 타임아웃)]
+  // -------------------------------------------------------------------------
+  let allMembers = [...VIEW_MOCK_DB.members];
+  let allFeedbacks = [...VIEW_MOCK_DB.feedbacks];
+  let isSheetSuccess = false;
 
-  // -------------------------------------------------------------------------
-  // [2단계: 구글 시트 백엔드(GAS) 최신 데이터 동기화]
-  // -------------------------------------------------------------------------
   if (gasUrl) {
     try {
       const controller = new AbortController();
-      // 타임아웃 12초 설정 (네트워크 무한 대기 방지)
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 25000); // 콜드스타트 충분히 대기
 
       const fetchUrl = `${gasUrl}?action=getAll&t=${Date.now()}`;
       const res = await fetch(fetchUrl, { signal: controller.signal });
@@ -645,7 +644,12 @@ async function loadMemberPageData(targetId) {
         const freshMembers = Array.isArray(json.data.members) ? json.data.members : [];
         const freshFeedbacks = Array.isArray(json.data.feedbacks) ? json.data.feedbacks : [];
 
-        console.log(`[회원 뷰어] GAS 최신 동기화 완료: 회원 ${freshMembers.length}명, 피드백 ${freshFeedbacks.length}건`);
+        // ★ 핵심: 구글 시트 회원과 샘플 회원을 안전 통합 (둘 다 언제나 접근 가능!)
+        allMembers = [...freshMembers, ...VIEW_MOCK_DB.members];
+        allFeedbacks = [...freshFeedbacks, ...VIEW_MOCK_DB.feedbacks];
+        isSheetSuccess = true;
+
+        console.log(`[회원 뷰어] GAS 최신 동기화 성공! 시트 회원: ${freshMembers.length}명, 통합 회원: ${allMembers.length}명`);
 
         // 캐시 업데이트
         try {
@@ -657,69 +661,43 @@ async function loadMemberPageData(targetId) {
           localStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
           sessionStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
         } catch (e) {}
-
-        const freshMember = findMemberInList(freshMembers, targetId);
-        if (freshMember) {
-          applyMemberData(freshMember, freshFeedbacks, false);
-          if (loadingScreen) loadingScreen.classList.add('d-none');
-
-          if (!hasRenderedFromCache) {
-            // 캐시가 없었던 첫 방문자라면 지금 인증 확인 및 표시
-            checkMemberAuthAndDisplay();
-          } else {
-            // 이미 캐시로 화면이 열려 있던 사용자라면 조용히 최신 데이터 재렌더링
-            const memberId = getMemberNo(freshMember) || getMemberName(freshMember);
-            const authKey = `member_auth_${memberId}`;
-            if (localStorage.getItem(authKey) === 'true' || sessionStorage.getItem(authKey) === 'true') {
-              unlockAndRenderMemberPage();
-            }
-          }
-          return;
-        }
       }
     } catch (e) {
-      console.warn('[회원 뷰어] GAS 통신 실패 또는 타임아웃:', e);
+      console.warn('[회원 뷰어] GAS 통신 대기 초과 또는 실패, 안전 백업 모드로 전환:', e);
     }
   }
 
   // -------------------------------------------------------------------------
-  // [3단계: 캐시도 없고 GAS도 실패했거나 URL이 없는 경우 Mock DB 안전 백업]
+  // [3단계: 최종 회원 매칭 및 마이페이지 활성화]
   // -------------------------------------------------------------------------
-  if (!hasRenderedFromCache) {
-    if (loadingScreen) loadingScreen.classList.add('d-none');
+  if (loadingScreen) loadingScreen.classList.add('d-none');
 
-    const mockMember = findMemberInList(VIEW_MOCK_DB.members, targetId);
-    if (mockMember) {
-      console.log(`[회원 뷰어] Mock DB로 백업 렌더링: ${getMemberName(mockMember)}`);
-      applyMemberData(mockMember, VIEW_MOCK_DB.feedbacks, true);
+  const matchedMember = findMemberInList(allMembers, targetId);
+
+  if (matchedMember) {
+    applyMemberData(matchedMember, allFeedbacks, !isSheetSuccess);
+    console.log(`[회원 뷰어] 회원 매칭 완료: ${getMemberName(matchedMember)} (ID: ${targetId})`);
+
+    if (!hasRenderedFromCache) {
       checkMemberAuthAndDisplay();
     } else {
-      console.warn(`[회원 뷰어] 회원 ID '${targetId}'를 어디에서도 찾을 수 없습니다.`);
-      
-      let hint = '';
-      if (!gasUrl) {
-        hint = `
-          <div class="mb-1"><strong>📱 모바일 기기 구글 시트 연결 필요</strong></div>
-          <div class="text-secondary mb-2" style="font-size: 0.8rem;">
-            현재 모바일 기기에는 구글 스프레드시트 배포 URL이 저장되어 있지 않아 실제 시트 조회가 불가능합니다. (PC 브라우저에만 저장되어 있음)
-          </div>
-          <div class="small">
-            • <strong>해결 방법 1 (추천):</strong> 코치님 PC 화면 상단의 <strong>[모바일 링크 복사]</strong> 버튼을 눌러 카카오톡으로 전송받은 완전한 링크로 접속해 주세요.<br>
-            • <strong>해결 방법 2:</strong> 아래 <strong>[구글 시트 연동 설정]</strong> 버튼을 눌러 구글 Apps Script 배포 URL을 입력해 주세요.
-          </div>
-        `;
-      } else {
-        hint = `
-          <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
-          <div class="text-secondary small mt-1">
-            구글 시트 및 샘플 데이터에서 해당 회원번호나 이름을 찾지 못했습니다. 본인의 회원번호가 맞는지 다시 확인해 주세요.
-          </div>
-        `;
+      const memberId = getMemberNo(matchedMember) || getMemberName(matchedMember);
+      const authKey = `member_auth_${memberId}`;
+      if (localStorage.getItem(authKey) === 'true' || sessionStorage.getItem(authKey) === 'true') {
+        unlockAndRenderMemberPage();
       }
-      showInvalidAccessScreen(hint);
     }
+  } else {
+    console.warn(`[회원 뷰어] 최종 매칭 실패: ${targetId}`);
+    showInvalidAccessScreen(`
+      <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
+      <div class="text-secondary small mt-1">
+        등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
+      </div>
+    `);
   }
 }
+
 
 
 /**
