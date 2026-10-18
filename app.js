@@ -13,10 +13,12 @@
  */
 
 // ==============================================================================
-// [보안 설정: 코치 마스터 비밀번호]
-// ※ 나중에 비밀번호를 변경하려면 이 문자열만 수정하세요.
+// [보안 아키텍처: 코치 마스터 비밀번호 검증]
+// 1. 온라인(GAS 연동): 구글 시트 백엔드 [스크립트 속성 (COACH_PASSWORD)]에서 안전하게 검증
+// 2. 오프라인(Mock 모드): 단방향 암호화 해시(SHA-256)로 검증 (평문 노출 원천 차단)
+// ※ 비밀번호 변경: 구글 시트 상단 [🤖 코칭 자동화] > [🔑 코치 마스터 비밀번호 설정]에서 변경
 // ==============================================================================
-const COACH_MASTER_PASSWORD = 'coach1234!';
+const COACH_OFFLINE_PASSWORD_HASH = '297ddf5c3d11c1cfdc16118d667afb3d68fa7fe4eb60f7e723b86479eb4700b5';
 
 // 로컬 스토리지 키
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
@@ -334,9 +336,24 @@ function startCoachLockCountdown(lockUntil) {
 }
 
 /**
- * 코치 로그인 처리 함수
+ * 브라우저 내장 SHA-256 단방향 암호화 해시 헬퍼
  */
-function handleCoachLogin() {
+async function computeSha256Hex(text) {
+  try {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(text);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
+ * 코치 로그인 처리 함수 (백엔드 서버 검증 + 오프라인 해시 하이브리드)
+ */
+async function handleCoachLogin() {
   const lockUntil = getCoachLockUntil();
   const now = Date.now();
   if (lockUntil > now) {
@@ -345,6 +362,7 @@ function handleCoachLogin() {
   }
 
   const inputEl = document.getElementById('coachPasswordInput');
+  const btnEl = document.getElementById('coachLoginBtn');
   const errorEl = document.getElementById('coachAuthErrorMsg');
   const enteredPw = (inputEl ? inputEl.value : '').trim();
 
@@ -357,7 +375,51 @@ function handleCoachLogin() {
     return;
   }
 
-  if (enteredPw === COACH_MASTER_PASSWORD) {
+  // 검증 중 버튼 스피너 표시
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>보안 인증 확인 중...';
+  }
+
+  let isPasswordValid = false;
+
+  try {
+    // 1순위: 구글 스프레드시트(GAS) 백엔드가 연결되어 있다면 서버 스크립트 속성에서 안전하게 검증
+    const gasUrl = (AppState.gasUrl || localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
+    if (gasUrl) {
+      try {
+        const res = await postToGasBackend({
+          action: 'verifyCoachPassword',
+          password: enteredPw
+        });
+        if (res && res.status === 'success') {
+          isPasswordValid = true;
+        } else if (res && res.status === 'error' && res.message === '비밀번호가 올바르지 않습니다.') {
+          isPasswordValid = false;
+        } else {
+          // 네트워크 에러나 액션 미반영 배포본일 경우 오프라인 해시로 보조 검증
+          const hash = await computeSha256Hex(enteredPw);
+          isPasswordValid = (hash === COACH_OFFLINE_PASSWORD_HASH);
+        }
+      } catch (err) {
+        const hash = await computeSha256Hex(enteredPw);
+        isPasswordValid = (hash === COACH_OFFLINE_PASSWORD_HASH);
+      }
+    } else {
+      // 2순위: GAS URL 미연동/Mock 모드 시 브라우저 단방향 SHA-256 해시로 검증 (평문 노출 없음)
+      const hash = await computeSha256Hex(enteredPw);
+      isPasswordValid = (hash === COACH_OFFLINE_PASSWORD_HASH);
+    }
+  } catch (authErr) {
+    console.error('[코치 인증 오류]', authErr);
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = '<i class="bi bi-unlock-fill me-1"></i><span>대시보드 잠금 해제</span>';
+    }
+  }
+
+  if (isPasswordValid) {
     // [인증 성공]
     localStorage.setItem(STORAGE_COACH_AUTH_KEY, 'true');
     clearCoachAuthSecurityState();

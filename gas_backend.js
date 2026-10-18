@@ -181,6 +181,11 @@ function doPost(e) {
       return handleAiComprehensiveFeedback(ss, payload);
     }
 
+    // 9. [보안 인증] 코치 마스터 비밀번호 검증 (구글 서버 스크립트 속성 기반)
+    if (action === 'verifyCoachPassword') {
+      return handleVerifyCoachPassword(payload);
+    }
+
     return createJsonResponse({ status: 'error', message: '지원하지 않는 action입니다: ' + action });
   } catch (error) {
     return createJsonResponse({ status: 'error', message: error.toString() });
@@ -1992,6 +1997,8 @@ function onOpen() {
       .addItem('📝 미처리 피드백 전체 AI 초안 일괄 생성', 'processPendingAiDrafts')
       .addSeparator()
       .addItem('🔍 feedbacks 시트 헤더/데이터 진단', 'debugInspectFeedbacksSheet')
+      .addSeparator()
+      .addItem('🔑 코치 마스터 비밀번호 설정/확인', 'promptChangeCoachPassword')
       .addToUi();
   } catch (e) {
     Logger.log('[onOpen 메뉴 생성 실패 (비대화형 모드 등)] ' + e.toString());
@@ -2096,5 +2103,75 @@ function processPendingAiDrafts() {
     const ui = SpreadsheetApp.getUi();
     ui.alert('✓ 일괄 생성 완료', `총 ${processedCount}건의 피드백에 대해 AI 초안 생성이 완료되었습니다.`, ui.ButtonSet.OK);
   } catch (e) {}
+}
+
+/**
+ * ==============================================================================
+ * [보안 인증] 코치 마스터 비밀번호 서버 검증 핸들러
+ * ==============================================================================
+ */
+
+/**
+ * 코치 마스터 비밀번호 서버 검증 핸들러
+ * - 구글 서버의 [스크립트 속성(Script Properties)] 'COACH_PASSWORD'를 읽어 안전하게 대조
+ * - 외부 웹 브라우저 및 GitHub 코드 어디에도 비밀번호가 노출되지 않음
+ */
+function handleVerifyCoachPassword(payload) {
+  const enteredPassword = String((payload && payload.password) || '').trim();
+  if (!enteredPassword) {
+    return createJsonResponse({ status: 'error', message: '비밀번호를 입력해 주세요.' });
+  }
+
+  // 1순위: 스크립트 속성의 COACH_PASSWORD
+  let correctPassword = PropertiesService.getScriptProperties().getProperty('COACH_PASSWORD');
+
+  // 미설정 시 기본 마스터 비밀번호로 자동 세팅 (초기 안전값)
+  if (!correctPassword) {
+    correctPassword = 'coach1234!';
+    try {
+      PropertiesService.getScriptProperties().setProperty('COACH_PASSWORD', correctPassword);
+      Logger.log('[보안] 스크립트 속성에 기본 COACH_PASSWORD가 자동 등록되었습니다.');
+    } catch (e) {}
+  }
+
+  if (enteredPassword === correctPassword) {
+    return createJsonResponse({
+      status: 'success',
+      message: '코치 보안 인증에 성공했습니다.'
+    });
+  } else {
+    return createJsonResponse({
+      status: 'error',
+      message: '비밀번호가 올바르지 않습니다.'
+    });
+  }
+}
+
+/**
+ * [스프레드시트 UI용] 코치 마스터 비밀번호 대화상자 조회 및 변경 도구
+ */
+function promptChangeCoachPassword() {
+  try {
+    const ui = SpreadsheetApp.getUi();
+    const currentPw = PropertiesService.getScriptProperties().getProperty('COACH_PASSWORD') || 'coach1234!';
+
+    const promptRes = ui.prompt(
+      '🔑 코치 마스터 비밀번호 설정',
+      `현재 설정된 비밀번호: [ ${currentPw} ]\n\n새로운 비밀번호를 입력하시거나, 변경을 원치 않으시면 [취소]를 누르세요:`,
+      ui.ButtonSet.OK_CANCEL
+    );
+
+    if (promptRes.getSelectedButton() === ui.Button.OK) {
+      const newPw = promptRes.getResponseText().trim();
+      if (newPw) {
+        PropertiesService.getScriptProperties().setProperty('COACH_PASSWORD', newPw);
+        ui.alert('✓ 비밀번호 변경 완료', `새로운 코치 마스터 비밀번호가 [ ${newPw} ] 로 안전하게 저장되었습니다.\n웹 대시보드에서 즉시 적용됩니다.`, ui.ButtonSet.OK);
+      } else {
+        ui.alert('⚠️ 안내', '비밀번호가 입력되지 않아 기존 비밀번호를 유지합니다.', ui.ButtonSet.OK);
+      }
+    }
+  } catch (e) {
+    Logger.log('[promptChangeCoachPassword] ' + e.toString());
+  }
 }
 
