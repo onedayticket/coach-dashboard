@@ -99,67 +99,63 @@ const VIEW_MOCK_DB = {
   feedbacks: [
     {
       '피드백번호': 'FB01',
+      '오늘 날짜': '2026-10-08',
       '날짜': '2026-10-08',
+      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
       '이름': '김민수',
       '회원번호': 'M001',
+      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '82.5',
       '공복 몸무게': 82.5,
-      '운동 점수': 8,
-      '식단 점수': 7,
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.0,
-      '피드백_요약': '첫날 멋진 출발입니다! 밥 양 2/3 조절과 수분 2L 달성 훌륭합니다.',
-      '피드백 코멘트': '첫날 멋진 출발입니다! 밥 양 2/3 조절과 수분 2L 달성 훌륭합니다.',
-      '운동 내용': '맨몸 스쿼트 4세트 + 런지 3세트 + 코어 스트레칭 15분',
-      '식단 내용': '아침 그릭요거트, 점심 소불고기 백반(밥 반공기), 저녁 닭가슴살 샐러드',
-      '회원 일기/코멘트': '첫날이라 긴장 반 설렘 반으로 시작했습니다. 물 2L 마시기 성공!'
+      '보완점_및_개선방안': '첫날 멋진 출발입니다! 밥 양 2/3 조절과 수분 2L 달성 훌륭합니다. 내일은 스쿼트 시 무릎이 발끝 앞으로 과도하게 나가지 않도록 둔근에 힘을 집중해 보세요.',
+      '피드백 요약': '첫날 멋진 출발입니다! 밥 양 2/3 조절과 수분 2L 달성 훌륭합니다.',
+      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '첫날이라 긴장 반 설렘 반으로 시작했습니다. 물 2L 마시기 성공!'
     },
     {
       '피드백번호': 'FB02',
+      '오늘 날짜': '2026-10-09',
       '날짜': '2026-10-09',
+      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
       '이름': '김민수',
       '회원번호': 'M001',
+      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '82.2',
       '공복 몸무게': 82.2,
-      '운동 점수': 9,
-      '식단 점수': 8,
       '운동_실행률_점수': 5.0,
       '식단_실행률_점수': 4.5,
-      '피드백_요약': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!',
-      '피드백 코멘트': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!',
-      '운동 내용': '인터벌 조깅 30분 (페이스 6:15)',
-      '식단 내용': '아침 프로틴 쉐이크, 점심 서브웨이 로티세리(위트빵), 저녁 연어구이 샐러드',
-      '회원 일기/코멘트': '러닝 후 땀 흘리니 상쾌하네요. 야식 유혹 참아냈습니다.'
+      '보완점_및_개선방안': '야식 유혹을 이겨낸 결단력이 대단합니다! 러닝 후에는 종아리와 아킬레스건을 5분간 충분히 마사지해 주시면 근육통 방지에 큰 도움이 됩니다.',
+      '피드백 요약': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!',
+      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '러닝 후 땀 흘리니 상쾌하네요. 야식 유혹 참아냈습니다.'
     },
     {
       '피드백번호': 'FB03',
+      '오늘 날짜': '2026-10-10',
       '날짜': '2026-10-10',
+      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
       '이름': '김민수',
       '회원번호': 'M001',
+      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '82.0',
       '공복 몸무게': 82.0,
-      '운동 점수': 6,
-      '식단 점수': 6,
       '운동_실행률_점수': 4.0,
       '식단_실행률_점수': 4.0,
-      '피드백_요약': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
-      '피드백 코멘트': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
-      '운동 내용': '야근으로 인해 취침 전 폼롤러 스트레칭 20분만 진행',
-      '식단 내용': '점심 김치찌개 건더기 위주, 저녁 단호박+닭가슴살 소시지',
-      '회원 일기/코멘트': '업무가 너무 바빠 운동을 제대로 못해 아쉽고 피곤합니다.'
+      '보완점_및_개선방안': '야근 중에도 취침 전 폼롤러 스트레칭을 잊지 않으신 점 최고입니다. 피로가 심할 땐 무리한 본운동 대신 온찜질과 스트레칭으로 회복에 집중해 주세요.',
+      '피드백 요약': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
+      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '업무가 너무 바빠 운동을 제대로 못해 아쉽고 피곤합니다.'
     },
     {
       '피드백번호': 'FB04',
+      '오늘 날짜': '2026-10-11',
       '날짜': '2026-10-11',
+      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
       '이름': '김민수',
       '회원번호': 'M001',
+      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '81.8',
       '공복 몸무게': 81.8,
-      '운동 점수': 9,
-      '식단 점수': 9,
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.5,
-      '피드백_요약': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다! 몸의 가벼움이 지속될 거예요.',
-      '피드백 코멘트': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다! 몸의 가벼움이 지속될 거예요.',
-      '운동 내용': '상체 웨이트 40분 (체스트 프레스, 랫풀다운, 숄더 프레스)',
-      '식단 내용': '아침 오트밀 40g, 점심 닭가슴살 볶음밥, 저녁 소고기 우둔살 샐러드',
-      '회원 일기/코멘트': '클린하게 챙겨 먹으니 오후에 식곤증이 없어서 신기합니다.'
+      '보완점_및_개선방안': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다! 몸의 가벼움이 지속될 거예요. 주말에도 수분 섭취 루틴 유지해 주세요.',
+      '피드백 요약': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다!',
+      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '클린하게 챙겨 먹으니 오후에 식곤증이 없어서 신기합니다.'
     },
     {
       '피드백번호': 'FB05',
@@ -259,46 +255,240 @@ function showInvalidAccessScreen() {
 }
 
 /**
- * 피드백 행 객체에서 회원 이름 관대하게 추출 (질문형 헤더, '이름' 포함 컬럼 자동 감지)
+ * ==============================================================================
+ * [지능형 구글 폼/시트 헤더 파서 & 스마트 필드 추출기]
+ * 신청폼의 설명, 줄바꿈(\n), 예시 문구(예: 80.7) 등으로 헤더가 길어져도 100% 자동 감지
+ * ==============================================================================
  */
-function extractFeedbackMemberName(f) {
-  if (!f) return '';
-  // 1. 표준 헤더 우선 탐색
-  const directVal = getField(f, 
-    '이름', 'name', '성명', '성함', '회원명', '참여자이름', '참여자 이름', 
-    '참여자성함', '회원이름', '참가자이름', '신청자', '작성자', '회원'
-  );
-  if (directVal) return String(directVal).trim();
 
-  // 2. 헤더 키에 '이름', '성명', '성함'이 포함된 열 동적 스캔 (구글 폼 긴 질문 대응)
-  const keys = Object.keys(f);
+/**
+ * 객체의 모든 키를 스캔하여 포함 키워드(includeKws)를 모두 만족하고 제외 키워드(excludeKws)가 없는 열의 값 반환
+ */
+function findValByKeywords(obj, includeKws, excludeKws = []) {
+  if (!obj || typeof obj !== 'object') return '';
+  const keys = Object.keys(obj);
+
   for (const k of keys) {
-    const cleanK = k.replace(/\s+/g, '').toLowerCase();
-    if ((cleanK.includes('이름') || cleanK.includes('성명') || cleanK.includes('성함')) && !cleanK.includes('코치')) {
-      if (f[k]) return String(f[k]).trim();
+    // 공백, 줄바꿈, 특수기호 제거 후 소문자화
+    const cleanK = String(k).replace(/[\s\r\n]+/g, '').toLowerCase();
+
+    // 제외 키워드가 포함되어 있다면 패스
+    if (excludeKws.length > 0 && excludeKws.some(ex => cleanK.includes(ex.replace(/[\s\r\n]+/g, '').toLowerCase()))) {
+      continue;
+    }
+
+    // 포함 키워드가 모두 들어있는지 확인
+    const matchAll = includeKws.every(kw => cleanK.includes(kw.replace(/[\s\r\n]+/g, '').toLowerCase()));
+    if (matchAll) {
+      const val = obj[k];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        return val;
+      }
     }
   }
   return '';
 }
 
 /**
- * 피드백 행 객체에서 회원번호 관대하게 추출
+ * 1. 오늘 날짜 추출
+ * 실제 시트 헤더: '오늘 날짜' 또는 '타임스탬프'
  */
-function extractFeedbackMemberNo(f) {
-  if (!f) return '';
-  const directVal = getField(f, 
-    '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호'
-  );
-  if (directVal) return String(directVal).trim();
+function extractFeedbackDate(fb) {
+  if (!fb) return '-';
+  // 1순위: '오늘' & '날짜'
+  let val = findValByKeywords(fb, ['오늘', '날짜']);
+  // 2순위: '날짜' 또는 '일자' (단, '생성', '수정', '초안' 제외)
+  if (!val) val = findValByKeywords(fb, ['날짜'], ['생성', '수정', '초안', 'ai']);
+  if (!val) val = findValByKeywords(fb, ['일자'], ['생성', '수정', '초안', 'ai']);
+  // 3순위: 타임스탬프
+  if (!val) val = findValByKeywords(fb, ['타임스탬프']);
+  if (!val) val = findValByKeywords(fb, ['timestamp']);
 
-  const keys = Object.keys(f);
-  for (const k of keys) {
-    const cleanK = k.replace(/\s+/g, '').toLowerCase();
-    if (cleanK.includes('회원번호') || cleanK.includes('회원id') || cleanK.includes('고유번호')) {
-      if (f[k]) return String(f[k]).trim();
+  if (!val) return '-';
+
+  if (val instanceof Date) {
+    const y = val.getFullYear();
+    const m = String(val.getMonth() + 1).padStart(2, '0');
+    const d = String(val.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  const str = String(val).trim();
+  const dateMatch = str.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  if (dateMatch) {
+    const y = dateMatch[1];
+    const m = dateMatch[2].padStart(2, '0');
+    const d = dateMatch[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  return str.split('T')[0] || str;
+}
+
+/**
+ * 2. 이름 추출
+ * 실제 시트 헤더: "이름\n(매일 똑같은 이름 사용 부탁드립니다.)"
+ */
+function extractFeedbackName(fb) {
+  if (!fb) return '';
+  // 1순위: '이름' 포함 열 (코치, 지침서 제외)
+  let val = findValByKeywords(fb, ['이름'], ['코치', '지침']);
+  if (!val) val = findValByKeywords(fb, ['성명'], ['코치']);
+  if (!val) val = findValByKeywords(fb, ['성함'], ['코치']);
+  if (!val) val = findValByKeywords(fb, ['참여자'], ['코치']);
+  if (!val) val = findValByKeywords(fb, ['작성자'], ['코치']);
+
+  if (!val) return '';
+  return String(val).trim();
+}
+
+/**
+ * 3. 아침 공복 몸무게 추출
+ * 실제 시트 헤더: "아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)"
+ */
+function extractFeedbackWeight(fb) {
+  if (!fb) return '-';
+  // 1순위: '공복' & '몸무게'
+  let raw = findValByKeywords(fb, ['공복', '몸무게']);
+  // 2순위: '공복' & '체중'
+  if (!raw) raw = findValByKeywords(fb, ['공복', '체중']);
+  // 3순위: '아침' & '몸무게'
+  if (!raw) raw = findValByKeywords(fb, ['아침', '몸무게']);
+  // 4순위: '공복'
+  if (!raw) raw = findValByKeywords(fb, ['공복']);
+  // 5순위: '몸무게' 또는 '체중' (단, '시작', '목표' 제외)
+  if (!raw) raw = findValByKeywords(fb, ['몸무게'], ['시작', '목표']);
+  if (!raw) raw = findValByKeywords(fb, ['체중'], ['시작', '목표']);
+
+  if (!raw) return '-';
+
+  // 숫자(소수점 포함) 추출
+  const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
+  if (match) {
+    const num = parseFloat(match[1]);
+    if (!isNaN(num) && num > 20 && num < 250) {
+      return num.toFixed(1);
     }
   }
-  return '';
+  return String(raw).trim() || '-';
+}
+
+/**
+ * 4. 운동_실행률_점수 추출
+ * 실제 시트 헤더: '운동_실행률_점수' 또는 "오늘 운동 강도는 어땠나요? (1 ~ 10)\n예) 7"
+ */
+function extractFeedbackExerciseScore(fb) {
+  if (!fb) return '-';
+  // 1순위: '운동' & '실행률'
+  let raw = findValByKeywords(fb, ['운동', '실행률']);
+  // 2순위: '운동' & '점수'
+  if (!raw) raw = findValByKeywords(fb, ['운동', '점수']);
+  // 3순위: '운동' & '강도'
+  if (!raw) raw = findValByKeywords(fb, ['운동', '강도']);
+
+  if (!raw) return '-';
+
+  const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
+  if (match) {
+    const num = parseFloat(match[1]);
+    if (!isNaN(num)) return num;
+  }
+  return String(raw).trim() || '-';
+}
+
+/**
+ * 5. 식단_실행률_점수 추출
+ * 실제 시트 헤더: '식단_실행률_점수' 또는 "오늘 계획했던 식단 대비 본인의 수행률은 몇점이라고 생각하시나요? (5점 만점)\n예) 3.7"
+ */
+function extractFeedbackDietScore(fb) {
+  if (!fb) return '-';
+  // 1순위: '식단' & '실행률'
+  let raw = findValByKeywords(fb, ['식단', '실행률']);
+  // 2순위: '식단' & '수행률'
+  if (!raw) raw = findValByKeywords(fb, ['식단', '수행률']);
+  // 3순위: '식단' & '점수'
+  if (!raw) raw = findValByKeywords(fb, ['식단', '점수']);
+
+  if (!raw) return '-';
+
+  const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
+  if (match) {
+    const num = parseFloat(match[1]);
+    if (!isNaN(num)) return num;
+  }
+  return String(raw).trim() || '-';
+}
+
+/**
+ * 6. 보완점_및_개선방안 추출 (코치 피드백)
+ * 실제 시트 헤더: '보완점_및_개선방안'
+ */
+function extractFeedbackImprovement(fb) {
+  if (!fb) return '';
+  // 1순위: '보완점'
+  let val = findValByKeywords(fb, ['보완점']);
+  // 2순위: '개선방안'
+  if (!val) val = findValByKeywords(fb, ['개선방안']);
+  // 3순위: '피드백' & '요약'
+  if (!val) val = findValByKeywords(fb, ['피드백', '요약']);
+  // 4순위: '피드백' & '코멘트'
+  if (!val) val = findValByKeywords(fb, ['피드백', '코멘트']);
+  // 5순위: '피드백' (단, '상태', '일시', '초안' 제외)
+  if (!val) val = findValByKeywords(fb, ['피드백'], ['상태', '일시', '생성', '초안']);
+
+  if (!val) return '';
+  return String(val).trim();
+}
+
+/**
+ * 7. 회원의 나의 실천 일지 & 코치에게 한마디 추출
+ * 실제 시트 헤더: '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]', '오늘 운동 중 힘들었던 점...', '오늘 식단 중 힘들었던 점...'
+ */
+function extractFeedbackMemberNote(fb) {
+  if (!fb) return '';
+  const notes = [];
+
+  // 1) 코치에게 자유롭게 한마디
+  const coachTalk = findValByKeywords(fb, ['코치에게']) || findValByKeywords(fb, ['하소연']) || findValByKeywords(fb, ['자유롭게한마디']);
+  if (coachTalk) {
+    notes.push(`💬 <strong>코치에게 한마디:</strong> ${escapeHtml(String(coachTalk).trim())}`);
+  }
+
+  // 2) 운동 소감 / 힘든 점 / 궁금한 점
+  const exHard = findValByKeywords(fb, ['운동', '힘들었던']) || findValByKeywords(fb, ['운동', '궁금했던']) || findValByKeywords(fb, ['운동', '이유']);
+  if (exHard) {
+    notes.push(`🏃 <strong>운동 소감:</strong> ${escapeHtml(String(exHard).trim())}`);
+  }
+
+  // 3) 식단 소감 / 힘든 점 / 궁금한 점
+  const dietHard = findValByKeywords(fb, ['식단', '힘들었던']) || findValByKeywords(fb, ['식단', '궁금했던']) || findValByKeywords(fb, ['식단', '이유']);
+  if (dietHard) {
+    notes.push(`🥗 <strong>식단 소감:</strong> ${escapeHtml(String(dietHard).trim())}`);
+  }
+
+  // 4) 기존 운동 내용 / 식단 내용이 있을 경우
+  const exDesc = findValByKeywords(fb, ['운동내용']) || findValByKeywords(fb, ['운동시간']);
+  if (exDesc && !notes.some(n => n.includes('운동'))) {
+    notes.push(`🏃 <strong>운동 내용:</strong> ${escapeHtml(String(exDesc).trim())}`);
+  }
+
+  const dietDesc = findValByKeywords(fb, ['식단내용']);
+  if (dietDesc && !notes.some(n => n.includes('식단'))) {
+    notes.push(`🥗 <strong>식단 내용:</strong> ${escapeHtml(String(dietDesc).trim())}`);
+  }
+
+  return notes.join('<br>');
+}
+
+/**
+ * 피드백 행 객체에서 회원번호 관대하게 추출
+ */
+function extractFeedbackMemberNo(fb) {
+  if (!fb) return '';
+  let val = findValByKeywords(fb, ['회원번호']);
+  if (!val) val = findValByKeywords(fb, ['회원id']);
+  if (!val) val = findValByKeywords(fb, ['고유번호']);
+  return String(val || '').trim();
 }
 
 /**
@@ -388,7 +578,7 @@ async function loadMemberPageData(targetId) {
 
   CurrentMemberState.member = matchedMember;
 
-  // 피드백 필터링 (다양한 열 이름 및 부분 일치 지원)
+  // 피드백 필터링 (신청폼 설명, 줄바꿈, 괄호 등 완벽 대응)
   const memberName = getMemberName(matchedMember);
   const memberNo = getMemberNo(matchedMember);
   const memberPhone = getMemberPhoneLast4(matchedMember);
@@ -396,17 +586,19 @@ async function loadMemberPageData(targetId) {
   const cleanMemberNo = memberNo.replace(/\s+/g, '').toLowerCase();
 
   CurrentMemberState.feedbacks = allFeedbacks.filter(f => {
-    const fName = extractFeedbackMemberName(f).replace(/\s+/g, '').toLowerCase();
-    const fNo = extractFeedbackMemberNo(f).replace(/\s+/g, '').toLowerCase();
+    const rawFName = extractFeedbackName(f);
+    const rawFNo = extractFeedbackMemberNo(f);
+    const fName = rawFName.replace(/\s+/g, '').toLowerCase();
+    const fNo = rawFNo.replace(/\s+/g, '').toLowerCase();
     const fPhone = String(getField(f, '연락처', '전화번호', '휴대폰', '핸드폰', 'phone') || '').replace(/[^0-9]/g, '');
 
     // 1. 회원번호 일치
     if (cleanMemberNo && fNo && (fNo === cleanMemberNo || fNo.includes(cleanMemberNo))) return true;
     
-    // 2. 이름 일치 (완전 일치 또는 괄호 제거 후 포함 비교)
+    // 2. 이름 일치 (완전 일치 또는 괄호/안내문구 제거 후 순수 한글/영문 이름 비교)
     if (cleanMemberName && fName) {
-      const pureFName = fName.split('(')[0].trim();
-      const pureMemName = cleanMemberName.split('(')[0].trim();
+      const pureFName = fName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+      const pureMemName = cleanMemberName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
       if (fName === cleanMemberName || pureFName === pureMemName || fName.includes(pureMemName) || pureMemName.includes(pureFName)) {
         return true;
       }
@@ -550,9 +742,14 @@ function unlockAndRenderMemberPage() {
   let latestWeight = startWeight;
 
   if (feedbacks && feedbacks.length > 0) {
-    const sortedFbs = feedbacks.slice().sort((a, b) => new Date(getField(b, '날짜') || 0) - new Date(getField(a, '날짜') || 0));
-    const recentW = parseFloat(getField(sortedFbs[0], '공복 몸무게', '공복몸무게', '체중', 'weight') || 0);
-    if (recentW > 0) latestWeight = recentW;
+    const sortedFbs = feedbacks.slice().sort((a, b) => new Date(extractFeedbackDate(b)) - new Date(extractFeedbackDate(a)));
+    for (const f of sortedFbs) {
+      const w = parseFloat(extractFeedbackWeight(f));
+      if (!isNaN(w) && w > 20) {
+        latestWeight = w;
+        break;
+      }
+    }
   }
 
   setText('heroStartWeight', startWeight > 0 ? startWeight.toFixed(1) : '-');
@@ -706,17 +903,26 @@ function renderThreeIndependentCharts(feedbacks) {
   if (!feedbacks || feedbacks.length === 0 || !window.Chart) return;
 
   // 날짜 오름차순 정렬 (차트 좌->우 시간 흐름)
-  const sorted = [...feedbacks].sort((a, b) => new Date(getField(a, '날짜') || 0) - new Date(getField(b, '날짜') || 0));
+  const sorted = [...feedbacks].sort((a, b) => new Date(extractFeedbackDate(a)) - new Date(extractFeedbackDate(b)));
 
   const labels = sorted.map(f => {
-    const raw = String(getField(f, '날짜', 'date', '일자'));
+    const raw = extractFeedbackDate(f);
     const d = new Date(raw);
     return isNaN(d) ? raw : `${d.getMonth() + 1}/${d.getDate()}`;
   });
 
-  const weightData = sorted.map(f => parseFloat(getField(f, '공복 몸무게', '공복몸무게', '체중', 'weight')) || null);
-  const exScoreData = sorted.map(f => parseFloat(getField(f, '운동_실행률_점수', '운동실행률점수', '운동 점수', '운동점수', 'exerciseScore')) || null);
-  const dietScoreData = sorted.map(f => parseFloat(getField(f, '식단_실행률_점수', '식단실행률점수', '식단 점수', '식단점수', 'dietScore')) || null);
+  const weightData = sorted.map(f => {
+    const w = parseFloat(extractFeedbackWeight(f));
+    return isNaN(w) ? null : w;
+  });
+  const exScoreData = sorted.map(f => {
+    const s = parseFloat(extractFeedbackExerciseScore(f));
+    return isNaN(s) ? null : s;
+  });
+  const dietScoreData = sorted.map(f => {
+    const s = parseFloat(extractFeedbackDietScore(f));
+    return isNaN(s) ? null : s;
+  });
 
   // 차트 1: 공복 몸무게 (kg)
   const ctxWeight = document.getElementById('chartWeight');
@@ -879,8 +1085,8 @@ function renderFeedbackTable(feedbacks) {
 
   // 최신 제출일 순(내림차순) 정렬
   const sorted = [...feedbacks].sort((a, b) => {
-    const rawA = getField(a, '날짜', 'date', '일자') || '';
-    const rawB = getField(b, '날짜', 'date', '일자') || '';
+    const rawA = extractFeedbackDate(a);
+    const rawB = extractFeedbackDate(b);
     const timeA = new Date(rawA).getTime() || 0;
     const timeB = new Date(rawB).getTime() || 0;
     if (timeA !== timeB) return timeB - timeA;
@@ -891,35 +1097,19 @@ function renderFeedbackTable(feedbacks) {
 
   let html = '';
   sorted.forEach(fb => {
-    const date = getField(fb, '날짜', 'date', '일자') || '-';
-    const weight = getField(fb, '공복 몸무게', '공복몸무게', '체중', 'weight') || '-';
-
-    // 1. 점수 추출 (5점 만점 기준)
-    const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동 점수', '운동점수', 'exerciseScore') || '-';
-    const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단 점수', '식단점수', 'dietScore') || '-';
-
-    // 2. 코치 피드백 요약 코멘트 추출 (★ 문제점 분석 / 보완점 및 개선방안은 100% 잘라내고 비공개)
-    let summary = getField(fb, '피드백_요약', '피드백 요약', '피드백요약', '요약', 'feedbackSummary', 'summary') || '';
-    if (!summary) {
-      summary = getField(fb, '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', '코치 피드백', '코치피드백') || '';
-    }
-
-    // 혹시 통합 텍스트에 [문제점 분석]이나 [보완점 및 개선방안] 등이 포함되어 있다면 해당 지점부터 완전히 잘라냄
-    const cutKeywords = [
-      '[문제점 분석]', '[문제점분석]', '[문제점', '[피드백 분석]', '[피드백분석]', 
-      '[보완점 및 개선방안]', '[보완점]', '[개선방안]', 
-      '문제점 분석:', '문제점분석:', '문제점:', '피드백 분석:'
-    ];
-    for (const kw of cutKeywords) {
-      if (summary.includes(kw)) {
-        summary = summary.split(kw)[0].trim();
-      }
-    }
-
-    // 3. 회원 일지 내용 (운동 내용, 식단 내용, 회원 소감)
-    const exDetail = getField(fb, '운동 내용', '운동내용') || '';
-    const dietDetail = getField(fb, '식단 내용', '식단내용') || '';
-    const diaryDetail = getField(fb, '회원 일기/코멘트', '회원 일기', '회원일기', '코멘트', '일기') || '';
+    // [사용자 요구 6대 핵심 필드 스마트 추출]
+    // 1. 오늘 날짜
+    const date = extractFeedbackDate(fb);
+    // 2. 아침 공복 몸무게
+    const weight = extractFeedbackWeight(fb);
+    // 3. 운동_실행률_점수
+    const exScore = extractFeedbackExerciseScore(fb);
+    // 4. 식단_실행률_점수
+    const dietScore = extractFeedbackDietScore(fb);
+    // 5. 보완점_및_개선방안 (코치 피드백)
+    const improvement = extractFeedbackImprovement(fb);
+    // 6. 회원의 실천 일지 & 코치에게 한마디
+    const memberNote = extractFeedbackMemberNote(fb);
 
     html += `
       <tr>
@@ -931,25 +1121,23 @@ function renderFeedbackTable(feedbacks) {
         <td class="text-nowrap text-center">
           <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore !== '-' ? `${dietScore} 점` : '-'}</span>
         </td>
-        <td class="small" style="min-width: 240px;">
-          ${summary ? `
+        <td class="small" style="min-width: 250px;">
+          ${improvement ? `
             <div class="feedback-comment-cell">
-              <div class="d-flex align-items-center gap-1 fw-bold text-success mb-1">
-                <i class="bi bi-chat-quote-fill"></i>
-                <span>코치님의 응원 피드백</span>
+              <div class="d-flex align-items-center gap-1 fw-bold text-primary mb-1">
+                <i class="bi bi-lightbulb-fill text-warning"></i>
+                <span>코치 피드백 (보완점 및 개선방안)</span>
               </div>
-              <div class="leading-relaxed">${escapeHtml(summary)}</div>
+              <div class="leading-relaxed text-dark" style="white-space: pre-wrap;">${escapeHtml(improvement)}</div>
             </div>
           ` : `
             <span class="badge bg-light text-secondary border px-2 py-1">코치 피드백 작성 대기 중</span>
           `}
         </td>
-        <td class="small" style="min-width: 220px;">
-          ${(exDetail || dietDetail || diaryDetail) ? `
+        <td class="small" style="min-width: 210px;">
+          ${memberNote ? `
             <div class="member-log-cell">
-              ${exDetail ? `<div class="mb-1">🏃 <strong>운동:</strong> ${escapeHtml(exDetail)}</div>` : ''}
-              ${dietDetail ? `<div class="mb-1">🥗 <strong>식단:</strong> ${escapeHtml(dietDetail)}</div>` : ''}
-              ${diaryDetail ? `<div class="text-muted fst-italic">💬 "${escapeHtml(diaryDetail)}"</div>` : ''}
+              ${memberNote}
             </div>
           ` : `
             <span class="text-muted small">-</span>
