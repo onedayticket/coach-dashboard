@@ -632,3 +632,42 @@ body {
   }
 }
 
+/* ==============================================================================
+ * [코치 전용 보안 모달 & 글래스모피즘 오버레이 스타일]
+ * ==============================================================================
+ */
+.coach-auth-card {
+  border-radius: 1.25rem !important;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.4) !important;
+  border: 1px solid rgba(226, 232, 240, 0.8) !important;
+}
+
+.coach-auth-icon-wrapper {
+  width: 76px;
+  height: 76px;
+  background: #eef2ff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 14px rgba(79, 70, 229, 0.2);
+}
+
+body.coach-locked .main-wrapper {
+  filter: blur(6px);
+  pointer-events: none;
+  user-select: none;
+}
+
+@keyframes shakePasswordInput {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-8px); }
+  40%, 80% { transform: translateX(8px); }
+}
+
+.shake-input {
+  animation: shakePasswordInput 0.4s ease-in-out;
+}
+

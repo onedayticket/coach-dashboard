@@ -12,12 +12,21 @@
  * ==============================================================================
  */
 
+// ==============================================================================
+// [보안 설정: 코치 마스터 비밀번호]
+// ※ 나중에 비밀번호를 변경하려면 이 문자열만 수정하세요.
+// ==============================================================================
+const COACH_MASTER_PASSWORD = 'coach1234!';
+
 // 로컬 스토리지 키
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
 const STORAGE_GEMINI_KEY = 'coach_dash_gemini_key_v1';
 const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
 const STORAGE_READ_AI_DRAFTS_KEY = 'coach_dash_read_ai_drafts_v1';
 const STORAGE_READ_PENDING_NOTIS_KEY = 'coach_dash_read_pending_notis_v1';
+const STORAGE_COACH_AUTH_KEY = 'coach_authenticated';
+const STORAGE_COACH_FAIL_COUNT_KEY = 'coach_fail_count';
+const STORAGE_COACH_LOCK_UNTIL_KEY = 'coach_lock_until';
 
 // 기본 Mock 데이터 (시트 미연동 또는 테스트 시 즉각 동작)
 const MOCK_DB = {
@@ -247,6 +256,240 @@ const AppState = {
 
 /**
  * ==============================================================================
+ * [보안 1단계 & 2단계: 코치 전용 보안 인증 및 3회 오류 30초 잠금 시스템]
+ * ==============================================================================
+ */
+
+let coachLockInterval = null;
+
+function isCoachAuthenticated() {
+  return localStorage.getItem(STORAGE_COACH_AUTH_KEY) === 'true';
+}
+
+function getCoachFailCount() {
+  return parseInt(localStorage.getItem(STORAGE_COACH_FAIL_COUNT_KEY) || '0', 10);
+}
+
+function setCoachFailCount(count) {
+  localStorage.setItem(STORAGE_COACH_FAIL_COUNT_KEY, String(count));
+}
+
+function getCoachLockUntil() {
+  return parseInt(localStorage.getItem(STORAGE_COACH_LOCK_UNTIL_KEY) || '0', 10);
+}
+
+function setCoachLockUntil(timestamp) {
+  localStorage.setItem(STORAGE_COACH_LOCK_UNTIL_KEY, String(timestamp));
+}
+
+function clearCoachAuthSecurityState() {
+  localStorage.removeItem(STORAGE_COACH_FAIL_COUNT_KEY);
+  localStorage.removeItem(STORAGE_COACH_LOCK_UNTIL_KEY);
+}
+
+/**
+ * 30초 잠금 카운트다운 타이머
+ */
+function startCoachLockCountdown(lockUntil) {
+  if (coachLockInterval) clearInterval(coachLockInterval);
+
+  const inputEl = document.getElementById('coachPasswordInput');
+  const btnEl = document.getElementById('coachLoginBtn');
+  const errorEl = document.getElementById('coachAuthErrorMsg');
+
+  if (inputEl) inputEl.disabled = true;
+  if (btnEl) btnEl.disabled = true;
+
+  function update() {
+    const now = Date.now();
+    const remainingMs = lockUntil - now;
+
+    if (remainingMs <= 0) {
+      clearInterval(coachLockInterval);
+      coachLockInterval = null;
+      clearCoachAuthSecurityState();
+
+      if (inputEl) {
+        inputEl.disabled = false;
+        inputEl.value = '';
+        inputEl.focus();
+      }
+      if (btnEl) btnEl.disabled = false;
+      if (errorEl) {
+        errorEl.className = 'mt-3 small text-center text-success fw-bold';
+        errorEl.innerHTML = '<i class="bi bi-unlock-fill me-1"></i>30초 잠금이 해제되었습니다. 비밀번호를 다시 입력해 주세요.';
+      }
+      return;
+    }
+
+    const remainingSec = Math.ceil(remainingMs / 1000);
+    if (errorEl) {
+      errorEl.className = 'mt-3 small text-center text-danger fw-bold alert alert-danger py-2 mb-0 shadow-sm';
+      errorEl.innerHTML = `<i class="bi bi-shield-slash-fill me-1"></i>비밀번호 3회 오류로 30초 동안 로그인이 제한됩니다.<br>(남은 시간: <span class="fs-6 fw-extrabold text-danger">${remainingSec}초</span>)`;
+    }
+  }
+
+  update();
+  coachLockInterval = setInterval(update, 1000);
+}
+
+/**
+ * 코치 로그인 처리 함수
+ */
+function handleCoachLogin() {
+  const lockUntil = getCoachLockUntil();
+  const now = Date.now();
+  if (lockUntil > now) {
+    startCoachLockCountdown(lockUntil);
+    return;
+  }
+
+  const inputEl = document.getElementById('coachPasswordInput');
+  const errorEl = document.getElementById('coachAuthErrorMsg');
+  const enteredPw = (inputEl ? inputEl.value : '').trim();
+
+  if (!enteredPw) {
+    if (errorEl) {
+      errorEl.className = 'mt-3 small text-center text-danger fw-bold';
+      errorEl.innerHTML = '<i class="bi bi-exclamation-circle me-1"></i>비밀번호를 입력해 주세요.';
+    }
+    inputEl?.focus();
+    return;
+  }
+
+  if (enteredPw === COACH_MASTER_PASSWORD) {
+    // [인증 성공]
+    localStorage.setItem(STORAGE_COACH_AUTH_KEY, 'true');
+    clearCoachAuthSecurityState();
+    if (coachLockInterval) {
+      clearInterval(coachLockInterval);
+      coachLockInterval = null;
+    }
+
+    if (errorEl) {
+      errorEl.innerHTML = '';
+      errorEl.className = 'mt-3 small';
+    }
+    document.body.classList.remove('coach-locked');
+
+    // 모달 닫기
+    const modalEl = document.getElementById('coachAuthModal');
+    if (modalEl && window.bootstrap) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+
+    showToast('✓ 코치 인증이 완료되었습니다. 대시보드를 시작합니다.', 'success');
+
+    // 아직 데이터가 로드되지 않았다면 로드
+    if (!AppState.members || AppState.members.length === 0) {
+      loadAllData().then(() => {
+        renderTagFilterButtons();
+        applyFiltersAndRenderMemberList();
+        populateInlineGuidelines();
+        if (AppState.members.length > 0) {
+          const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
+          selectMember(getMemberKey(firstActive));
+        }
+      });
+    }
+  } else {
+    // [비밀번호 불일치]
+    let failCount = getCoachFailCount() + 1;
+    setCoachFailCount(failCount);
+
+    if (inputEl) {
+      inputEl.value = '';
+      inputEl.classList.add('shake-input');
+      setTimeout(() => inputEl.classList.remove('shake-input'), 500);
+    }
+
+    if (failCount >= 3) {
+      const newLockUntil = Date.now() + 30000;
+      setCoachLockUntil(newLockUntil);
+      startCoachLockCountdown(newLockUntil);
+    } else {
+      if (errorEl) {
+        errorEl.className = 'mt-3 small text-center text-danger fw-bold';
+        errorEl.innerHTML = `<i class="bi bi-x-circle-fill me-1"></i>비밀번호가 올바르지 않습니다. (오류 ${failCount}/3회 - 3회 실패 시 30초 잠금)`;
+      }
+      inputEl?.focus();
+    }
+  }
+}
+
+/**
+ * 코치 인증 모달 표시 함수
+ */
+function showCoachAuthModal(force = false) {
+  if (!force && isCoachAuthenticated()) {
+    document.body.classList.remove('coach-locked');
+    return;
+  }
+
+  document.body.classList.add('coach-locked');
+  const modalEl = document.getElementById('coachAuthModal');
+  if (!modalEl || !window.bootstrap) return;
+
+  let modal = bootstrap.Modal.getInstance(modalEl);
+  if (!modal) {
+    modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+  }
+  modal.show();
+
+  const lockUntil = getCoachLockUntil();
+  if (lockUntil > Date.now()) {
+    startCoachLockCountdown(lockUntil);
+  } else {
+    const inputEl = document.getElementById('coachPasswordInput');
+    const btnEl = document.getElementById('coachLoginBtn');
+    const errorEl = document.getElementById('coachAuthErrorMsg');
+    if (inputEl) {
+      inputEl.disabled = false;
+      inputEl.value = '';
+      setTimeout(() => inputEl.focus(), 300);
+    }
+    if (btnEl) btnEl.disabled = false;
+    if (errorEl) {
+      errorEl.innerHTML = '';
+      errorEl.className = 'mt-3 small';
+    }
+  }
+}
+
+/**
+ * 코치 세션 수동 잠금 (로그아웃)
+ */
+function coachLogout() {
+  localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
+  showCoachAuthModal(true);
+  showToast('코치 세션이 안전하게 잠겼습니다.', 'info');
+}
+
+/**
+ * 비밀번호 보기/숨기기 토글
+ */
+function toggleCoachPasswordVisibility() {
+  const inputEl = document.getElementById('coachPasswordInput');
+  const iconEl = document.getElementById('iconToggleCoachPw');
+  if (!inputEl || !iconEl) return;
+  if (inputEl.type === 'password') {
+    inputEl.type = 'text';
+    iconEl.className = 'bi bi-eye-slash';
+  } else {
+    inputEl.type = 'password';
+    iconEl.className = 'bi bi-eye';
+  }
+}
+
+// 전역 함수 노출
+window.handleCoachLogin = handleCoachLogin;
+window.coachLogout = coachLogout;
+window.toggleCoachPasswordVisibility = toggleCoachPasswordVisibility;
+window.showCoachAuthModal = showCoachAuthModal;
+
+/**
+ * ==============================================================================
  * [애플리케이션 초기화 진입점]
  * ==============================================================================
  */
@@ -255,11 +498,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     initApiSettings();
     initInlineGuidelinesActions();
     initEventListeners();
+    initDailyFeedbackModalActions();
+    initComprehensiveFeedbackActions();
 
     // [요청 1] 사이드바 접힘 상태 복원
     if (localStorage.getItem('coach_dash_sidebar_collapsed') === 'true') {
       toggleSidebar(true);
     }
+
+    // [보안 1단계 & 2단계] 코치 인증 확인
+    if (!isCoachAuthenticated()) {
+      showCoachAuthModal(true);
+      return; // 미인증 시 대시보드 데이터 로드 대기
+    }
+
+    document.body.classList.remove('coach-locked');
 
     // 데이터 로드 (구글 시트 콜드스타트 대비 35초 안전 타임아웃 및 Fail-Safe 적용)
     await loadAllData();
