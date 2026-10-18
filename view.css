@@ -1,0 +1,291 @@
+/**
+ * ==============================================================================
+ * [4주 온라인 습관화 코칭 - 회원 전용 마이페이지 view.css]
+ * 모바일 최적화 & 감성적인 프리미엄 라이트/모던 테마
+ * ==============================================================================
+ */
+
+:root {
+  --member-primary: #4f46e5;
+  --member-primary-light: #eef2ff;
+  --member-accent: #06b6d4;
+  --member-success: #10b981;
+  --member-warning: #f59e0b;
+  --member-bg: #f8fafc;
+  --card-bg: #ffffff;
+  --text-dark: #0f172a;
+  --text-muted: #64748b;
+  --border-color: #e2e8f0;
+}
+
+body {
+  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--member-bg);
+  color: var(--text-dark);
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 상단 글로벌 내비게이션 */
+.member-navbar {
+  background: #0f172a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.member-nav-brand {
+  font-weight: 700;
+  letter-spacing: -0.5px;
+  color: #ffffff;
+  text-decoration: none;
+}
+
+.member-nav-brand:hover {
+  color: #e2e8f0;
+}
+
+/* 피드백 제출 CTA 버튼 (애니메이션 펄스 효과) */
+.cta-feedback-btn {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #ffffff !important;
+  border: none;
+  border-radius: 50rem;
+  padding: 0.65rem 1.4rem;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+  transition: all 0.25s ease;
+  animation: pulseCta 2.5s infinite;
+}
+
+.cta-feedback-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.55);
+}
+
+@keyframes pulseCta {
+  0% { transform: scale(1); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4); }
+  50% { transform: scale(1.03); box-shadow: 0 6px 22px rgba(245, 158, 11, 0.6); }
+  100% { transform: scale(1); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4); }
+}
+
+/* 히어로 환영 섹션 */
+.member-hero-card {
+  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%);
+  color: #ffffff;
+  border-radius: 1.25rem;
+  padding: 2rem 1.75rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(49, 46, 129, 0.25);
+}
+
+.member-hero-card::after {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -20%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
+  border-radius: 50%;
+}
+
+.weight-stat-pill {
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 1rem;
+  padding: 0.85rem 1.25rem;
+}
+
+/* 모던 카드 공통 스타일 */
+.member-content-card {
+  background: #ffffff;
+  border-radius: 1.25rem;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+  margin-bottom: 1.5rem;
+  transition: box-shadow 0.2s ease;
+}
+
+.member-content-card:hover {
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
+}
+
+.member-card-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  background-color: #fafbfd;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.member-card-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* 요일별 루틴 & 끼니별 식단 표 스타일 */
+.routine-table, .diet-table {
+  width: 100%;
+  margin-bottom: 0;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.routine-table th, .diet-table th {
+  background-color: #f1f5f9;
+  color: #475569;
+  font-weight: 700;
+  font-size: 0.88rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 2px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.routine-table td, .diet-table td {
+  padding: 1rem 1rem;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--border-color);
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.routine-table tr:last-child td, .diet-table tr:last-child td {
+  border-bottom: none;
+}
+
+.day-badge {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.5rem;
+  background-color: #e0e7ff;
+  color: #3730a3;
+  display: inline-block;
+}
+
+.meal-badge {
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.35rem 0.65rem;
+  border-radius: 0.5rem;
+  display: inline-block;
+}
+
+.meal-badge.breakfast { background-color: #fef3c7; color: #92400e; }
+.meal-badge.lunch { background-color: #dbeafe; color: #1e40af; }
+.meal-badge.snack { background-color: #f3e8ff; color: #6b21a8; }
+.meal-badge.dinner { background-color: #e0e7ff; color: #3730a3; }
+.meal-badge.water { background-color: #ccfbf1; color: #0f766e; }
+
+/* 피드백 타임라인 아이템 */
+.feedback-timeline-item {
+  border-left: 3px solid #6366f1;
+  padding-left: 1.25rem;
+  position: relative;
+  margin-bottom: 1.75rem;
+}
+
+.feedback-timeline-item::before {
+  content: '';
+  position: absolute;
+  left: -7.5px;
+  top: 0;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #6366f1;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 2px #6366f1;
+}
+
+.feedback-bubble {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  padding: 1.15rem;
+  margin-top: 0.75rem;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+/* 인증 모달 */
+.member-auth-card {
+  border-radius: 1.5rem;
+  border: none;
+  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.4);
+  overflow: hidden;
+}
+
+.member-auth-icon {
+  width: 80px;
+  height: 80px;
+  background: #eef2ff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1.5rem auto;
+}
+
+.member-pin-input {
+  font-size: 1.8rem;
+  letter-spacing: 0.75rem;
+  text-align: center;
+  border-radius: 0.85rem;
+  border: 2px solid #cbd5e1;
+  padding: 0.75rem 0.5rem;
+  font-weight: 700;
+  transition: all 0.2s ease;
+}
+
+.member-pin-input:focus {
+  border-color: #4f46e5;
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.15);
+}
+
+.shake-effect {
+  animation: shakeInput 0.4s ease-in-out;
+}
+
+@keyframes shakeInput {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-8px); }
+  75% { transform: translateX(8px); }
+}
+
+/* 차트 카드 */
+.chart-container-box {
+  position: relative;
+  height: 260px;
+  width: 100%;
+}
+
+/* 모바일 반응형 튜닝 */
+@media (max-width: 768px) {
+  .member-hero-card {
+    padding: 1.5rem 1.25rem;
+  }
+  .routine-table td, .diet-table td {
+    padding: 0.85rem 0.65rem;
+    font-size: 0.88rem;
+  }
+  .routine-table th, .diet-table th {
+    padding: 0.75rem 0.65rem;
+    font-size: 0.82rem;
+  }
+  .cta-feedback-btn {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
