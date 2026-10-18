@@ -1,6 +1,6 @@
 # 4주 온라인 습관화 코칭 통합 대시보드 (Coach Dashboard)
 
-![Version](https://img.shields.io/badge/version-v1.2.0-blue.svg)
+![Version](https://img.shields.io/badge/version-v2.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![Platform](https://img.shields.io/badge/platform-Web%20%7C%20Google%20Apps%20Script-orange.svg)
 
