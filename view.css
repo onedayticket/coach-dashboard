@@ -134,88 +134,103 @@ body {
   gap: 0.5rem;
 }
 
-/* 요일별 루틴 & 끼니별 식단 표 스타일 */
-.routine-table, .diet-table {
-  width: 100%;
-  margin-bottom: 0;
-  border-collapse: separate;
-  border-spacing: 0;
+/* ========================================================================= */
+/* [한눈에 쏙 들어오는 운동 루틴 & 식단 서식 박스] */
+/* ========================================================================= */
+.routine-display-box {
+  background: #ffffff;
+  border-radius: 0.85rem;
+  padding: 1.35rem 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.85;
+  color: #1e293b;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
+  min-height: 200px;
 }
 
-.routine-table th, .diet-table th {
-  background-color: #f1f5f9;
+.routine-display-box.border-start {
+  border-left-width: 5px !important;
+}
+
+/* ========================================================================= */
+/* [3개 독립 꺾은선 차트 카드 (코치 대시보드와 동일)] */
+/* ========================================================================= */
+.chart-card {
+  background: #ffffff;
+  border: 1px solid var(--border-color);
+  border-radius: 0.85rem;
+  padding: 1rem 1.15rem;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+  height: 100%;
+}
+
+.chart-card-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+}
+
+.chart-canvas-wrapper {
+  position: relative;
+  height: 190px;
+  width: 100%;
+}
+
+/* ========================================================================= */
+/* [일자별 피드백 누적 테이블 (코치 대시보드 목록 기준)] */
+/* ========================================================================= */
+.member-feedback-table {
+  width: 100%;
+  margin-bottom: 0;
+}
+
+.member-feedback-table thead th {
+  background-color: #f8fafc;
   color: #475569;
   font-weight: 700;
-  font-size: 0.88rem;
-  padding: 0.85rem 1rem;
+  font-size: 0.85rem;
+  padding: 0.85rem 0.75rem;
   border-bottom: 2px solid var(--border-color);
   white-space: nowrap;
 }
 
-.routine-table td, .diet-table td {
-  padding: 1rem 1rem;
-  vertical-align: middle;
+.member-feedback-table tbody td {
+  padding: 0.95rem 0.75rem;
+  vertical-align: top;
   border-bottom: 1px solid var(--border-color);
-  font-size: 0.95rem;
+  font-size: 0.88rem;
+}
+
+.member-feedback-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+/* 칭찬/성취 중심 코치 피드백 코멘트 셀 */
+.feedback-comment-cell {
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.65rem;
+  padding: 0.75rem 1rem;
+  color: #14532d;
+  font-size: 0.88rem;
   line-height: 1.6;
+  word-break: break-word;
 }
 
-.routine-table tr:last-child td, .diet-table tr:last-child td {
-  border-bottom: none;
-}
-
-.day-badge {
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.5rem;
-  background-color: #e0e7ff;
-  color: #3730a3;
-  display: inline-block;
-}
-
-.meal-badge {
-  font-size: 0.82rem;
-  font-weight: 700;
-  padding: 0.35rem 0.65rem;
-  border-radius: 0.5rem;
-  display: inline-block;
-}
-
-.meal-badge.breakfast { background-color: #fef3c7; color: #92400e; }
-.meal-badge.lunch { background-color: #dbeafe; color: #1e40af; }
-.meal-badge.snack { background-color: #f3e8ff; color: #6b21a8; }
-.meal-badge.dinner { background-color: #e0e7ff; color: #3730a3; }
-.meal-badge.water { background-color: #ccfbf1; color: #0f766e; }
-
-/* 피드백 타임라인 아이템 */
-.feedback-timeline-item {
-  border-left: 3px solid #6366f1;
-  padding-left: 1.25rem;
-  position: relative;
-  margin-bottom: 1.75rem;
-}
-
-.feedback-timeline-item::before {
-  content: '';
-  position: absolute;
-  left: -7.5px;
-  top: 0;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background-color: #6366f1;
-  border: 2px solid #ffffff;
-  box-shadow: 0 0 0 2px #6366f1;
-}
-
-.feedback-bubble {
-  background: #f8fafc;
+/* 회원 실천 일지 내용 셀 */
+.member-log-cell {
+  background-color: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 1rem;
-  padding: 1.15rem;
-  margin-top: 0.75rem;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+  border-radius: 0.65rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.83rem;
+  color: #334155;
+  line-height: 1.6;
+  word-break: break-word;
 }
 
 /* 인증 모달 */

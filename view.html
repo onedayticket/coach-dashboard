@@ -148,119 +148,139 @@
 
     <div class="row g-4">
 
-      <!-- ===================================================================== -->
-      <!-- [좌측/상단 컬럼]: 1. 맞춤 운동 루틴 표 & 2. 맞춤 식단 플랜 표 -->
-      <!-- ===================================================================== -->
-      <div class="col-12 col-lg-7">
-
-        <!-- 1. 맞춤 운동 루틴 표 카드 -->
-        <div class="member-content-card">
-          <div class="member-card-header">
-            <h5 class="member-card-title text-primary">
-              <i class="bi bi-lightning-charge-fill text-warning"></i>
+    <!-- ===================================================================== -->
+    <!-- [중단] 코치 추천 맞춤 운동 루틴 & 맞춤 식단 플랜 (한눈에 잘 보이는 서식 박스) -->
+    <!-- ===================================================================== -->
+    <div class="row g-4 mb-4">
+      
+      <!-- 1. 맞춤 운동 루틴 카드 -->
+      <div class="col-12 col-lg-6">
+        <div class="member-content-card h-100">
+          <div class="member-card-header bg-success-subtle border-bottom border-success-subtle">
+            <h5 class="member-card-title text-success">
+              <i class="bi bi-activity"></i>
               <span>코치 추천 맞춤 운동 루틴</span>
             </h5>
-            <span class="badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill small">주간 계획표</span>
+            <span class="badge bg-success text-white rounded-pill px-3 py-1 small">주간 운동 플랜</span>
           </div>
           <div class="p-3 p-md-4">
-            <!-- 코치 일반 안내 설명 박스 -->
-            <div id="workoutDescBox" class="alert alert-light border small text-muted mb-3 d-none leading-relaxed"></div>
-            
-            <!-- 요일별 운동 표 -->
-            <div class="table-responsive rounded-3 border">
-              <table class="routine-table" id="workoutRoutineTable">
-                <thead>
-                  <tr>
-                    <th style="width: 25%;">요일 / 시간</th>
-                    <th>운동 종목 및 권장 세트</th>
-                  </tr>
-                </thead>
-                <tbody id="workoutRoutineTableBody">
-                  <!-- JS 동적 생성 -->
-                </tbody>
-              </table>
+            <div id="workoutRoutineBox" class="routine-display-box border-start border-4 border-success">
+              <!-- JS에서 수정 지침을 완전 배제하고 한눈에 잘 들어오게 서식화하여 렌더링 -->
             </div>
           </div>
         </div>
-
-        <!-- 2. 맞춤 식단 플랜 표 카드 -->
-        <div class="member-content-card">
-          <div class="member-card-header">
-            <h5 class="member-card-title text-success">
-              <i class="bi bi-egg-fried text-warning"></i>
-              <span>코치 추천 맞춤 식단 플랜</span>
-            </h5>
-            <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill small">클린 식단</span>
-          </div>
-          <div class="p-3 p-md-4">
-            <!-- 식단 안내 설명 박스 -->
-            <div id="dietDescBox" class="alert alert-light border small text-muted mb-3 d-none leading-relaxed"></div>
-
-            <!-- 끼니별 식단 표 -->
-            <div class="table-responsive rounded-3 border">
-              <table class="diet-table" id="dietPlanTable">
-                <thead>
-                  <tr>
-                    <th style="width: 25%;">식사 구분</th>
-                    <th>제안 식단 및 영양 가이드</th>
-                  </tr>
-                </thead>
-                <tbody id="dietPlanTableBody">
-                  <!-- JS 동적 생성 -->
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
       </div>
 
-      <!-- ===================================================================== -->
-      <!-- [우측/하단 컬럼]: 3. 체중 및 점수 추이 그래프 & 4. 코치 피드백 타임라인 -->
-      <!-- ===================================================================== -->
-      <div class="col-12 col-lg-5">
-
-        <!-- 3. 체중 및 실행률 추이 그래프 -->
-        <div class="member-content-card">
-          <div class="member-card-header">
-            <h5 class="member-card-title text-dark">
-              <i class="bi bi-graph-up-arrow text-primary"></i>
-              <span>나의 변화 추이 그래프</span>
+      <!-- 2. 맞춤 식단 플랜 카드 -->
+      <div class="col-12 col-lg-6">
+        <div class="member-content-card h-100">
+          <div class="member-card-header bg-warning-subtle border-bottom border-warning-subtle">
+            <h5 class="member-card-title text-warning-emphasis">
+              <i class="bi bi-egg-fried"></i>
+              <span>코치 추천 맞춤 식단 플랜</span>
             </h5>
-            <div class="btn-group btn-group-sm" role="group">
-              <button type="button" class="btn btn-outline-primary active btn-xs" id="btnChartWeight" onclick="switchMemberChart('weight')">체중(kg)</button>
-              <button type="button" class="btn btn-outline-primary btn-xs" id="btnChartScore" onclick="switchMemberChart('score')">실천점수</button>
-            </div>
+            <span class="badge bg-warning text-dark fw-bold rounded-pill px-3 py-1 small">클린 식단 플랜</span>
           </div>
-          <div class="p-3">
-            <div class="chart-container-box">
-              <canvas id="memberProgressChart"></canvas>
-            </div>
-            <div class="text-center text-muted small mt-2" id="chartSubNote">
-              <i class="bi bi-info-circle me-1"></i>최근 데일리 피드백 기록 기반의 변화 추이입니다.
+          <div class="p-3 p-md-4">
+            <div id="dietPlanBox" class="routine-display-box border-start border-4 border-warning">
+              <!-- JS에서 수정 지침을 완전 배제하고 한눈에 잘 들어오게 서식화하여 렌더링 -->
             </div>
           </div>
         </div>
-
-        <!-- 4. 코칭 피드백 타임라인 (문제점 분석 완전 비공개 처리!) -->
-        <div class="member-content-card">
-          <div class="member-card-header">
-            <h5 class="member-card-title text-indigo" style="color: #4f46e5;">
-              <i class="bi bi-chat-heart-fill text-danger"></i>
-              <span>코치님의 응원 & 피드백 로그</span>
-            </h5>
-            <span class="badge bg-indigo-subtle text-indigo rounded-pill small" id="feedbackCountBadge">0건</span>
-          </div>
-          <div class="p-3 p-md-4" style="max-height: 580px; overflow-y: auto;">
-            <div id="feedbackTimelineList">
-              <!-- JS 동적 렌더링 (문제점 분석 및 지적 텍스트는 100% 필터링) -->
-            </div>
-          </div>
-        </div>
-
       </div>
 
     </div>
+
+    <!-- ===================================================================== -->
+    <!-- [하단] 피드백 누적 관리 (코치 대시보드와 동일한 3종 차트 + 일자별 피드백 테이블) -->
+    <!-- ===================================================================== -->
+    <section class="member-content-card mb-4" id="sectionFeedbackHistory">
+      <div class="member-card-header d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-calendar2-check-fill text-primary fs-5"></i>
+          <h5 class="member-card-title text-dark mb-0">데일리 피드백 누적 기록 & 변화 추이</h5>
+        </div>
+        <span class="badge bg-primary text-white rounded-pill px-3 py-1 small" id="feedbackCountBadge">누적 0건</span>
+      </div>
+
+      <div class="p-3 p-md-4">
+        
+        <!-- 1. 데일리 데이터 추이 (3개의 독립 꺾은선 차트 - 코치 대시보드와 동일) -->
+        <div class="mb-4">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h6 class="fw-bold text-secondary mb-0">
+              <i class="bi bi-graph-up text-primary me-1"></i>나의 변화 추이 그래프 (체중 및 실천 점수)
+            </h6>
+          </div>
+          <div class="row g-3">
+            <!-- 차트 1: 공복 몸무게 -->
+            <div class="col-12 col-md-4">
+              <div class="chart-card">
+                <div class="chart-card-title text-primary">
+                  <i class="bi bi-speedometer2 me-1"></i> 1. 아침 공복 몸무게 (kg)
+                </div>
+                <div class="chart-canvas-wrapper">
+                  <canvas id="chartWeight"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- 차트 2: 운동 점수 -->
+            <div class="col-12 col-md-4">
+              <div class="chart-card">
+                <div class="chart-card-title text-success">
+                  <i class="bi bi-activity me-1"></i> 2. 운동 점수 (5점 만점)
+                </div>
+                <div class="chart-canvas-wrapper">
+                  <canvas id="chartExercise"></canvas>
+                </div>
+              </div>
+            </div>
+
+            <!-- 차트 3: 식단 점수 -->
+            <div class="col-12 col-md-4">
+              <div class="chart-card">
+                <div class="chart-card-title text-warning-emphasis">
+                  <i class="bi bi-egg-fried me-1"></i> 3. 식단 점수 (5점 만점)
+                </div>
+                <div class="chart-canvas-wrapper">
+                  <canvas id="chartDiet"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. 일자별 피드백 누적 테이블 (코치 대시보드 목록 기준 그대로 가져옴) -->
+        <div>
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h6 class="fw-bold text-dark mb-0">
+              <i class="bi bi-chat-heart-fill text-danger me-1"></i>일자별 데일리 피드백 기록
+            </h6>
+            <span class="text-muted small">최신 제출일 순으로 정렬됩니다.</span>
+          </div>
+
+          <div class="table-responsive border rounded-3 bg-white shadow-sm">
+            <table class="table table-hover align-middle member-feedback-table mb-0">
+              <thead class="table-light">
+                <tr>
+                  <th style="width: 105px;">날짜</th>
+                  <th style="width: 95px;">공복체중</th>
+                  <th style="width: 90px;" class="text-center">운동 점수</th>
+                  <th style="width: 90px;" class="text-center">식단 점수</th>
+                  <th style="min-width: 240px;">코치님의 피드백 코멘트</th>
+                  <th style="min-width: 220px;">나의 실천 일지</th>
+                </tr>
+              </thead>
+              <tbody id="feedbackTableBody">
+                <!-- JS 동적 렌더링 (코치 피드백 요약 및 일지 내용 표시, 문제점 분석은 완전 비공개) -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
 
   </main>
 
