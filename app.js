@@ -1735,40 +1735,84 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
   });
   const cleanText = filteredLines.join('\n').trim();
 
-  // 2. [루틴 소개] 추출
-  let introHtml = '';
-  let routineBody = cleanText;
+  // 2. [루틴 소개]와 [루틴 본문 (DAY1~DAY7)] 명확 분리
+  // 첫 번째 DAY 패턴(예: DAY 1, | DAY 1, # DAY 1 등)의 위치를 기준으로 분할
+  const firstDayMatch = cleanText.match(/(?:^|\n)\s*(?:\|\s*)?(?:#+\s*)?DAY\s*[1-7]/i);
 
-  const introMatch = cleanText.match(/\[루틴\s*소개\]\s*([\s\S]*?)(?=\[루틴\]|$)/i);
-  if (introMatch && introMatch[1]) {
-    const introText = introMatch[1].trim();
-    if (introText) {
-      introHtml = `
-        <div class="workout-intro-card mb-3 p-3 shadow-sm">
-          <div class="d-flex align-items-center gap-2 mb-1 text-success fw-bold small">
-            <i class="bi bi-info-circle-fill"></i>
-            <span>루틴 설계 배경 & 맞춤 가이드</span>
-          </div>
-          <div class="small text-secondary leading-relaxed">${escapeHtml(introText).replace(/\n/g, '<br>')}</div>
+  let rawIntroPart = '';
+  let routineBodyPart = cleanText;
+
+  if (firstDayMatch) {
+    const splitIdx = firstDayMatch.index;
+    rawIntroPart = cleanText.substring(0, splitIdx).trim();
+    routineBodyPart = cleanText.substring(splitIdx).trim();
+  } else {
+    // DAY 패턴이 없는 경우
+    rawIntroPart = cleanText;
+    routineBodyPart = '';
+  }
+
+  // 3. [루틴 소개] 텍스트 대청소 ("1. 루틴 소개", "2. 루틴", 마크다운 헤더/볼드/대시 기호 제거)
+  let introClean = rawIntroPart
+    .replace(/^[#*_\s]*\d+[\.\)]\s*\[?루틴\s*소개\]?[#*_\s:]*/gmi, '')
+    .replace(/^[#*_\s]*\[루틴\s*소개\][#*_\s:]*/gmi, '')
+    .replace(/^[#*_\s]*\d+[\.\)]\s*\[?루틴\]?[#*_\s:]*/gmi, '')
+    .replace(/^[#*_\s]*\[루틴\][#*_\s:]*/gmi, '')
+    .trim();
+
+  // 각 라인별 추가 필터링 (잔여 레이블 및 불필요한 문구 제거)
+  introClean = introClean
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^(?:#+\s*)?(?:\d+[\.\)]\s*)?\[?루틴(?:\s*소개)?\]?[:\s]*$/i.test(t)) return false;
+      if (/^무리한\s*운동은/i.test(t)) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+
+  let introHtml = '';
+  if (introClean) {
+    introHtml = `
+      <div class="workout-intro-card mb-3 p-3 shadow-sm">
+        <div class="d-flex align-items-center gap-2 mb-1 text-success fw-bold small">
+          <i class="bi bi-info-circle-fill"></i>
+          <span>루틴 설계 배경 & 맞춤 가이드</span>
+        </div>
+        <div class="small text-secondary leading-relaxed">${escapeHtml(introClean).replace(/\n/g, '<br>')}</div>
+      </div>
+    `;
+  }
+
+  // DAY 패턴이 전혀 없는 경우의 안전 폴백
+  if (!routineBodyPart) {
+    if (!introHtml) {
+      return `
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
+          ${escapeHtml(cleanText)}
         </div>
       `;
     }
+    return introHtml;
   }
 
-  if (cleanText.includes('[루틴]')) {
-    routineBody = cleanText.split('[루틴]')[1].trim();
-  } else if (introMatch) {
-    routineBody = cleanText.replace(introMatch[0], '').trim();
-  }
+  // 4. [루틴 본문]에서 잔여 섹션 레이블("2. 루틴" 등) 청소
+  const sanitizedRoutineBody = routineBodyPart
+    .replace(/^[#*_\s]*\d+[\.\)]\s*\[?루틴\]?[#*_\s:]*$/gmi, '')
+    .replace(/^[#*_\s]*\[루틴\][#*_\s:]*$/gmi, '')
+    .trim();
 
-  // 3. DAY1 ~ DAY7 블록 분리 (마크다운 표 및 한 줄 휴식일 모두 감지)
-  const rawChunks = routineBody.split(/(?=(?:^|\n)(?:\|\s*)?DAY\s*[1-7])/i).filter(c => c.trim().length > 0);
+  // 5. DAY1 ~ DAY7 블록 분리 (DAY 패턴이 확실한 청크만 선별)
+  const rawChunks = sanitizedRoutineBody
+    .split(/(?=(?:^|\n)\s*(?:\|\s*)?(?:#+\s*)?DAY\s*[1-7])/i)
+    .filter(c => c.trim().length > 0 && /DAY\s*[1-7]/i.test(c));
 
   if (rawChunks.length === 0) {
-    // 만약 DAY1~DAY7 패턴이 없는 일반 텍스트인 경우 안전 폴백
     return introHtml + `
       <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
-        ${escapeHtml(routineBody)}
+        ${escapeHtml(sanitizedRoutineBody)}
       </div>
     `;
   }
@@ -1777,38 +1821,43 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
 
   rawChunks.forEach((chunk, idx) => {
     const trimmedChunk = chunk.trim();
-    const dayIndex = idx + 1;
-    const collapseId = `${prefix}_collapse_${dayIndex}`;
-    const headerId = `${prefix}_heading_${dayIndex}`;
-    const isFirstDay = (dayIndex === 1); // DAY 1만 기본 열림(펼침)
-
     const chunkLines = trimmedChunk.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const firstLine = chunkLines[0] || '';
 
-    // 1) 휴식/리커버리 키워드 판별 (제목뿐 아니라 청크 전체에서 검사)
-    const isRestKeyword = /휴식|rest|리커버리|recovery|회복|스트레칭\s*및\s*휴식/i.test(trimmedChunk);
-
-    // DAY 번호 및 타겟 부위 추출
-    let dayBadgeText = `DAY ${dayIndex}`;
-    let dayTargetText = '';
-
-    const dayNumMatch = firstLine.match(/DAY\s*([1-7])/i);
+    // 1) DAY 번호 추출
+    let dayNum = idx + 1;
+    const dayNumMatch = firstLine.match(/DAY\s*([1-7])/i) || trimmedChunk.match(/DAY\s*([1-7])/i);
     if (dayNumMatch) {
-      dayBadgeText = `DAY ${dayNumMatch[1]}`;
+      dayNum = parseInt(dayNumMatch[1], 10);
     }
+    const dayBadgeText = `DAY ${dayNum}`;
+    const collapseId = `${prefix}_collapse_${dayNum}`;
+    const headerId = `${prefix}_heading_${dayNum}`;
+    const isFirstDay = (idx === 0); // 첫 번째 카드 기본 펼침
 
+    // 2) 타겟 부위 / 휴식 텍스트 추출 및 정제
+    let rawTarget = '';
     const bracketMatch = firstLine.match(/\[(.*?)\]/) || firstLine.match(/\((.*?)\)/);
     if (bracketMatch) {
-      dayTargetText = bracketMatch[1].trim();
+      rawTarget = bracketMatch[1].trim();
     } else {
       const cleanedFirst = firstLine.replace(/^[|#\s*]+/, '').replace(/[|#\s*]+$/, '');
-      const afterDay = cleanedFirst.replace(/DAY\s*[1-7]/i, '').replace(/^[\s:\-\–]+/, '').trim();
-      if (afterDay) dayTargetText = afterDay;
+      const afterDay = cleanedFirst.replace(/DAY\s*[1-7]/i, '').replace(/^[\s:\-\–~]+/, '').trim();
+      if (afterDay) rawTarget = afterDay;
     }
 
-    // 2) 마크다운 테이블 행들 파싱 및 유효 운동 데이터 추출
+    // 타겟 부위 문자열에서 "1. 루틴 소개", "2. 루틴" 등 불필요한 레이블 완전 제거
+    let cleanTarget = rawTarget
+      .replace(/\d+[\.\)]\s*\[?루틴\s*소개\]?/gi, '')
+      .replace(/\[?루틴\s*소개\]?/gi, '')
+      .replace(/\d+[\.\)]\s*\[?루틴\]?/gi, '')
+      .replace(/\[?루틴\]?/gi, '')
+      .replace(/^[\s:\-\–~,]+|[\s:\-\–~,]+$/g, '')
+      .replace(/^[\[\(]+|[\]\)]+$/g, '')
+      .trim();
+
+    // 3) 마크다운 테이블 행들 파싱 및 유효 운동 데이터 추출
     const tableRows = chunkLines.filter(l => l.startsWith('|') && l.endsWith('|'));
-    let dayTitleCellText = `${dayBadgeText} [${dayTargetText || '맞춤 운동'}]`;
     let dataRows = [];
 
     tableRows.forEach(r => {
@@ -1821,48 +1870,73 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
       // 헤더 행 제외 (운동 종목, 횟수 등)
       if (cells.some(c => c.includes('운동 종목') || c.includes('종목') || c.includes('세트수'))) return;
 
-      // 첫 번째 행이 DAY 제목인 경우
-      if (cells[0] && /DAY\s*[1-7]/i.test(cells[0])) {
-        dayTitleCellText = cells[0].replace(/[*_#]/g, '').trim();
-        return;
-      }
+      // 첫 번째 행이 DAY 제목인 경우 제외
+      if (cells[0] && /DAY\s*[1-7]/i.test(cells[0])) return;
 
-      // 실제 운동 종목 이름이 유효한지 검사 (대시(-)나 공백만이 아닌 실질적 텍스트가 있을 때만 유효 운동으로 인정)
-      const validName = (cells[0] || '').replace(/[-—_~*\s]/g, '');
+      // 실제 운동 종목 이름이 유효한지 검사
+      const exerciseCol = cells[0] || '';
+      const validName = exerciseCol.replace(/[-—_~*\s]/g, '');
       if (validName.length > 0 && !/휴식|rest|리커버리|recovery|회복/i.test(validName)) {
         dataRows.push(cells);
       }
     });
 
-    // 3) 휴식일 최종 판별 (휴식 키워드가 있거나 유효 운동 행이 0개인 경우 100% 휴식일 처리)
+    // 4) 휴식일 최종 판별 (휴식 키워드가 있거나 유효 운동 종목 행이 0개인 경우)
+    const isRestKeyword = /휴식|rest|리커버리|recovery|회복|스트레칭\s*및\s*휴식/i.test(trimmedChunk);
     const isRestDay = isRestKeyword || (dataRows.length === 0);
+
+    // 5) 요구사항 1: 무조건 DAY X [타겟 부위] 또는 DAY X (휴식) 포맷 엄격 준수
+    let dayFullTitle = '';
+    let headerTitle = '';
+    let badgeBg = '';
+    let rightHint = '';
+
+    if (isRestDay) {
+      const restLabel = cleanTarget || '휴식';
+      headerTitle = `(${restLabel})`;
+      dayFullTitle = `${dayBadgeText} ${headerTitle}`;
+      badgeBg = 'bg-secondary-subtle text-secondary border';
+      rightHint = '<span class="badge bg-light text-secondary border small">휴식일 🌿</span>';
+    } else {
+      const targetLabel = cleanTarget || '맞춤 운동';
+      headerTitle = `[${targetLabel}]`;
+      dayFullTitle = `${dayBadgeText} ${headerTitle}`;
+      badgeBg = 'bg-success text-white';
+      rightHint = `<span class="badge bg-success-subtle text-success border border-success-subtle small">${escapeHtml(targetLabel)}</span>`;
+    }
 
     let bodyContentHtml = '';
 
     if (isRestDay) {
-      // 4) 휴식일 안내 텍스트 완벽 정제 (마크다운 기호 | , --- , * 제거)
+      // 6) 휴식일 안내 텍스트 완벽 정제 (마크다운 기호 및 불필요한 레이블/하단 문구 제거)
       let descParts = [];
       chunkLines.forEach((l, lIdx) => {
         // 구분선, 헤더 제외
         if (/^\|?\s*:?-+:?\s*\|?$/.test(l) || l.includes(':-')) return;
         if (l.includes('운동 종목') || l.includes('세트수') || l.includes('쉬는시간')) return;
+        if (/루틴\s*소개|^\d+[\.\)]\s*루틴/i.test(l)) return;
 
         let clean = l.replace(/^\|\s*/, '').replace(/\s*\|$/, '');
         let cells = clean.split('|').map(c => c.replace(/[*_#`]/g, '').trim()).filter(c => c && c !== '-');
         let joined = cells.join(' ').trim();
         if (!joined) return;
 
+        // 불필요한 레이블이나 하단 문구 필터링
+        if (/루틴\s*소개|^\d+[\.\)]\s*루틴|무리한\s*운동/i.test(joined)) return;
+
         if (lIdx === 0) {
           // 첫 줄에서 DAY X 및 괄호를 제외한 남은 설명 문구 추출
           let remain = joined.replace(/DAY\s*[1-7]/i, '').replace(/\[.*?\]|\(.*?\)/g, '').replace(/^[\s:\-\–~,]+/, '').trim();
-          if (remain) descParts.push(remain);
+          if (remain && !/루틴|무리한\s*운동/i.test(remain)) {
+            descParts.push(remain);
+          }
         } else {
           descParts.push(joined);
         }
       });
 
-      const restTitle = dayTargetText || '휴식 및 리커버리';
-      const cleanFullTitle = `${dayBadgeText} (${restTitle})`;
+      descParts = descParts.filter(p => !/루틴\s*소개|^\d+[\.\)]\s*루틴|무리한\s*운동/i.test(p));
+
       const cleanFullDesc = descParts.length > 0 
         ? descParts.join(' • ') 
         : '가벼운 스트레칭과 충분한 수분 섭취, 수면으로 근육과 관절을 회복하는 날입니다.';
@@ -1872,25 +1946,22 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
         <div class="routine-rest-card p-3 p-md-4 text-center">
           <div class="d-flex align-items-center justify-content-center gap-2 text-dark fw-bold mb-2">
             <i class="bi bi-heart-pulse-fill text-danger fs-5"></i>
-            <span class="fs-6">${escapeHtml(cleanFullTitle)}</span>
+            <span class="fs-6">${escapeHtml(dayFullTitle)}</span>
           </div>
-          <div class="text-secondary small leading-relaxed fw-medium mb-1">
+          <div class="text-secondary small leading-relaxed fw-medium">
             ${escapeHtml(cleanFullDesc)}
-          </div>
-          <div class="text-muted extra-small mt-2">
-            🌿 무리한 운동은 피하고 컨디션 회복에 집중해 주세요.
           </div>
         </div>
       `;
     } else {
-      // 5) 실제 운동 테이블 렌더링 (Colspan=5 가로 병합 헤더 + 5열 구조)
+      // 7) 실제 운동 테이블 렌더링 (Colspan=5 가로 병합 헤더 + 5열 구조)
       let tbodyRowsHtml = '';
       dataRows.forEach(cells => {
-        const exercise = escapeHtml((cells[0] || '').replace(/[*_]/g, ''));
-        const reps = escapeHtml((cells[1] || '').replace(/[*_]/g, ''));
-        const sets = escapeHtml((cells[2] || '').replace(/[*_]/g, ''));
-        const rest = escapeHtml((cells[3] || '').replace(/[*_]/g, ''));
-        const weight = escapeHtml((cells[4] || '').replace(/[*_]/g, '')); // 코치 지침에 따라 공란 유지
+        const exercise = escapeHtml((cells[0] || '').replace(/[*_]/g, '').trim());
+        const reps = escapeHtml((cells[1] || '').replace(/[*_]/g, '').trim());
+        const sets = escapeHtml((cells[2] || '').replace(/[*_]/g, '').trim());
+        const rest = escapeHtml((cells[3] || '').replace(/[*_]/g, '').trim());
+        const weight = escapeHtml((cells[4] || '').replace(/[*_]/g, '').trim()); // 코치 지침에 따라 공란 유지
 
         tbodyRowsHtml += `
           <tr>
@@ -1907,10 +1978,9 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
         <div class="table-responsive routine-day-table-wrapper">
           <table class="table table-sm table-bordered routine-day-table align-middle">
             <thead>
-              <!-- 요구사항 1: 테이블 최상단 DAY 제목 행 가로 병합 (Colspan="5"), 가운데 정렬, 굵은 글씨, 포인트 배경색 -->
               <tr class="table-day-title-row">
                 <th colspan="5" class="text-center py-2 bg-success text-white fw-bold">
-                  <i class="bi bi-calendar-check me-1"></i>${escapeHtml(dayTitleCellText)}
+                  <i class="bi bi-calendar-check me-1"></i>${escapeHtml(dayFullTitle)}
                 </th>
               </tr>
               <tr class="table-day-header-row table-light text-center small">
@@ -1928,13 +1998,6 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
         </div>
       `;
     }
-
-    // 아코디언 헤더 배지 색상 및 힌트 텍스트
-    const badgeBg = isRestDay ? 'bg-secondary-subtle text-secondary border' : 'bg-success text-white';
-    const headerTitle = isRestDay ? (dayTargetText || '휴식 및 리커버리') : (dayTargetText || '운동 루틴');
-    const rightHint = isRestDay
-      ? '<span class="badge bg-light text-secondary border small">휴식일 🌿</span>'
-      : `<span class="badge bg-success-subtle text-success border border-success-subtle small">${escapeHtml(dayTargetText || '본운동')}</span>`;
 
     accordionItemsHtml += `
       <div class="accordion-item">
