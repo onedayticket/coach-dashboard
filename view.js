@@ -1185,13 +1185,33 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
 
   let introHtml = '';
   if (introClean) {
+    const introCollapseId = `${prefix}_collapse_intro`;
+    const introHeaderId = `${prefix}_heading_intro`;
+
     introHtml = `
-      <div class="workout-intro-card mb-3 p-3 shadow-sm">
-        <div class="d-flex align-items-center gap-2 mb-1 text-success fw-bold small">
-          <i class="bi bi-info-circle-fill"></i>
-          <span>루틴 설계 배경 & 맞춤 가이드</span>
+      <div class="accordion-item routine-intro-accordion-item">
+        <h2 class="accordion-header" id="${introHeaderId}">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${introCollapseId}" aria-expanded="false" aria-controls="${introCollapseId}">
+            <div class="d-flex align-items-center justify-content-between w-100 pe-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2.5 py-1 fw-bold">
+                  <i class="bi bi-info-circle-fill me-1"></i>가이드
+                </span>
+                <strong class="text-dark">루틴 설계 배경 & 맞춤 가이드</strong>
+              </div>
+              <div class="d-none d-sm-block">
+                <span class="badge bg-light text-secondary border small">설계 가이드 💡</span>
+              </div>
+            </div>
+          </button>
+        </h2>
+        <div id="${introCollapseId}" class="accordion-collapse collapse" aria-labelledby="${introHeaderId}">
+          <div class="accordion-body">
+            <div class="workout-intro-card p-3 shadow-none mb-0">
+              <div class="small text-secondary leading-relaxed">${escapeHtml(introClean).replace(/\n/g, '<br>')}</div>
+            </div>
+          </div>
         </div>
-        <div class="small text-secondary leading-relaxed">${escapeHtml(introClean).replace(/\n/g, '<br>')}</div>
       </div>
     `;
   }
@@ -1205,7 +1225,13 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
         </div>
       `;
     }
-    return introHtml;
+    return `
+      <div class="routine-accordion-container">
+        <div class="accordion routine-accordion" id="${prefix}_accordion">
+          ${introHtml}
+        </div>
+      </div>
+    `;
   }
 
   // 4. [루틴 본문]에서 잔여 섹션 레이블("2. 루틴" 등) 청소
@@ -1220,9 +1246,14 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
     .filter(c => c.trim().length > 0 && /DAY\s*[1-7]/i.test(c));
 
   if (rawChunks.length === 0) {
-    return introHtml + `
-      <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
-        ${escapeHtml(sanitizedRoutineBody)}
+    return `
+      <div class="routine-accordion-container">
+        <div class="accordion routine-accordion" id="${prefix}_accordion">
+          ${introHtml}
+        </div>
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">
+          ${escapeHtml(sanitizedRoutineBody)}
+        </div>
       </div>
     `;
   }
@@ -1435,8 +1466,8 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
 
   return `
     <div class="routine-accordion-container">
-      ${introHtml}
       <div class="accordion routine-accordion" id="${prefix}_accordion">
+        ${introHtml}
         ${accordionItemsHtml}
       </div>
     </div>
