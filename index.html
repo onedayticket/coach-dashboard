@@ -390,15 +390,31 @@
                           </button>
                         </div>
 
-                        <!-- 3. 현재 제안 운동 루틴 표시 및 편집 칸 -->
+                        <!-- 3. 현재 제안 운동 루틴 표시 및 편집 칸 (아코디언 표 / 텍스트 편집 하이브리드) -->
                         <div class="mt-auto">
-                          <div class="d-flex align-items-center justify-content-between mb-1">
+                          <div class="d-flex align-items-center justify-content-between mb-2">
                             <label for="inputCurrentExerciseRoutine" class="form-label small fw-bold text-dark mb-0">현재 제안 운동 루틴</label>
-                            <button type="button" class="btn btn-link btn-sm p-0 text-success text-decoration-none fw-semibold" id="btnSaveExerciseRoutine">
-                              <i class="bi bi-floppy me-1"></i>루틴 저장
-                            </button>
+                            <div class="d-flex align-items-center gap-2">
+                              <!-- 뷰 모드 토글 (아코디언 표 미리보기 / 마크다운 텍스트 편집) -->
+                              <div class="btn-group btn-group-sm" role="group" aria-label="루틴 뷰 전환">
+                                <button type="button" class="btn btn-outline-success active py-0 px-2" id="btnRoutineViewTable" title="DAY1~DAY7 아코디언 표 미리보기">
+                                  <i class="bi bi-table me-1"></i>표 보기
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary py-0 px-2" id="btnRoutineViewText" title="마크다운 텍스트 원본 편집">
+                                  <i class="bi bi-pencil me-1"></i>텍스트
+                                </button>
+                              </div>
+                              <button type="button" class="btn btn-link btn-sm p-0 text-success text-decoration-none fw-semibold" id="btnSaveExerciseRoutine">
+                                <i class="bi bi-floppy me-1"></i>저장
+                              </button>
+                            </div>
                           </div>
-                          <textarea class="form-control routine-textarea bg-light" id="inputCurrentExerciseRoutine" rows="6" placeholder="현재 제안된 운동 루틴 내용이 표시됩니다. 코치가 직접 수정 후 저장할 수 있습니다."></textarea>
+                          <!-- [A] DAY1~DAY7 아코디언 표 뷰어 (Colspan=5 병합 & 접기/펼치기) -->
+                          <div id="exerciseRoutineAccordionPreview" class="routine-accordion-preview mb-2" style="max-height: 400px; overflow-y: auto;">
+                            <!-- JS에서 parseWorkoutRoutineToAccordionHtml 렌더링 -->
+                          </div>
+                          <!-- [B] 텍스트에리어 편집창 (텍스트 모드 토글 시 표시) -->
+                          <textarea class="form-control routine-textarea bg-light d-none" id="inputCurrentExerciseRoutine" rows="8" placeholder="현재 제안된 운동 루틴 내용이 표시됩니다. 코치가 직접 수정 후 저장할 수 있습니다."></textarea>
                         </div>
                       </div>
                     </div>

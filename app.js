@@ -1019,13 +1019,42 @@ function simulateMockAction(payload) {
         keySource: 'None (로컬 Mock 모드)',
         errorMessage: AppState.gasUrl ? 'GAS 서버 통신 실패로 인해 로컬 Mock 데이터가 표시되었습니다. (네트워크/CORS 확인)' : 'GAS URL 미연동 상태입니다. 우측 상단 [API 설정]에서 연동 URL을 등록해 주세요.'
       },
-      routine: `[4주차 맞춤 운동 루틴 (로컬 Mock 예시)]
-1. 최우선 반영 사항: ${custom ? `코치 수정 지침("${custom}") 1순위 적용` : '기본 운동 제안 지침서 기반'}
-2. 추천 루틴:
-  - 월 (상체 & 코어 35분): 웜업 5분 + 푸시업 10회 3세트 + 덤벨 로우 12회 3세트 + 플랭크 30초 3세트
-  - 수 (하체 & 유산소 35분): 맨몸 스쿼트 15회 4세트 + 런지 10회 3세트 + 빠른 걷기 15분
-  - 금 (전신 서킷 30분): 점핑잭 20회 + 암워킹 10회 + 글루트 브릿지 15회 (3라운드)
-3. 주의: 관절 통증 발생 시 즉시 중단 후 스트레칭 대체.`
+      routine: `[루틴 소개]
+${custom ? `코치 수정 지침("${custom}")을 1순위로 적극 반영하여 구성했습니다.\n` : ''}회원의 생활 패턴과 체력 수준에 맞추어 관절 부담을 줄이고 기초 근력을 다지는 분할 루틴입니다.
+지속 가능한 습관 형성을 위해 운동일과 회복일을 균형 있게 배치했습니다.
+
+[루틴]
+| DAY1 [가슴, 삼두] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 체스트 프레스 머신 | 12회 | 3세트 | 60초 | |
+| 인클라인 덤벨 프레스 | 12회 | 3세트 | 60초 | |
+| 케이블 푸시다운 | 15회 | 3세트 | 45초 | |
+| 마무리 유산소 (트레드밀 경보) | 25분 | 1세트 | - | |
+
+DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식
+
+| DAY3 [등, 이두] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 랫 풀 다운 | 12회 | 3세트 | 60초 | |
+| 시티드 케이블 로우 | 12회 | 3세트 | 60초 | |
+| 암 풀 다운 | 15회 | 3세트 | 45초 | |
+| 덤벨 컬 | 12회 | 3세트 | 45초 | |
+
+DAY4 (휴식) - 폼롤러 전신 근막 이완 및 척추 스트레칭
+
+| DAY5 [하체, 코어] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 레그 프레스 머신 | 15회 | 3세트 | 60초 | |
+| 덤벨 스티프 데드리프트 | 12회 | 3세트 | 60초 | |
+| 레그 익스텐션 | 15회 | 3세트 | 45초 | |
+| 플랭크 | 30초 | 3세트 | 45초 | |
+
+DAY6 (휴식) - 야외 가벼운 산책 40분
+
+DAY7 (휴식) - 완전 휴식 및 에너지 재충전`
     };
   }
 
@@ -1684,12 +1713,285 @@ function updateGuidelineRoutinePanel(mem) {
   setInputValue('inputCurrentExerciseRoutine', exRoutine);
   setInputValue('inputDietGuideline', dietGuide);
   setInputValue('inputCurrentDietPlan', dietRoutine);
+
+  // [아코디언 표 미리보기 렌더링]
+  renderCoachWorkoutRoutinePreview(exRoutine);
+  switchRoutineViewMode('table');
+}
+
+/**
+ * 마크다운 운동 루틴 텍스트를 [루틴 소개 카드] + [DAY1~DAY7 접기/펼치기 아코디언 표]로 변환하여 렌더링
+ */
+function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
+  if (!rawText || !rawText.trim()) {
+    return '<div class="text-muted text-center py-4">등록된 운동 루틴이 없습니다.<br>코치님의 상담 또는 AI 업데이트를 통해 루틴을 생성할 수 있습니다.</div>';
+  }
+
+  // 1. 관리용 수정 지침 줄 필터링 (화면 뷰 시인성 최적화)
+  const lines = rawText.split('\n');
+  const filteredLines = lines.filter(line => {
+    const t = line.trim();
+    return !(t.includes('수정 지침') || t.includes('수정지침') || t.includes('수정 제안') || t.includes('제안 지침') || t.includes('제안지침'));
+  });
+  const cleanText = filteredLines.join('\n').trim();
+
+  // 2. [루틴 소개] 추출
+  let introHtml = '';
+  let routineBody = cleanText;
+
+  const introMatch = cleanText.match(/\[루틴\s*소개\]\s*([\s\S]*?)(?=\[루틴\]|$)/i);
+  if (introMatch && introMatch[1]) {
+    const introText = introMatch[1].trim();
+    if (introText) {
+      introHtml = `
+        <div class="workout-intro-card mb-3 p-3 shadow-sm">
+          <div class="d-flex align-items-center gap-2 mb-1 text-success fw-bold small">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>루틴 설계 배경 & 맞춤 가이드</span>
+          </div>
+          <div class="small text-secondary leading-relaxed">${escapeHtml(introText).replace(/\n/g, '<br>')}</div>
+        </div>
+      `;
+    }
+  }
+
+  if (cleanText.includes('[루틴]')) {
+    routineBody = cleanText.split('[루틴]')[1].trim();
+  } else if (introMatch) {
+    routineBody = cleanText.replace(introMatch[0], '').trim();
+  }
+
+  // 3. DAY1 ~ DAY7 블록 분리 (마크다운 표 및 한 줄 휴식일 모두 감지)
+  const rawChunks = routineBody.split(/(?=(?:^|\n)(?:\|\s*)?DAY\s*[1-7])/i).filter(c => c.trim().length > 0);
+
+  if (rawChunks.length === 0) {
+    // 만약 DAY1~DAY7 패턴이 없는 일반 텍스트인 경우 안전 폴백
+    return introHtml + `
+      <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
+        ${escapeHtml(routineBody)}
+      </div>
+    `;
+  }
+
+  let accordionItemsHtml = '';
+
+  rawChunks.forEach((chunk, idx) => {
+    const trimmedChunk = chunk.trim();
+    const dayIndex = idx + 1;
+    const collapseId = `${prefix}_collapse_${dayIndex}`;
+    const headerId = `${prefix}_heading_${dayIndex}`;
+    const isFirstDay = (dayIndex === 1); // DAY 1만 기본 열림(펼침)
+
+    const chunkLines = trimmedChunk.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const firstLine = chunkLines[0] || '';
+
+    // 휴식일 여부 판별 (휴식, rest, 스트레칭 등)
+    const isRest = /휴식|rest|회복/i.test(firstLine);
+
+    // DAY 번호 및 타겟 부위 추출
+    let dayBadgeText = `DAY ${dayIndex}`;
+    let dayTargetText = '';
+
+    const dayNumMatch = firstLine.match(/DAY\s*([1-7])/i);
+    if (dayNumMatch) {
+      dayBadgeText = `DAY ${dayNumMatch[1]}`;
+    }
+
+    const bracketMatch = firstLine.match(/\[(.*?)\]/) || firstLine.match(/\((.*?)\)/);
+    if (bracketMatch) {
+      dayTargetText = bracketMatch[1].trim();
+    } else {
+      const cleanedFirst = firstLine.replace(/^[|#\s*]+/, '').replace(/[|#\s*]+$/, '');
+      const afterDay = cleanedFirst.replace(/DAY\s*[1-7]/i, '').replace(/^[\s:\-\–]+/, '').trim();
+      if (afterDay) dayTargetText = afterDay;
+    }
+
+    if (!dayTargetText && isRest) {
+      dayTargetText = '휴식 및 회복';
+    }
+
+    // 마크다운 테이블 행들 찾기
+    const tableRows = chunkLines.filter(l => l.startsWith('|') && l.endsWith('|'));
+
+    let bodyContentHtml = '';
+
+    if (isRest && tableRows.length === 0) {
+      // 휴식일 한 줄 형태
+      const restDetail = firstLine.replace(/^[|#\s*]+/, '').replace(/[|#\s*]+$/, '');
+      bodyContentHtml = `
+        <div class="routine-rest-card p-3">
+          <div class="d-flex align-items-center justify-content-center gap-2 text-dark fw-bold small mb-1">
+            <i class="bi bi-heart-pulse-fill text-danger fs-6"></i>
+            <span>${escapeHtml(restDetail)}</span>
+          </div>
+          <div class="text-secondary small">근육 성장과 관절 회복을 위해 가벼운 스트레칭과 충분한 수분 섭취를 권장합니다. 🌿</div>
+        </div>
+      `;
+    } else if (tableRows.length > 0) {
+      // 마크다운 테이블 형태
+      let dayTitleCellText = `${dayBadgeText} [${dayTargetText || '맞춤 운동'}]`;
+      let dataRows = [];
+
+      tableRows.forEach(r => {
+        const cells = r.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
+        if (cells.length === 0) return;
+
+        // 구분선 행 제외 (---)
+        if (cells.some(c => /^:?-+:?$/.test(c))) return;
+
+        // 헤더 행 제외 (운동 종목, 횟수 등)
+        if (cells.some(c => c.includes('운동 종목') || c.includes('종목') || c.includes('세트수'))) return;
+
+        // 첫 번째 행이 DAY 제목인 경우
+        if (cells[0] && /DAY\s*[1-7]/i.test(cells[0])) {
+          dayTitleCellText = cells[0].replace(/[*_#]/g, '').trim();
+          return;
+        }
+
+        dataRows.push(cells);
+      });
+
+      let tbodyRowsHtml = '';
+      if (dataRows.length > 0) {
+        dataRows.forEach(cells => {
+          const exercise = escapeHtml((cells[0] || '').replace(/[*_]/g, ''));
+          const reps = escapeHtml((cells[1] || '').replace(/[*_]/g, ''));
+          const sets = escapeHtml((cells[2] || '').replace(/[*_]/g, ''));
+          const rest = escapeHtml((cells[3] || '').replace(/[*_]/g, ''));
+          const weight = escapeHtml((cells[4] || '').replace(/[*_]/g, '')); // 코치 지침에 따라 공란 유지
+
+          tbodyRowsHtml += `
+            <tr>
+              <td class="fw-semibold text-dark ps-2 ps-md-3">${exercise}</td>
+              <td class="text-center text-secondary">${reps || '-'}</td>
+              <td class="text-center text-secondary">${sets || '-'}</td>
+              <td class="text-center text-muted">${rest || '-'}</td>
+              <td class="text-center text-muted">${weight || ''}</td>
+            </tr>
+          `;
+        });
+      } else {
+        tbodyRowsHtml = `<tr><td colspan="5" class="text-center text-muted py-3">${escapeHtml(trimmedChunk)}</td></tr>`;
+      }
+
+      bodyContentHtml = `
+        <div class="table-responsive routine-day-table-wrapper">
+          <table class="table table-sm table-bordered routine-day-table align-middle">
+            <thead>
+              <!-- 요구사항 1: 테이블 최상단 DAY 제목 행 가로 병합 (Colspan="5"), 가운데 정렬, 굵은 글씨, 포인트 배경색 -->
+              <tr class="table-day-title-row">
+                <th colspan="5" class="text-center py-2 bg-success text-white fw-bold">
+                  <i class="bi bi-calendar-check me-1"></i>${escapeHtml(dayTitleCellText)}
+                </th>
+              </tr>
+              <tr class="table-day-header-row table-light text-center small">
+                <th style="width: 35%;">운동 종목</th>
+                <th style="width: 17%;">횟수</th>
+                <th style="width: 16%;">세트수</th>
+                <th style="width: 17%;">쉬는시간</th>
+                <th style="width: 15%;">무게</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tbodyRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } else {
+      bodyContentHtml = `
+        <div class="p-3 bg-white rounded border small text-secondary leading-relaxed">
+          ${escapeHtml(trimmedChunk).replace(/\n/g, '<br>')}
+        </div>
+      `;
+    }
+
+    // 아코디언 헤더 배지 색상 및 텍스트
+    const badgeBg = isRest ? 'bg-secondary-subtle text-secondary border' : 'bg-success text-white';
+    const rightHint = isRest
+      ? '<span class="badge bg-light text-secondary border small">휴식일 🌿</span>'
+      : `<span class="badge bg-success-subtle text-success border border-success-subtle small">${escapeHtml(dayTargetText || '본운동')}</span>`;
+
+    accordionItemsHtml += `
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="${headerId}">
+          <button class="accordion-button ${isFirstDay ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="${isFirstDay ? 'true' : 'false'}" aria-controls="${collapseId}">
+            <div class="d-flex align-items-center justify-content-between w-100 pe-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge ${badgeBg} rounded-pill px-2.5 py-1 fw-bold">${dayBadgeText}</span>
+                <strong class="text-dark">${escapeHtml(dayTargetText || (isRest ? '휴식 및 회복' : '운동 루틴'))}</strong>
+              </div>
+              <div class="d-none d-sm-block">
+                ${rightHint}
+              </div>
+            </div>
+          </button>
+        </h2>
+        <div id="${collapseId}" class="accordion-collapse collapse ${isFirstDay ? 'show' : ''}" aria-labelledby="${headerId}">
+          <div class="accordion-body">
+            ${bodyContentHtml}
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  return `
+    <div class="routine-accordion-container">
+      ${introHtml}
+      <div class="accordion routine-accordion" id="${prefix}_accordion">
+        ${accordionItemsHtml}
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * 코치 대시보드 내 운동 루틴 아코디언 표 미리보기 렌더링
+ */
+function renderCoachWorkoutRoutinePreview(rawText) {
+  const previewBox = document.getElementById('exerciseRoutineAccordionPreview');
+  if (!previewBox) return;
+  previewBox.innerHTML = parseWorkoutRoutineToAccordionHtml(rawText, 'coachRoutine');
+}
+
+/**
+ * 루틴 뷰 모드 전환 (표 보기 <-> 텍스트 편집)
+ */
+function switchRoutineViewMode(mode) {
+  const btnViewTable = document.getElementById('btnRoutineViewTable');
+  const btnViewText = document.getElementById('btnRoutineViewText');
+  const previewBox = document.getElementById('exerciseRoutineAccordionPreview');
+  const textareaBox = document.getElementById('inputCurrentExerciseRoutine');
+
+  if (mode === 'table') {
+    btnViewTable?.classList.add('active', 'btn-outline-success');
+    btnViewTable?.classList.remove('btn-outline-secondary');
+    btnViewText?.classList.remove('active', 'btn-outline-success');
+    btnViewText?.classList.add('btn-outline-secondary');
+    previewBox?.classList.remove('d-none');
+    textareaBox?.classList.add('d-none');
+    renderCoachWorkoutRoutinePreview(getInputValue('inputCurrentExerciseRoutine'));
+  } else {
+    btnViewText?.classList.add('active', 'btn-outline-success');
+    btnViewText?.classList.remove('btn-outline-secondary');
+    btnViewTable?.classList.remove('active', 'btn-outline-success');
+    btnViewTable?.classList.add('btn-outline-secondary');
+    textareaBox?.classList.remove('d-none');
+    previewBox?.classList.add('d-none');
+  }
 }
 
 /**
  * [중단] 운동/식단 지침 및 루틴 저장 핸들러 바인딩
  */
 function initGuidelineRoutineActions() {
+  // 0. 운동 루틴 뷰 모드 토글 바인딩
+  const btnViewTable = document.getElementById('btnRoutineViewTable');
+  const btnViewText = document.getElementById('btnRoutineViewText');
+  btnViewTable?.addEventListener('click', () => switchRoutineViewMode('table'));
+  btnViewText?.addEventListener('click', () => switchRoutineViewMode('text'));
+
   // 1. 운동 루틴 수정 제안 지침 [저장]
   const btnSaveExGuide = document.getElementById('btnSaveExerciseGuideline');
   if (btnSaveExGuide) {
@@ -1717,6 +2019,9 @@ function initGuidelineRoutineActions() {
       const key = getMemberKey(AppState.selectedMember);
       const val = getInputValue('inputCurrentExerciseRoutine');
       AppState.selectedMember['현재 제안 운동 루틴'] = val;
+
+      // 미리보기 아코디언도 최신 내용으로 동기화
+      renderCoachWorkoutRoutinePreview(val);
 
       showToast('현재 제안 운동 루틴을 시트(Members)에 저장 중...', 'info');
       const res = await postToGasBackend({
@@ -1794,12 +2099,56 @@ ${baseGuideline}
 [★최우선 반영 사항: 코치의 운동 루틴 수정 제안 지침★]
 ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기본 지침서와 참여자 신체/직업 환경에 맞춰 구성할 것.'}
 
-[출력 요구사항]
-1. 최우선 반영 사항(수정 제안 지침)이 있다면 이를 1순위로 반드시 적용하십시오.
-2. 참여자의 근무 형태, 신체 상태, 운동 경력을 고려하여 현실적으로 주 3~4회 달성 가능한 구체적 루틴(준비운동 - 본운동 세트/횟수 - 쿨다운)을 제안하십시오.
-3. 친절하고 전문적이며 동기부여가 되는 어조로 작성하십시오.`;
+[출력 규칙 및 포맷 (엄격 준수)]
+1. 불필요한 인사말, 시작 멘트, 맺음말, 주의사항 등은 일체 생략하고 오직 **[루틴 소개]**와 **[루틴]** 2가지 항목만 출력하십시오.
+2. 최우선 반영 사항(수정 제안 지침)이 있다면 1순위로 반드시 적용하십시오.
+3. **[루틴 소개]**: 회원의 생활패턴, 운동경력, 신체 수준을 고려하여 루틴 구성 근거를 3줄 이하로 간략히 작성하십시오.
+4. **[루틴]**: 
+   - 요일(월, 화, 수 등)은 절대 표기하지 말고, 반드시 **DAY1 ~ DAY7** 단위로 작성하십시오.
+   - 운동을 진행하는 DAY는 반드시 아래 마크다운 테이블 구조를 정확히 지키십시오.
+   - 테이블 최상단 첫 번째 행은 반드시 \`| DAY1 [타겟부위] | | | | |\` 형태로 작성하십시오.
+   - 둘째 행(구분선): \`| :--- | :--- | :--- | :--- | :--- |\`
+   - 셋째 행(헤더): \`| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |\`
+   - 본문 행: \`| 벤치프레스 | 12회 | 3세트 | 60초 | |\` (무게 칸은 코치의 지침에 따라 항상 빈칸(공란)으로 둘 것)
+   - 휴식일인 DAY는 표를 만들지 않고 한 줄로 작성하십시오:
+     예: \`DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식\`
 
-        const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 회원 맞춤 운동 코칭 전문가입니다.');
+[출력 양식 예시]
+[루틴 소개]
+(회원의 생활패턴 및 체력을 고려한 3줄 이하의 구성 근거)
+
+[루틴]
+| DAY1 [가슴, 삼두] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 벤치프레스 | 12회 | 3세트 | 60초 | |
+| 인클라인 덤벨프레스 | 12회 | 3세트 | 60초 | |
+| 마무리 유산소 | 30분 | 1세트 | - | |
+
+DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식
+
+| DAY3 [등, 이두] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 랫풀다운 | 12회 | 3세트 | 60초 | |
+| 시티드로우 | 12회 | 3세트 | 60초 | |
+| 마무리 유산소 | 25분 | 1세트 | - | |
+
+DAY4 (휴식) - 폼롤러 전신 근막 이완 스트레칭
+
+| DAY5 [하체, 코어] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 레그프레스 | 15회 | 3세트 | 60초 | |
+| 덤벨 스티프 데드리프트 | 12회 | 3세트 | 60초 | |
+| 플랭크 | 30초 | 3세트 | 45초 | |
+
+DAY6 (휴식) - 야외 가벼운 산책 40분
+
+DAY7 (휴식) - 완전 휴식 및 컨디션 회복
+`;
+
+        const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 회원 맞춤 운동 코칭 전문가입니다. 지정된 출력 형식([루틴 소개], [루틴], 마크다운 테이블, 빈 무게칸)을 엄격히 준수합니다.');
         if (directRes && directRes.isAborted) {
           hideLoadingOverlay();
           showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
@@ -1808,6 +2157,8 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
         if (directRes && directRes.text) {
           hideLoadingOverlay();
           setInputValue('inputCurrentExerciseRoutine', directRes.text);
+          renderCoachWorkoutRoutinePreview(directRes.text);
+          switchRoutineViewMode('table');
           if (directRes.isTruncated) {
             showToast(`⚠️ [브라우저 직통 ${directRes.elapsedSec}초] 토큰 한도 끊김 (${directRes.text.length}자)`, 'warning', 8000);
           } else {
@@ -1842,6 +2193,8 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
       if (res && res.routine) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentExerciseRoutine', res.routine);
+          renderCoachWorkoutRoutinePreview(res.routine);
+          switchRoutineViewMode('table');
           const modelName = (res.debug && res.debug.model) ? res.debug.model : 'AI';
           if (res.debug && res.debug.isTruncated) {
             showToast(`⚠️ [GAS 백엔드 ${gasElapsedSec}초] 토큰 한도 끊김 (${res.routine.length}자)`, 'warning', 8000);

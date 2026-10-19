@@ -392,3 +392,119 @@ body {
   box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
   border: 1px solid #e2e8f0;
 }
+
+/* ========================================================================= */
+/* [운동 루틴 아코디언 & DAY1~DAY7 마크다운 테이블 디자인] */
+/* ========================================================================= */
+.routine-display-box:has(.routine-accordion-container),
+.routine-display-box.has-accordion {
+  white-space: normal !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  min-height: auto !important;
+}
+
+.workout-intro-card {
+  background: linear-gradient(135deg, #f0fdf4 0%, #e8f5e9 100%);
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #16a34a !important;
+  border-radius: 0.85rem;
+}
+
+.routine-accordion .accordion-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem !important;
+  margin-bottom: 0.65rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+}
+
+.routine-accordion .accordion-header {
+  margin-bottom: 0;
+}
+
+.routine-accordion .accordion-button {
+  background-color: #ffffff;
+  padding: 0.85rem 1.15rem;
+  font-size: 0.95rem;
+  border: none;
+  box-shadow: none !important;
+  transition: all 0.2s ease-in-out;
+}
+
+.routine-accordion .accordion-button:not(.collapsed) {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.routine-accordion .accordion-button:focus {
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.routine-accordion .accordion-body {
+  padding: 0.85rem;
+  background-color: #f8fafc;
+}
+
+/* DAY별 테이블 디자인 (Colspan=5 병합 셀 포함) */
+.routine-day-table-wrapper {
+  border-radius: 0.65rem;
+  overflow: hidden;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.routine-day-table {
+  margin-bottom: 0 !important;
+  font-size: 0.88rem;
+}
+
+/* 요구사항 1: 테이블 최상단 DAY 제목 행 가로 병합 (Colspan="5"), 가운데 정렬, 굵은 글씨, 포인트 배경색 */
+.routine-day-table thead .table-day-title-row th {
+  background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  font-size: 0.95rem;
+  letter-spacing: 0.03em;
+  text-align: center !important;
+  padding: 0.75rem 1rem;
+  border: none;
+}
+
+/* 테이블 열 헤더 (운동 종목, 횟수, 세트수, 쉬는시간, 무게) */
+.routine-day-table thead .table-day-header-row th {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  font-weight: 700;
+  font-size: 0.82rem;
+  border-bottom: 2px solid #cbd5e1 !important;
+  padding: 0.55rem 0.5rem;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.routine-day-table tbody td {
+  padding: 0.6rem 0.65rem;
+  vertical-align: middle;
+  border-color: #e2e8f0;
+}
+
+.routine-day-table tbody tr:hover {
+  background-color: #f8fafc;
+}
+
+/* 휴식일 전용 카드 */
+.routine-rest-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px dashed #cbd5e1;
+  border-radius: 0.65rem;
+  padding: 1.25rem 1rem;
+  text-align: center;
+}
+

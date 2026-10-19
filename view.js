@@ -1,6 +1,6 @@
 /**
  * ==============================================================================
- * [4주 온라인 습관화 코칭 - 회원 전용 마이페이지 view.js v2.0.0]
+ * [4주 온라인 습관화 코칭 - 회원 전용 마이페이지 view.js v2.1.0]
  * ==============================================================================
  * 1. URL 쿼리 파라미터(?id=회원번호) 기반 전용 회원 식별
  * 2. 휴대폰 번호 뒷 4자리 본인 인증 모달 및 로컬 저장
@@ -1108,8 +1108,9 @@ function updatePersonalInfoPanel(mem) {
 }
 
 /**
- * [1. 운동 루틴 표기]
- * 표로 쪼개지 않고 코치가 작성한 형식 그대로 한눈에 쏙 들어오게 렌더링
+ * [1. 운동 루틴 표기: 아코디언 & Colspan=5 테이블 UI]
+ * AI가 생성한 [루틴 소개] + [DAY1~DAY7 마크다운 테이블]을 스마트 파싱하여
+ * 접기/펼치기 아코디언 및 colspan="5" 가로 병합 표로 렌더링
  * ★ 수정 지침 내용은 회원 화면에서 100% 절대 노출하지 않음
  */
 function renderWorkoutRoutineBox(member) {
@@ -1119,22 +1120,240 @@ function renderWorkoutRoutineBox(member) {
   const rawRoutine = String(getField(member, '현재 제안 운동 루틴', '현재제안운동루틴', '운동루틴', 'workoutRoutine') || '').trim();
 
   if (!rawRoutine) {
+    container.classList.remove('has-accordion');
     container.innerHTML = '<div class="text-muted text-center py-4">등록된 운동 루틴이 없습니다.<br>코치님과의 상담 후 맞춤 루틴이 업데이트됩니다.</div>';
     return;
   }
 
-  // ★ 수정 지침 관련 줄 철저 필터링
-  const lines = rawRoutine.split('\n');
-  const cleanLines = lines.filter(line => {
-    const trimmed = line.trim();
-    if (trimmed.includes('수정 지침') || trimmed.includes('수정지침') || trimmed.includes('수정 제안') || trimmed.includes('제안 지침') || trimmed.includes('제안지침')) {
-      return false;
+  container.classList.add('has-accordion');
+  container.innerHTML = parseWorkoutRoutineToAccordionHtml(rawRoutine, 'viewRoutine');
+}
+
+/**
+ * 마크다운 운동 루틴 텍스트를 [루틴 소개 카드] + [DAY1~DAY7 접기/펼치기 아코디언 표]로 변환하여 렌더링
+ */
+function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
+  if (!rawText || !rawText.trim()) {
+    return '<div class="text-muted text-center py-4">등록된 운동 루틴이 없습니다.<br>코치님과의 상담 후 맞춤 루틴이 업데이트됩니다.</div>';
+  }
+
+  // 1. 수정 지침 제거 (회원 뷰 보안 완벽 보호)
+  const lines = rawText.split('\n');
+  const filteredLines = lines.filter(line => {
+    const t = line.trim();
+    return !(t.includes('수정 지침') || t.includes('수정지침') || t.includes('수정 제안') || t.includes('제안 지침') || t.includes('제안지침'));
+  });
+  const cleanText = filteredLines.join('\n').trim();
+
+  // 2. [루틴 소개] 추출
+  let introHtml = '';
+  let routineBody = cleanText;
+
+  const introMatch = cleanText.match(/\[루틴\s*소개\]\s*([\s\S]*?)(?=\[루틴\]|$)/i);
+  if (introMatch && introMatch[1]) {
+    const introText = introMatch[1].trim();
+    if (introText) {
+      introHtml = `
+        <div class="workout-intro-card mb-3 p-3 shadow-sm">
+          <div class="d-flex align-items-center gap-2 mb-1 text-success fw-bold small">
+            <i class="bi bi-info-circle-fill"></i>
+            <span>루틴 설계 배경 & 맞춤 가이드</span>
+          </div>
+          <div class="small text-secondary leading-relaxed">${escapeHtml(introText).replace(/\n/g, '<br>')}</div>
+        </div>
+      `;
     }
-    return true;
+  }
+
+  if (cleanText.includes('[루틴]')) {
+    routineBody = cleanText.split('[루틴]')[1].trim();
+  } else if (introMatch) {
+    routineBody = cleanText.replace(introMatch[0], '').trim();
+  }
+
+  // 3. DAY1 ~ DAY7 블록 분리 (마크다운 표 및 한 줄 휴식일 모두 감지)
+  const rawChunks = routineBody.split(/(?=(?:^|\n)(?:\|\s*)?DAY\s*[1-7])/i).filter(c => c.trim().length > 0);
+
+  if (rawChunks.length === 0) {
+    // 만약 DAY1~DAY7 패턴이 없는 일반 텍스트인 경우 안전 폴백
+    return introHtml + `
+      <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
+        ${escapeHtml(routineBody)}
+      </div>
+    `;
+  }
+
+  let accordionItemsHtml = '';
+
+  rawChunks.forEach((chunk, idx) => {
+    const trimmedChunk = chunk.trim();
+    const dayIndex = idx + 1;
+    const collapseId = `${prefix}_collapse_${dayIndex}`;
+    const headerId = `${prefix}_heading_${dayIndex}`;
+    const isFirstDay = (dayIndex === 1); // DAY 1만 기본 열림(펼침)
+
+    const chunkLines = trimmedChunk.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const firstLine = chunkLines[0] || '';
+
+    // 휴식일 여부 판별 (휴식, rest, 스트레칭 등)
+    const isRest = /휴식|rest|회복/i.test(firstLine);
+
+    // DAY 번호 및 타겟 부위 추출
+    let dayBadgeText = `DAY ${dayIndex}`;
+    let dayTargetText = '';
+
+    const dayNumMatch = firstLine.match(/DAY\s*([1-7])/i);
+    if (dayNumMatch) {
+      dayBadgeText = `DAY ${dayNumMatch[1]}`;
+    }
+
+    const bracketMatch = firstLine.match(/\[(.*?)\]/) || firstLine.match(/\((.*?)\)/);
+    if (bracketMatch) {
+      dayTargetText = bracketMatch[1].trim();
+    } else {
+      const cleanedFirst = firstLine.replace(/^[|#\s*]+/, '').replace(/[|#\s*]+$/, '');
+      const afterDay = cleanedFirst.replace(/DAY\s*[1-7]/i, '').replace(/^[\s:\-\–]+/, '').trim();
+      if (afterDay) dayTargetText = afterDay;
+    }
+
+    if (!dayTargetText && isRest) {
+      dayTargetText = '휴식 및 회복';
+    }
+
+    // 마크다운 테이블 행들 찾기
+    const tableRows = chunkLines.filter(l => l.startsWith('|') && l.endsWith('|'));
+
+    let bodyContentHtml = '';
+
+    if (isRest && tableRows.length === 0) {
+      // 휴식일 한 줄 형태
+      const restDetail = firstLine.replace(/^[|#\s*]+/, '').replace(/[|#\s*]+$/, '');
+      bodyContentHtml = `
+        <div class="routine-rest-card">
+          <div class="d-flex align-items-center justify-content-center gap-2 text-dark fw-bold small mb-1">
+            <i class="bi bi-heart-pulse-fill text-danger fs-6"></i>
+            <span>${escapeHtml(restDetail)}</span>
+          </div>
+          <div class="text-secondary small">근육 성장과 관절 회복을 위해 가벼운 스트레칭과 충분한 수분 섭취를 권장합니다. 🌿</div>
+        </div>
+      `;
+    } else if (tableRows.length > 0) {
+      // 마크다운 테이블 형태
+      let dayTitleCellText = `${dayBadgeText} [${dayTargetText || '맞춤 운동'}]`;
+      let dataRows = [];
+
+      tableRows.forEach(r => {
+        const cells = r.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
+        if (cells.length === 0) return;
+
+        // 구분선 행 제외 (---)
+        if (cells.some(c => /^:?-+:?$/.test(c))) return;
+
+        // 헤더 행 제외 (운동 종목, 횟수 등)
+        if (cells.some(c => c.includes('운동 종목') || c.includes('종목') || c.includes('세트수'))) return;
+
+        // 첫 번째 행이 DAY 제목인 경우
+        if (cells[0] && /DAY\s*[1-7]/i.test(cells[0])) {
+          dayTitleCellText = cells[0].replace(/[*_#]/g, '').trim();
+          return;
+        }
+
+        dataRows.push(cells);
+      });
+
+      let tbodyRowsHtml = '';
+      if (dataRows.length > 0) {
+        dataRows.forEach(cells => {
+          const exercise = escapeHtml((cells[0] || '').replace(/[*_]/g, ''));
+          const reps = escapeHtml((cells[1] || '').replace(/[*_]/g, ''));
+          const sets = escapeHtml((cells[2] || '').replace(/[*_]/g, ''));
+          const rest = escapeHtml((cells[3] || '').replace(/[*_]/g, ''));
+          const weight = escapeHtml((cells[4] || '').replace(/[*_]/g, '')); // 코치 지침에 따라 공란 유지
+
+          tbodyRowsHtml += `
+            <tr>
+              <td class="fw-semibold text-dark ps-2 ps-md-3">${exercise}</td>
+              <td class="text-center text-secondary">${reps || '-'}</td>
+              <td class="text-center text-secondary">${sets || '-'}</td>
+              <td class="text-center text-muted">${rest || '-'}</td>
+              <td class="text-center text-muted">${weight || ''}</td>
+            </tr>
+          `;
+        });
+      } else {
+        tbodyRowsHtml = `<tr><td colspan="5" class="text-center text-muted py-3">${escapeHtml(trimmedChunk)}</td></tr>`;
+      }
+
+      bodyContentHtml = `
+        <div class="table-responsive routine-day-table-wrapper">
+          <table class="table table-sm table-bordered routine-day-table align-middle">
+            <thead>
+              <!-- 요구사항 1: 테이블 최상단 DAY 제목 행 가로 병합 (Colspan="5"), 가운데 정렬, 굵은 글씨, 포인트 배경색 -->
+              <tr class="table-day-title-row">
+                <th colspan="5" class="text-center py-2 bg-success text-white fw-bold">
+                  <i class="bi bi-calendar-check me-1"></i>${escapeHtml(dayTitleCellText)}
+                </th>
+              </tr>
+              <tr class="table-day-header-row table-light text-center small">
+                <th style="width: 35%;">운동 종목</th>
+                <th style="width: 17%;">횟수</th>
+                <th style="width: 16%;">세트수</th>
+                <th style="width: 17%;">쉬는시간</th>
+                <th style="width: 15%;">무게</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tbodyRowsHtml}
+            </tbody>
+          </table>
+        </div>
+      `;
+    } else {
+      bodyContentHtml = `
+        <div class="p-3 bg-white rounded border small text-secondary leading-relaxed">
+          ${escapeHtml(trimmedChunk).replace(/\n/g, '<br>')}
+        </div>
+      `;
+    }
+
+    // 아코디언 헤더 배지 색상 및 텍스트
+    const badgeBg = isRest ? 'bg-secondary-subtle text-secondary border' : 'bg-success text-white';
+    const rightHint = isRest
+      ? '<span class="badge bg-light text-secondary border small">휴식일 🌿</span>'
+      : `<span class="badge bg-success-subtle text-success border border-success-subtle small">${escapeHtml(dayTargetText || '본운동')}</span>`;
+
+    accordionItemsHtml += `
+      <div class="accordion-item">
+        <h2 class="accordion-header" id="${headerId}">
+          <button class="accordion-button ${isFirstDay ? '' : 'collapsed'}" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseId}" aria-expanded="${isFirstDay ? 'true' : 'false'}" aria-controls="${collapseId}">
+            <div class="d-flex align-items-center justify-content-between w-100 pe-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge ${badgeBg} rounded-pill px-2.5 py-1 fw-bold">${dayBadgeText}</span>
+                <strong class="text-dark">${escapeHtml(dayTargetText || (isRest ? '휴식 및 회복' : '운동 루틴'))}</strong>
+              </div>
+              <div class="d-none d-sm-block">
+                ${rightHint}
+              </div>
+            </div>
+          </button>
+        </h2>
+        <div id="${collapseId}" class="accordion-collapse collapse ${isFirstDay ? 'show' : ''}" aria-labelledby="${headerId}">
+          <div class="accordion-body">
+            ${bodyContentHtml}
+          </div>
+        </div>
+      </div>
+    `;
   });
 
-  const cleanedText = cleanLines.join('\n').trim();
-  container.textContent = cleanedText || '등록된 운동 루틴이 없습니다.';
+  return `
+    <div class="routine-accordion-container">
+      ${introHtml}
+      <div class="accordion routine-accordion" id="${prefix}_accordion">
+        ${accordionItemsHtml}
+      </div>
+    </div>
+  `;
 }
 
 /**
