@@ -767,13 +767,14 @@ body.coach-locked .main-wrapper {
   background-color: #f8fafc;
 }
 
-/* 휴식일 전용 카드 */
+/* 휴식일 전용 카드 (리커버리 & 스트레칭 안내) */
 .routine-rest-card {
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1px dashed #cbd5e1;
-  border-radius: 0.65rem;
-  padding: 1.15rem 1rem;
+  border: 1.5px dashed #cbd5e1;
+  border-radius: 0.85rem;
+  padding: 1.5rem 1.25rem;
   text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 
