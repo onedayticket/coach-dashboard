@@ -1398,11 +1398,11 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
       // 7) 실제 운동 테이블 렌더링 (Colspan=5 가로 병합 헤더 + 5열 구조)
       let tbodyRowsHtml = '';
       dataRows.forEach(cells => {
-        const exercise = escapeHtml((cells[0] || '').replace(/[*_]/g, '').trim());
-        const reps = escapeHtml((cells[1] || '').replace(/[*_]/g, '').trim());
-        const sets = escapeHtml((cells[2] || '').replace(/[*_]/g, '').trim());
-        const rest = escapeHtml((cells[3] || '').replace(/[*_]/g, '').trim());
-        const weight = escapeHtml((cells[4] || '').replace(/[*_]/g, '').trim()); // 코치 지침에 따라 공란 유지
+        const exercise = escapeHtml((cells[0] || '').replace(/[*_]/g, '').trim()).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/\\n/g, '<br>');
+        const reps = escapeHtml((cells[1] || '').replace(/[*_]/g, '').trim()).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/\\n/g, '<br>');
+        const sets = escapeHtml((cells[2] || '').replace(/[*_]/g, '').trim()).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/\\n/g, '<br>');
+        const rest = escapeHtml((cells[3] || '').replace(/[*_]/g, '').trim()).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/\\n/g, '<br>');
+        const weight = escapeHtml((cells[4] || '').replace(/[*_]/g, '').trim()).replace(/&lt;br\s*\/?&gt;/gi, '<br>').replace(/\\n/g, '<br>'); // 코치 지침에 따라 공란 유지
 
         tbodyRowsHtml += `
           <tr>
@@ -1565,15 +1565,51 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
     .join('\n')
     .trim();
 
+  // 헬퍼: 셀 및 텍스트 내 HTML 및 <br> 코드 안전 서식화 (Literal <br> 태그가 화면에 노출되지 않도록 변환)
+  function formatCellContent(val) {
+    if (!val) return '';
+    let s = String(val).replace(/[*_]/g, '').trim();
+    s = s.replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+    s = escapeHtml(s);
+    s = s.replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+         .replace(/\\n/g, '<br>');
+    return s;
+  }
+
+  // 5. [식단 설계 배경 & 대사량 분석] 아코디언 항목 (접기/펼치기 지원)
   let introHtml = '';
   if (cleanIntro) {
+    const introCollapseId = `${prefix}_collapse_intro`;
+    const introHeaderId = `${prefix}_heading_intro`;
+    const formattedIntro = escapeHtml(cleanIntro)
+      .replace(/&lt;br\s*\/?&gt;/gi, '<br>')
+      .replace(/\\n/g, '<br>')
+      .replace(/\n/g, '<br>');
+
     introHtml = `
-      <div class="diet-intro-card mb-3 p-3 shadow-sm">
-        <div class="d-flex align-items-center gap-2 mb-1 text-warning-emphasis fw-bold small">
-          <i class="bi bi-info-circle-fill text-warning"></i>
-          <span>식단 설계 배경 & 대사량 분석</span>
+      <div class="accordion-item diet-intro-accordion-item">
+        <h2 class="accordion-header" id="${introHeaderId}">
+          <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${introCollapseId}" aria-expanded="false" aria-controls="${introCollapseId}">
+            <div class="d-flex align-items-center justify-content-between w-100 pe-2">
+              <div class="d-flex align-items-center gap-2">
+                <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2.5 py-1 fw-bold">
+                  <i class="bi bi-info-circle-fill me-1"></i>분석
+                </span>
+                <strong class="text-dark">식단 설계 배경 & 대사량 분석</strong>
+              </div>
+              <div class="d-none d-sm-block">
+                <span class="badge bg-light text-secondary border small">영양 분석 💡</span>
+              </div>
+            </div>
+          </button>
+        </h2>
+        <div id="${introCollapseId}" class="accordion-collapse collapse" aria-labelledby="${introHeaderId}">
+          <div class="accordion-body">
+            <div class="diet-intro-card p-3 shadow-none mb-0">
+              <div class="small text-secondary leading-relaxed">${formattedIntro}</div>
+            </div>
+          </div>
         </div>
-        <div class="small text-secondary leading-relaxed">${escapeHtml(cleanIntro).replace(/\n/g, '<br>')}</div>
       </div>
     `;
   }
@@ -1631,10 +1667,10 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
 
     let tbodyHtml = '';
     dataRows.forEach(cells => {
-      const meal = escapeHtml((cells[0] || '').replace(/[*_]/g, '').trim());
-      const content = escapeHtml((cells[1] || '').replace(/[*_]/g, '').trim());
-      const alt = escapeHtml((cells[2] || '').replace(/[*_]/g, '').trim());
-      const cal = escapeHtml((cells[3] || '').replace(/[*_]/g, '').trim());
+      const meal = formatCellContent(cells[0]);
+      const content = formatCellContent(cells[1]);
+      const alt = formatCellContent(cells[2]);
+      const cal = formatCellContent(cells[3]);
 
       tbodyHtml += `
         <tr>
@@ -1652,7 +1688,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
         <div class="d-flex justify-content-end align-items-center mt-2">
           <div class="d-inline-flex align-items-center gap-1.5 text-warning-emphasis fw-bold small py-1.5 px-3 bg-warning-subtle rounded-pill border border-warning-subtle shadow-xs">
             <i class="bi bi-fire text-danger"></i>
-            <span>${escapeHtml(totalCalText)}</span>
+            <span>${formatCellContent(totalCalText)}</span>
           </div>
         </div>
       `;
@@ -1662,7 +1698,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
     if (noteLines.length > 0) {
       notesBoxHtml = `
         <div class="mt-2 text-muted small ps-1 leading-relaxed">
-          ${noteLines.map(n => `<div>• ${escapeHtml(n)}</div>`).join('')}
+          ${noteLines.map(n => `<div>• ${formatCellContent(n)}</div>`).join('')}
         </div>
       `;
     }
@@ -1695,21 +1731,24 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
   if (cleanDayData.dataRows.length === 0 && weekendData.dataRows.length === 0) {
     let fallbackPlanB = '';
     if (cleanPlanB) {
+      const formattedPlanB = formatCellContent(cleanPlanB).replace(/\n/g, '<br>');
       fallbackPlanB = `
         <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
           <div class="d-flex align-items-center gap-2 mb-1 text-dark fw-bold small">
             <i class="bi bi-shield-exclamation text-warning fs-5"></i>
             <span>돌발 상황(Plan B) 대처 가이드라인</span>
           </div>
-          <div class="small text-secondary leading-relaxed">${escapeHtml(cleanPlanB).replace(/\n/g, '<br>')}</div>
+          <div class="small text-secondary leading-relaxed">${formattedPlanB}</div>
         </div>
       `;
     }
     return `
       <div class="diet-accordion-container">
-        ${introHtml}
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
-          ${escapeHtml(cleanText)}
+        <div class="accordion diet-accordion" id="${prefix}_accordion">
+          ${introHtml}
+        </div>
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">
+          ${formatCellContent(cleanText).replace(/\n/g, '<br>')}
         </div>
         ${fallbackPlanB}
       </div>
@@ -1776,6 +1815,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
   // 8. 돌발 상황(Plan B) 대처 가이드라인 독립 알림 박스
   let planBHtml = '';
   if (cleanPlanB) {
+    const formattedPlanB = formatCellContent(cleanPlanB).replace(/\n/g, '<br>');
     planBHtml = `
       <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
         <div class="d-flex align-items-center gap-2 mb-2 text-dark fw-bold small">
@@ -1783,7 +1823,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
           <span class="fs-6">돌발 상황(Plan B) 대처 가이드라인</span>
         </div>
         <div class="small text-secondary leading-relaxed fw-medium">
-          ${escapeHtml(cleanPlanB).replace(/\n/g, '<br>')}
+          ${formattedPlanB}
         </div>
       </div>
     `;
@@ -1791,8 +1831,8 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
 
   return `
     <div class="diet-accordion-container">
-      ${introHtml}
       <div class="accordion diet-accordion" id="${prefix}_accordion">
+        ${introHtml}
         ${accordionItemsHtml}
       </div>
       ${planBHtml}

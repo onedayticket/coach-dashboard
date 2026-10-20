@@ -537,6 +537,14 @@ body {
   background: #ffffff;
 }
 
+.diet-accordion .diet-intro-accordion-item {
+  border-left: 4px solid #f59e0b !important;
+}
+
+.diet-accordion .diet-intro-accordion-item .accordion-button:not(.collapsed) {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
+}
+
 .diet-accordion .accordion-header {
   margin-bottom: 0;
 }
