@@ -1305,8 +1305,9 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
       const cells = r.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
       if (cells.length === 0) return;
 
-      // 구분선 행 제외 (---)
-      if (cells.some(c => /^:?-+:?$/.test(c))) return;
+      // 구분선 행 제외 (모든 셀이 - 형태이거나 첫 번째 셀이 마크다운 구분선(---)인 경우)
+      const isSeparator = cells.every(c => /^:?-+:?$/.test(c)) || (cells.length > 0 && /^:?-{2,}:?$/.test(cells[0]));
+      if (isSeparator) return;
 
       // 헤더 행 제외 (운동 종목, 횟수 등)
       if (cells.some(c => c.includes('운동 종목') || c.includes('종목') || c.includes('세트수'))) return;
@@ -1314,17 +1315,17 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
       // 첫 번째 행이 DAY 제목인 경우 제외
       if (cells[0] && /DAY\s*[1-7]/i.test(cells[0])) return;
 
-      // 실제 운동 종목 이름이 유효한지 검사
+      // 실제 운동 종목 이름이 유효한지 검사 (단순 '휴식' 단독 행만 제외하고 스트레칭, 유산소, 리커버리 운동은 보존)
       const exerciseCol = cells[0] || '';
       const validName = exerciseCol.replace(/[-—_~*\s]/g, '');
-      if (validName.length > 0 && !/휴식|rest|리커버리|recovery|회복/i.test(validName)) {
+      if (validName.length > 0 && !/^(휴식|rest|회복|recovery)\s*(데이|day)?$/i.test(validName)) {
         dataRows.push(cells);
       }
     });
 
-    // 4) 휴식일 최종 판별 (휴식 키워드가 있거나 유효 운동 종목 행이 0개인 경우)
+    // 4) 휴식일 최종 판별: 실제 테이블 데이터 행(dataRows)이 0개일 때만 안내 카드로 렌더링
     const isRestKeyword = /휴식|rest|리커버리|recovery|회복|스트레칭\s*및\s*휴식/i.test(trimmedChunk);
-    const isRestDay = isRestKeyword || (dataRows.length === 0);
+    const isRestDay = (dataRows.length === 0);
 
     // 5) 요구사항 1: 무조건 DAY X [타겟 부위] 또는 DAY X (휴식) 포맷 엄격 준수
     let dayFullTitle = '';
@@ -1339,7 +1340,10 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
       badgeBg = 'bg-secondary-subtle text-secondary border';
       rightHint = '<span class="badge bg-light text-secondary border small">휴식일 🌿</span>';
     } else {
-      const targetLabel = cleanTarget || '맞춤 운동';
+      let targetLabel = cleanTarget;
+      if (!targetLabel || /^(휴식|rest|회복|recovery)$/i.test(targetLabel)) {
+        targetLabel = '맞춤 운동';
+      }
       headerTitle = `[${targetLabel}]`;
       dayFullTitle = `${dayBadgeText} ${headerTitle}`;
       badgeBg = 'bg-success text-white';
@@ -1635,8 +1639,9 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
         const cells = line.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
         if (cells.length === 0) return;
 
-        // 구분선 제외
-        if (cells.some(c => /^:?-+:?$/.test(c))) return;
+        // 구분선 제외 (모든 셀이 - 형태이거나 첫 번째 셀이 마크다운 구분선인 경우)
+        const isSeparator = cells.every(c => /^:?-+:?$/.test(c)) || (cells.length > 0 && /^:?-{2,}:?$/.test(cells[0]));
+        if (isSeparator) return;
 
         // 헤더 행 제외
         if (cells.some(c => c.includes('식사') || c.includes('식단 내용') || c.includes('대체 식품') || c.includes('대체식품') || c.includes('예상 칼로리') || c.includes('칼로리') || c.includes('끼니'))) return;
