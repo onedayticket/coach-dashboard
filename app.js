@@ -779,7 +779,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
   } catch (e) {}
 
-  const cacheKey = `CACHE_GEMINI_MODELS_V38_${AppState.modelPref || 'auto'}`;
+  const cacheKey = `CACHE_GEMINI_MODELS_V38_ONLY_${AppState.modelPref || 'auto'}`;
   const cached = localStorage.getItem(cacheKey);
   if (cached) {
     try {
@@ -800,31 +800,31 @@ async function getBrowserSupportedGeminiModels(apiKey) {
         const textModels = data.models.filter(m => {
           const name = String(m.name || '').toLowerCase();
           const desc = String(m.description || '').toLowerCase();
-          // [핵심] 1분 이상 걸리는 thinking(추론) 모델 및 비텍스트 모델 엄격 제외
-          const isSlowOrNonText = name.includes('thinking') || desc.includes('thinking') ||
+          // [핵심] 2.5 이하 레거시 버전(2.5, 2.0, 1.5, 1.0) 및 1분 이상 걸리는 thinking/비텍스트 모델 엄격 제외
+          const isLegacyOrUnder25 = name.includes('2.5') || name.includes('2.0') || name.includes('1.5') || name.includes('1.0') ||
+                            desc.includes('2.5') || desc.includes('2.0') || desc.includes('1.5');
+          const isSlowOrNonText = isLegacyOrUnder25 || name.includes('thinking') || desc.includes('thinking') ||
                             name.includes('tts') || name.includes('audio') || name.includes('embed') || 
                             name.includes('imagen') || name.includes('aqa') || name.includes('speech') ||
                             desc.includes('audio') || desc.includes('text-to-speech') || desc.includes('embedding');
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
+        // [구글 공식 권장 최신 플래그십 3.8 모델 전용 정렬 (2.5 이하 버전 완전 배제)]
         const getScore = (m) => {
           const lower = m.toLowerCase();
           if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return isProPref ? 100 : 90;
           if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return isProPref ? 90 : 100;
           if (lower.includes('3.8')) return 85;
-          if (lower.includes('2.5-flash')) return isProPref ? 80 : 85;
-          if (lower.includes('2.5-pro')) return isProPref ? 85 : 80;
-          if (lower.includes('flash')) return isProPref ? 50 : 70;
-          if (lower.includes('pro')) return isProPref ? 70 : 50;
-          return 10;
+          return 0; // 2.5 이하 및 기타 버전은 0점 처리하여 완전 제외
         };
 
         textModels.sort((a, b) => getScore(b) - getScore(a));
 
-        if (textModels.length > 0) {
-          const topModels = textModels.slice(0, 2);
+        const qualifiedModels = textModels.filter(m => getScore(m) > 0);
+
+        if (qualifiedModels.length > 0) {
+          const topModels = qualifiedModels.slice(0, 2);
           localStorage.setItem(cacheKey, JSON.stringify(topModels));
           return topModels;
         }
@@ -849,9 +849,12 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     return { text: null, error: 'ABORTED', isAborted: true };
   }
 
-  // 구버전 캐시 청소
+  // 구버전 및 2.5 이하 캐시 청소
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
+  localStorage.removeItem('CACHE_GEMINI_MODELS_V38_auto');
+  localStorage.removeItem('CACHE_GEMINI_MODELS_V38_pro');
+  localStorage.removeItem('CACHE_GEMINI_MODELS_V38_flash');
 
   const startTime = performance.now();
   // 상위 최적 1~2개 모델만 신속 시도 (타임아웃 원천 차단)

@@ -1045,33 +1045,32 @@ function getGoogleSupportedTextModels(apiKey) {
         const textModels = json.models.filter(m => {
           const name = String(m.name || '').toLowerCase();
           const desc = String(m.description || '').toLowerCase();
-          // [핵심] 1분 이상 걸리는 thinking(추론) 모델 및 비텍스트 모델 엄격 제외
-          const isSlowOrNonText = name.includes('thinking') || desc.includes('thinking') ||
+          // [핵심] 2.5 이하 레거시 버전(2.5, 2.0, 1.5, 1.0) 및 1분 이상 걸리는 thinking/비텍스트 모델 엄격 제외
+          const isLegacyOrUnder25 = name.includes('2.5') || name.includes('2.0') || name.includes('1.5') || name.includes('1.0') ||
+            desc.includes('2.5') || desc.includes('2.0') || desc.includes('1.5');
+          const isSlowOrNonText = isLegacyOrUnder25 || name.includes('thinking') || desc.includes('thinking') ||
             name.includes('tts') || name.includes('audio') || name.includes('embed') ||
             name.includes('imagen') || name.includes('aqa') || name.includes('speech') ||
             desc.includes('audio') || desc.includes('text-to-speech') || desc.includes('embedding');
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 최신 플래그십 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
+        // [구글 공식 권장 최신 플래그십 3.8 모델 전용 정렬 (2.5 이하 버전 완전 배제)]
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
           if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
           if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return 95;
           if (lower.includes('3.8')) return 90;
-          if (lower.includes('2.5-flash')) return 85;
-          if (lower.includes('2.0-flash')) return 80;
-          if (lower.includes('1.5-flash')) return 75;
-          if (lower.includes('flash')) return 70;
-          if (lower.includes('pro')) return 60;
-          return 10;
+          return 0; // 2.5 이하 및 기타 버전은 0점 처리하여 완전 제외
         };
 
         textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
 
-        if (textModels.length > 0) {
-          const topModels = textModels.slice(0, 2);
-          cache.put('SUPPORTED_MODELS_CACHE_V38', JSON.stringify(topModels), 21600);
+        const qualifiedModels = textModels.filter(m => getModelScore(m) > 0);
+
+        if (qualifiedModels.length > 0) {
+          const topModels = qualifiedModels.slice(0, 2);
+          cache.put('SUPPORTED_MODELS_CACHE_V38_ONLY', JSON.stringify(topModels), 21600);
           return topModels;
         }
       }
@@ -1092,6 +1091,7 @@ function testAndAuthorizeUrlFetch() {
 
   if (apiKey) {
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38');
+    CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38_ONLY');
     const models = getGoogleSupportedTextModels(apiKey);
     Logger.log('✓ 구글이 현재 지원하는 실제 텍스트 모델 (' + models.length + '개): ' + models.join(', '));
   } else {
