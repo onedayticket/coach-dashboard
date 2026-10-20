@@ -1476,7 +1476,7 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
 
 /**
  * [2. 식단 플랜 표기]
- * 표로 쪼개지 않고 코치가 작성한 형식 그대로 한눈에 쏙 들어오게 렌더링
+ * 마크다운 식단 플랜 텍스트를 [식단 소개 알림 박스] + [클린데이 & 주말/휴일 아코디언 표] + [Plan B 가이드라인 카드]로 변환하여 렌더링
  * ★ 수정 지침 내용은 회원 화면에서 100% 절대 노출하지 않음
  */
 function renderDietPlanBox(member) {
@@ -1484,24 +1484,320 @@ function renderDietPlanBox(member) {
   if (!container) return;
 
   const rawDiet = String(getField(member, '현재 제안 식단', '현재제안식단', '식단', 'dietPlan') || '').trim();
+  container.innerHTML = parseDietPlanToAccordionHtml(rawDiet, 'viewDiet');
+}
 
-  if (!rawDiet) {
-    container.innerHTML = '<div class="text-muted text-center py-4">등록된 맞춤 식단이 없습니다.<br>코치님과의 상담 후 맞춤 식단이 업데이트됩니다.</div>';
-    return;
+/**
+ * 마크다운 식단 플랜 텍스트를 [식단 소개 알림 박스] + [클린데이 & 주말/휴일 아코디언 표] + [Plan B 가이드라인 카드]로 변환하여 렌더링
+ */
+function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
+  if (!rawText || !rawText.trim()) {
+    return '<div class="text-muted text-center py-4">등록된 맞춤 식단이 없습니다.<br>코치님과의 상담 후 맞춤 식단이 업데이트됩니다.</div>';
   }
 
-  // ★ 수정 지침 관련 줄 철저 필터링
-  const lines = rawDiet.split('\n');
-  const cleanLines = lines.filter(line => {
-    const trimmed = line.trim();
-    if (trimmed.includes('수정 지침') || trimmed.includes('수정지침') || trimmed.includes('수정 제안') || trimmed.includes('제안 지침') || trimmed.includes('제안지침')) {
-      return false;
-    }
-    return true;
+  // 1. 관리용 수정 지침 줄 필터링 (화면 뷰 보안 및 시인성 최적화)
+  const lines = rawText.split('\n');
+  const filteredLines = lines.filter(line => {
+    const t = line.trim();
+    return !(t.includes('수정 지침') || t.includes('수정지침') || t.includes('수정 제안') || t.includes('제안 지침') || t.includes('제안지침'));
   });
+  const cleanText = filteredLines.join('\n').trim();
 
-  const cleanedText = cleanLines.join('\n').trim();
-  container.textContent = cleanedText || '등록된 맞춤 식단이 없습니다.';
+  // 2. [돌발 상황(Plan B) 대처 가이드라인] 분리
+  let mainBody = cleanText;
+  let rawPlanB = '';
+
+  const planBMatch = cleanText.match(/(?:^|\n)\s*(?:[#*_\s]*\d*[\.\)]?\s*)?\[?돌발\s*상황(?:\s*\(Plan\s*B\))?(?:\s*대처(?:\s*가이드라인)?)?\]?/i) ||
+                     cleanText.match(/(?:^|\n)\s*(?:[#*_\s]*\d*[\.\)]?\s*)?\[?Plan\s*B(?:\s*대처(?:\s*가이드라인)?)?\]?/i);
+
+  if (planBMatch) {
+    mainBody = cleanText.substring(0, planBMatch.index).trim();
+    rawPlanB = cleanText.substring(planBMatch.index).trim();
+  }
+
+  // Plan B 텍스트 정제 (헤더 레이블 제거)
+  let cleanPlanB = rawPlanB
+    .replace(/^[#*_\s]*\d*[\.\)]?\s*\[?돌발\s*상황[^\n]*\n?/i, '')
+    .replace(/^[#*_\s]*\d*[\.\)]?\s*\[?Plan\s*B[^\n]*\n?/i, '')
+    .trim();
+
+  // 3. [주말 및 휴일 식단] 분리
+  let cleanDayPart = mainBody;
+  let weekendPart = '';
+
+  const weekendMatch = mainBody.match(/(?:^|\n)\s*(?:[#*_\s]*\d*[\.\)]?\s*)?\[?주말\s*(?:및\s*휴일)?\s*식단(?:\s*\(치팅\/자유식\s*관리\))?\]?/i) ||
+                       mainBody.match(/(?:^|\n)\s*(?:[#*_\s]*\d*[\.\)]?\s*)?\[?(?:치팅|자유식)\s*식단[^\n]*/i);
+
+  if (weekendMatch) {
+    weekendPart = mainBody.substring(weekendMatch.index).trim();
+    cleanDayPart = mainBody.substring(0, weekendMatch.index).trim();
+  }
+
+  // 4. [평상시 식단 (클린데이)]와 [식단 소개] 분리
+  let introPart = '';
+  const cleanDayMatch = cleanDayPart.match(/(?:^|\n)\s*(?:[#*_\s]*\d*[\.\)]?\s*)?\[?평상시\s*식단(?:\s*\(클린데이\))?\]?/i) ||
+                        cleanDayPart.match(/(?:^|\n)\s*(?:[#*_\s]*\d*[\.\)]?\s*)?\[?클린데이(?:\s*식단)?\]?/i) ||
+                        cleanDayPart.match(/(?:^|\n)\s*\|\s*식사\s*\|/i);
+
+  if (cleanDayMatch) {
+    introPart = cleanDayPart.substring(0, cleanDayMatch.index).trim();
+    cleanDayPart = cleanDayPart.substring(cleanDayMatch.index).trim();
+  } else {
+    introPart = '';
+  }
+
+  // 5. [식단 소개] 텍스트 대청소 ("1. 식단 소개", "[식단 소개]", "2. 식단", "[식단]" 등 제거)
+  let cleanIntro = introPart
+    .replace(/^[#*_\s]*\d+[\.\)]\s*\[?식단\s*소개\]?[#*_\s:]*/gmi, '')
+    .replace(/^[#*_\s]*\[식단\s*소개\][#*_\s:]*/gmi, '')
+    .replace(/^[#*_\s]*\d+[\.\)]\s*\[?식단\]?[#*_\s:]*/gmi, '')
+    .replace(/^[#*_\s]*\[식단\][#*_\s:]*/gmi, '')
+    .trim();
+
+  cleanIntro = cleanIntro
+    .split('\n')
+    .filter(line => {
+      const t = line.trim();
+      if (!t) return false;
+      if (/^(?:#+\s*)?(?:\d+[\.\)]\s*)?\[?식단\s*(?:소개|플랜)?[^\]\n]*\]?[:\s]*$/i.test(t)) return false;
+      return true;
+    })
+    .join('\n')
+    .trim();
+
+  let introHtml = '';
+  if (cleanIntro) {
+    introHtml = `
+      <div class="diet-intro-card mb-3 p-3 shadow-sm">
+        <div class="d-flex align-items-center gap-2 mb-1 text-warning-emphasis fw-bold small">
+          <i class="bi bi-info-circle-fill text-warning"></i>
+          <span>식단 설계 배경 & 대사량 분석</span>
+        </div>
+        <div class="small text-secondary leading-relaxed">${escapeHtml(cleanIntro).replace(/\n/g, '<br>')}</div>
+      </div>
+    `;
+  }
+
+  // 6. 각 식단 테이블 파싱 헬퍼
+  function parseDietTableSection(sectionText) {
+    const sLines = sectionText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    let totalCalText = '';
+    let dataRows = [];
+    let noteLines = [];
+
+    sLines.forEach(line => {
+      // 총 예상 칼로리 라인 매칭 (마크다운 볼드/이탤릭 제거 후 관대하게 매칭)
+      const cleanLine = line.replace(/[*_]/g, '').trim();
+      const calMatch = cleanLine.match(/(?:총\s*예상\s*칼로리|총\s*칼로리)\s*:\s*(.+)/i);
+      if (calMatch) {
+        totalCalText = cleanLine.replace(/^[#*_\-\s]+/, '').trim();
+        return;
+      }
+
+      // 테이블 행 매칭
+      if (line.startsWith('|') && line.endsWith('|')) {
+        const cells = line.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
+        if (cells.length === 0) return;
+
+        // 구분선 제외
+        if (cells.some(c => /^:?-+:?$/.test(c))) return;
+
+        // 헤더 행 제외
+        if (cells.some(c => c.includes('식사') || c.includes('식단 내용') || c.includes('대체 식품') || c.includes('대체식품') || c.includes('예상 칼로리') || c.includes('칼로리') || c.includes('끼니'))) return;
+
+        dataRows.push(cells);
+        return;
+      }
+
+      // 섹션 레이블 제외
+      if (/^(?:#+\s*)?(?:\d+[\.\)]\s*)?\[?(?:평상시|주말|클린데이|치팅|식단|돌발)[^\]]*\]?[:\s]*$/i.test(line)) {
+        return;
+      }
+
+      // 기타 유효한 안내 문구
+      if (line && !line.startsWith('#')) {
+        noteLines.push(line.replace(/^[*\-\s]+/, '').trim());
+      }
+    });
+
+    return { dataRows, totalCalText, noteLines };
+  }
+
+  function renderTableRows(tableObj) {
+    const { dataRows, totalCalText, noteLines } = tableObj;
+    if (dataRows.length === 0) {
+      return '<div class="text-muted small p-3 text-center">등록된 상세 식단 표가 없습니다.</div>';
+    }
+
+    let tbodyHtml = '';
+    dataRows.forEach(cells => {
+      const meal = escapeHtml((cells[0] || '').replace(/[*_]/g, '').trim());
+      const content = escapeHtml((cells[1] || '').replace(/[*_]/g, '').trim());
+      const alt = escapeHtml((cells[2] || '').replace(/[*_]/g, '').trim());
+      const cal = escapeHtml((cells[3] || '').replace(/[*_]/g, '').trim());
+
+      tbodyHtml += `
+        <tr>
+          <td class="text-center fw-bold text-dark bg-light-subtle">${meal}</td>
+          <td class="ps-3 text-dark">${content}</td>
+          <td class="ps-3 text-secondary small">${alt || '-'}</td>
+          <td class="text-center fw-semibold text-warning-emphasis">${cal || '-'}</td>
+        </tr>
+      `;
+    });
+
+    let calBoxHtml = '';
+    if (totalCalText) {
+      calBoxHtml = `
+        <div class="d-flex justify-content-end align-items-center mt-2">
+          <div class="d-inline-flex align-items-center gap-1.5 text-warning-emphasis fw-bold small py-1.5 px-3 bg-warning-subtle rounded-pill border border-warning-subtle shadow-xs">
+            <i class="bi bi-fire text-danger"></i>
+            <span>${escapeHtml(totalCalText)}</span>
+          </div>
+        </div>
+      `;
+    }
+
+    let notesBoxHtml = '';
+    if (noteLines.length > 0) {
+      notesBoxHtml = `
+        <div class="mt-2 text-muted small ps-1 leading-relaxed">
+          ${noteLines.map(n => `<div>• ${escapeHtml(n)}</div>`).join('')}
+        </div>
+      `;
+    }
+
+    return `
+      <div class="table-responsive diet-table-wrapper mb-1">
+        <table class="table table-sm table-bordered diet-day-table align-middle">
+          <thead>
+            <tr class="table-warning text-center small fw-bold">
+              <th style="width: 15%;">식사</th>
+              <th style="width: 42%;">식단 내용</th>
+              <th style="width: 28%;">대체 식품 (2~3가지)</th>
+              <th style="width: 15%;">예상 칼로리</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${tbodyHtml}
+          </tbody>
+        </table>
+      </div>
+      ${calBoxHtml}
+      ${notesBoxHtml}
+    `;
+  }
+
+  const cleanDayData = parseDietTableSection(cleanDayPart);
+  const weekendData = parseDietTableSection(weekendPart);
+
+  // 일반 텍스트 안전 폴백 (표 데이터가 양쪽 모두 전혀 없는 경우)
+  if (cleanDayData.dataRows.length === 0 && weekendData.dataRows.length === 0) {
+    let fallbackPlanB = '';
+    if (cleanPlanB) {
+      fallbackPlanB = `
+        <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
+          <div class="d-flex align-items-center gap-2 mb-1 text-dark fw-bold small">
+            <i class="bi bi-shield-exclamation text-warning fs-5"></i>
+            <span>돌발 상황(Plan B) 대처 가이드라인</span>
+          </div>
+          <div class="small text-secondary leading-relaxed">${escapeHtml(cleanPlanB).replace(/\n/g, '<br>')}</div>
+        </div>
+      `;
+    }
+    return `
+      <div class="diet-accordion-container">
+        ${introHtml}
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
+          ${escapeHtml(cleanText)}
+        </div>
+        ${fallbackPlanB}
+      </div>
+    `;
+  }
+
+  // 7. 아코디언 항목 2개 구성:
+  // - 평상시 식단 (클린데이): 초기 열림 (show)
+  // - 주말 및 휴일 식단 (치팅/자유식 관리): 초기 닫힘 (collapsed)
+  const collapseCleanDayId = `${prefix}_collapse_cleanday`;
+  const headingCleanDayId = `${prefix}_heading_cleanday`;
+  const collapseWeekendId = `${prefix}_collapse_weekend`;
+  const headingWeekendId = `${prefix}_heading_weekend`;
+
+  const cleanDayHtml = renderTableRows(cleanDayData);
+  const weekendHtml = renderTableRows(weekendData);
+
+  const accordionItemsHtml = `
+    <!-- 1) 평상시 식단 (클린데이) - 기본 열림 -->
+    <div class="accordion-item diet-accordion-item">
+      <h2 class="accordion-header" id="${headingCleanDayId}">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseCleanDayId}" aria-expanded="true" aria-controls="${collapseCleanDayId}">
+          <div class="d-flex align-items-center justify-content-between w-100 pe-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-warning text-dark rounded-pill px-2.5 py-1 fw-bold">클린데이</span>
+              <strong class="text-dark">평상시 식단 (클린데이)</strong>
+            </div>
+            <div class="d-none d-sm-block">
+              <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small">주중 기본 식단 🥗</span>
+            </div>
+          </div>
+        </button>
+      </h2>
+      <div id="${collapseCleanDayId}" class="accordion-collapse collapse show" aria-labelledby="${headingCleanDayId}">
+        <div class="accordion-body">
+          ${cleanDayHtml}
+        </div>
+      </div>
+    </div>
+
+    <!-- 2) 주말 및 휴일 식단 (치팅/자유식 관리) - 기본 닫힘 -->
+    <div class="accordion-item diet-accordion-item">
+      <h2 class="accordion-header" id="${headingWeekendId}">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#${collapseWeekendId}" aria-expanded="false" aria-controls="${collapseWeekendId}">
+          <div class="d-flex align-items-center justify-content-between w-100 pe-2">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-secondary-subtle text-secondary border rounded-pill px-2.5 py-1 fw-bold">주말/휴일</span>
+              <strong class="text-dark">주말 및 휴일 식단 (치팅/자유식 관리)</strong>
+            </div>
+            <div class="d-none d-sm-block">
+              <span class="badge bg-light text-secondary border small">자유식 관리 🥪</span>
+            </div>
+          </div>
+        </button>
+      </h2>
+      <div id="${collapseWeekendId}" class="accordion-collapse collapse" aria-labelledby="${headingWeekendId}">
+        <div class="accordion-body">
+          ${weekendHtml}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // 8. 돌발 상황(Plan B) 대처 가이드라인 독립 알림 박스
+  let planBHtml = '';
+  if (cleanPlanB) {
+    planBHtml = `
+      <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
+        <div class="d-flex align-items-center gap-2 mb-2 text-dark fw-bold small">
+          <i class="bi bi-shield-exclamation text-warning fs-5"></i>
+          <span class="fs-6">돌발 상황(Plan B) 대처 가이드라인</span>
+        </div>
+        <div class="small text-secondary leading-relaxed fw-medium">
+          ${escapeHtml(cleanPlanB).replace(/\n/g, '<br>')}
+        </div>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="diet-accordion-container">
+      ${introHtml}
+      <div class="accordion diet-accordion" id="${prefix}_accordion">
+        ${accordionItemsHtml}
+      </div>
+      ${planBHtml}
+    </div>
+  `;
 }
 
 /**

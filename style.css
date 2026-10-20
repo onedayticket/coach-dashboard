@@ -785,4 +785,95 @@ body.coach-locked .main-wrapper {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
+/* ========================================================================= */
+/* [맞춤 식단 플랜 아코디언 & 마크다운 테이블 디자인 (코치 대시보드)] */
+/* ========================================================================= */
+.diet-intro-card {
+  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
+  border: 1px solid #fde68a;
+  border-left: 4px solid #f59e0b !important;
+  border-radius: 0.85rem;
+}
+
+.diet-accordion .accordion-item {
+  border: 1px solid #fed7aa;
+  border-radius: 0.75rem !important;
+  margin-bottom: 0.65rem;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  background: #ffffff;
+}
+
+.diet-accordion .accordion-header {
+  margin-bottom: 0;
+}
+
+.diet-accordion .accordion-button {
+  background-color: #ffffff;
+  padding: 0.75rem 1rem;
+  font-size: 0.92rem;
+  border: none;
+  box-shadow: none !important;
+  transition: all 0.2s ease-in-out;
+}
+
+.diet-accordion .accordion-button:not(.collapsed) {
+  background: linear-gradient(135deg, #fffdf5 0%, #fef9c3 100%);
+  color: #78350f;
+  border-bottom: 1px solid #fde68a;
+}
+
+.diet-accordion .accordion-button:focus {
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.diet-accordion .accordion-body {
+  padding: 0.75rem;
+  background-color: #fffdf5;
+}
+
+/* 식단 테이블 디자인 */
+.diet-table-wrapper {
+  border-radius: 0.65rem;
+  overflow: hidden;
+  border: 1px solid #fed7aa;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+}
+
+.diet-day-table {
+  margin-bottom: 0 !important;
+  font-size: 0.85rem;
+}
+
+.diet-day-table thead tr th {
+  background-color: #fef3c7 !important;
+  color: #78350f !important;
+  font-weight: 700;
+  border-color: #fde68a !important;
+  padding: 0.55rem 0.5rem;
+  text-align: center;
+}
+
+.diet-day-table tbody td {
+  padding: 0.55rem 0.6rem;
+  vertical-align: middle;
+  border-color: #fef3c7;
+}
+
+.diet-day-table tbody tr:hover {
+  background-color: #fffbeb;
+}
+
+/* 돌발 상황(Plan B) 대처 가이드라인 카드 */
+.diet-planb-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1.5px dashed #cbd5e1;
+  border-left: 4px solid #f59e0b !important;
+  border-radius: 0.85rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+
 

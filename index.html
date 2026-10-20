@@ -450,11 +450,27 @@
                         <div class="mt-auto">
                           <div class="d-flex align-items-center justify-content-between mb-1">
                             <label for="inputCurrentDietPlan" class="form-label small fw-bold text-dark mb-0">현재 제안 식단</label>
-                            <button type="button" class="btn btn-link btn-sm p-0 text-warning-emphasis text-decoration-none fw-semibold" id="btnSaveDietPlan">
-                              <i class="bi bi-floppy me-1"></i>식단 저장
-                            </button>
+                            <div class="d-flex align-items-center gap-2">
+                              <!-- [신규 기능] 식단 뷰 모드 토글: 표 보기 vs 텍스트 편집 -->
+                              <div class="btn-group btn-group-sm" role="group" aria-label="식단 뷰 모드">
+                                <button type="button" class="btn btn-outline-warning btn-xs active text-dark" id="btnDietViewTable" onclick="switchDietViewMode('table')">
+                                  <i class="bi bi-table me-1"></i>표 보기
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-xs" id="btnDietViewText" onclick="switchDietViewMode('text')">
+                                  <i class="bi bi-pencil me-1"></i>텍스트 편집
+                                </button>
+                              </div>
+                              <button type="button" class="btn btn-link btn-sm p-0 text-warning-emphasis text-decoration-none fw-semibold" id="btnSaveDietPlan">
+                                <i class="bi bi-floppy me-1"></i>식단 저장
+                              </button>
+                            </div>
                           </div>
-                          <textarea class="form-control routine-textarea bg-light" id="inputCurrentDietPlan" rows="6" placeholder="현재 제안된 식단 계획 내용이 표시됩니다. 코치가 직접 수정 후 저장할 수 있습니다."></textarea>
+                          <!-- [A] 식단 아코디언 표 뷰어 (클린데이 & 주말 식단 접기/펼치기) -->
+                          <div id="dietPlanAccordionPreview" class="routine-accordion-preview mb-2" style="max-height: 400px; overflow-y: auto;">
+                            <!-- JS에서 parseDietPlanToAccordionHtml 렌더링 -->
+                          </div>
+                          <!-- [B] 텍스트에리어 편집창 (텍스트 모드 토글 시 표시) -->
+                          <textarea class="form-control routine-textarea bg-light d-none" id="inputCurrentDietPlan" rows="8" placeholder="현재 제안된 식단 계획 내용이 표시됩니다. 코치가 직접 수정 후 저장할 수 있습니다."></textarea>
                         </div>
                       </div>
                     </div>
