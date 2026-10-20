@@ -3451,14 +3451,23 @@ function openDailyFeedbackModal(targetDate) {
   const isDraft = (cleanStatus === 'ai초안' || cleanStatus === '초안' || cleanStatus === '초안대기');
   const isCompleted = isFeedbackRecordCompleted(targetFb);
   const statusNoticeEl = document.getElementById('dfModalStatusNotice');
+  const btnRunAi = document.getElementById('btnRunAiDailyFeedback');
+
+  if (btnRunAi) {
+    if (isCompleted || isDraft) {
+      btnRunAi.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>🤖 AI 피드백 재생성';
+    } else {
+      btnRunAi.innerHTML = '<i class="bi bi-robot me-1"></i>🤖 피드백 하기 (AI 분석/재생성)';
+    }
+  }
 
   if (statusNoticeEl) {
     if (isCompleted) {
-      statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✅ 피드백 완료 상태:</span> 이미 저장된 내용이 표시 중입니다. 수정 후 다시 저장할 수 있습니다.`;
+      statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✅ 피드백 완료 상태:</span> 이미 저장된 내용이 표시 중입니다. 필요 시 우측 <strong>[🤖 AI 피드백 재생성]</strong>을 통해 새로운 피드백으로 다시 덮어쓸 수 있습니다.`;
     } else if (isDraft) {
-      statusNoticeEl.innerHTML = `<span class="text-primary fw-bold">🤖 AI 초안 대기 상태:</span> 백그라운드에서 작성된 AI 초안입니다. 검토 후 <strong>[피드백 코멘트 저장]</strong>을 눌러 최종 완료해 주세요.`;
+      statusNoticeEl.innerHTML = `<span class="text-primary fw-bold">🤖 AI 초안 대기 상태:</span> 백그라운드에서 작성된 AI 초안입니다. 우측 <strong>[🤖 AI 피드백 재생성]</strong>으로 다시 생성하거나 검토 후 저장해 주세요.`;
     } else {
-      statusNoticeEl.innerHTML = `<span class="text-secondary fw-bold">✏️ 미작성 상태:</span> 직접 작성하거나 우측 <strong>[🤖 피드백 하기 (AI 분석/재생성)]</strong>을 클릭하여 AI 분석을 요청하세요.`;
+      statusNoticeEl.innerHTML = `<span class="text-secondary fw-bold">✏️ 미작성 상태:</span> 직접 작성하거나 우측 <strong>[🤖 피드백 하기 (AI 분석/생성)]</strong>을 클릭하여 AI 분석을 요청하세요.`;
     }
   }
 
@@ -3471,9 +3480,56 @@ function openDailyFeedbackModal(targetDate) {
 }
 
 /**
+ * AI가 응답한 JSON 문자열을 문자열 내부 개행/특수문자까지 안전하게 정제하여 파싱하는 헬퍼
+ */
+function cleanAndParseAiJson(raw) {
+  if (!raw) return null;
+  let str = String(raw).replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = str.indexOf('{');
+  const lastBrace = str.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    str = str.substring(firstBrace, lastBrace + 1);
+  }
+  try {
+    return JSON.parse(str);
+  } catch (e1) {
+    try {
+      let inString = false;
+      let escaped = false;
+      let out = '';
+      for (let i = 0; i < str.length; i++) {
+        const c = str[i];
+        if (c === '"' && !escaped) {
+          inString = !inString;
+          out += c;
+        } else if (c === '\\' && inString) {
+          escaped = !escaped;
+          out += c;
+        } else {
+          if (inString) {
+            if (c === '\n') out += '\\n';
+            else if (c === '\r') out += '\\r';
+            else if (c === '\t') out += '\\t';
+            else out += c;
+          } else {
+            out += c;
+          }
+          escaped = false;
+        }
+      }
+      out = out.replace(/,\s*([\}\]])/g, '$1');
+      return JSON.parse(out);
+    } catch (e2) {
+      return null;
+    }
+  }
+}
+
+/**
  * [3단계] 모달 내부 [🤖 피드백 하기 (AI 분석/재생성)] 전용 함수
- * - 코치가 버튼을 직접 클릭했을 때만 실행되어 AI 분석(브라우저 직통 또는 GAS) 수행
- * - 모달 내 입력칸들을 새로 생성된 결과로 갱신 (시트 저장은 하단 저장 버튼 클릭 시 처리)
+ * - 코치가 버튼을 직접 클릭했을 때 실행되어 AI 분석(브라우저 직통 또는 GAS) 수행
+ * - 다른 루틴/식단 생성과 완전 동일한 하단 플로팅 로딩 알림 및 버튼 스피너 표시
+ * - 신규 생성된 피드백으로 모달 입력칸, AppState 피드백 객체, 메인 화면 일지 테이블까지 완벽 덮어쓰기
  */
 async function runAiDailyFeedbackForCurrentModal() {
   if (!AppState.currentFeedbackContext || !AppState.selectedMember) return;
@@ -3488,26 +3544,46 @@ async function runAiDailyFeedbackForCurrentModal() {
     .filter(f => getMemberName(f) === memberName)
     .sort((a, b) => new Date(getField(a, '날짜', 'date', '일자')) - new Date(getField(b, '날짜', 'date', '일자')));
 
-  showLoadingOverlay('AI가 최근 3일 이상의 체중 추이와 전체 설문/피드백 데이터를 종합 분석 중입니다...');
+  const btnRunAi = document.getElementById('btnRunAiDailyFeedback');
+  const statusNoticeEl = document.getElementById('dfModalStatusNotice');
+
+  // [1] 버튼 비활성화 & 모달 배너 / 하단 플로팅 로딩 알림 띄우기 (루틴/식단 생성과 완전 동일)
+  if (btnRunAi) {
+    btnRunAi.disabled = true;
+    btnRunAi.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>AI 피드백 생성 중...';
+  }
+  if (statusNoticeEl) {
+    statusNoticeEl.innerHTML = '<span class="spinner-border spinner-border-sm text-primary me-1"></span><span class="text-primary fw-bold">AI 피드백 생성 중:</span> 당일 일지와 최근 체중 추이를 분석하여 피드백을 새로 생성하고 있습니다...';
+  }
+
+  showLoadingOverlay('AI가 데일리 일지와 체중 추이를 분석하여 피드백을 생성 중입니다...');
 
   let aiData = null;
+  let directRes = null;
+  let gasElapsedSec = 0;
+  let gasModelName = 'AI';
 
-  // 1. 브라우저 직통 모드 시도
-  if (AppState.geminiApiKey) {
-    try {
-      const memberFullProfile = formatObjectAsFullProfile(mem);
-      const feedbackFullData = formatObjectAsFullProfile(targetFb);
+  try {
+    // [2] AI 프롬프트 구성 시 기존 코치 코멘트 필드는 제외 (순수 일지 데이터를 기준으로 새롭게 분석)
+    const cleanTargetFb = {};
+    const excludeCommentKeys = ['피드백 코멘트', '피드백코멘트', '피드백_요약', '피드백요약', '코치 피드백', '코치피드백', '코치 코멘트', '코치코멘트', '문제점_분석', '문제점분석', '보완점_및_개선방안', '보완점및개선방안', '운동_수정_제안', '식단_수정_제안', '피드백 상태', '피드백상태'];
+    Object.keys(targetFb).forEach(k => {
+      if (!excludeCommentKeys.includes(k)) cleanTargetFb[k] = targetFb[k];
+    });
 
-      const recent3 = recentFeedbacks.slice(-3);
-      const weightHistorySummary = recent3.map(f => {
-        const d = getField(f, '날짜', 'date', '일자') || '-';
-        const w = getField(f, '공복 몸무게', '공복몸무게', '체중', 'weight') || '-';
-        const es = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
-        const ds = getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
-        return `- ${d}: 몸무게 ${w}kg, 운동점수 ${es}점, 식단점수 ${ds}점`;
-      }).join('\n') || '이전 피드백 기록 없음';
+    const memberFullProfile = formatObjectAsFullProfile(mem);
+    const feedbackFullData = formatObjectAsFullProfile(cleanTargetFb);
 
-      const prompt = `
+    const recent3 = recentFeedbacks.slice(-3);
+    const weightHistorySummary = recent3.map(f => {
+      const d = getField(f, '날짜', 'date', '일자') || '-';
+      const w = getField(f, '공복 몸무게', '공복몸무게', '체중', 'weight') || '-';
+      const es = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
+      const ds = getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
+      return `- ${d}: 몸무게 ${w}kg, 운동점수 ${es}점, 식단점수 ${ds}점`;
+    }).join('\n') || '이전 피드백 기록 없음';
+
+    const prompt = `
 당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
 아래 참여자의 전체 사전 프로필과 오늘 데일리 피드백 제출 데이터, 그리고 누적된 최근 체중 추이를 분석하여 피드백 결과를 도출해 주세요.
 
@@ -3537,62 +3613,74 @@ ${weightHistorySummary}
 }
 `;
 
-      const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.');
-      if (directRes && directRes.isAborted) {
-        hideLoadingOverlay();
-        showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
-        return;
+    // 1. 브라우저 직통 모드 시도
+    if (AppState.geminiApiKey) {
+      try {
+        directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.');
+        if (directRes && directRes.isAborted) {
+          hideLoadingOverlay();
+          showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+          return;
+        }
+        if (directRes && directRes.text) {
+          const rawJson = cleanAndParseAiJson(directRes.text);
+          if (rawJson) {
+            aiData = {
+              "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
+              "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
+              "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
+              "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
+              "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
+              "운동_실행률_점수": Number.isFinite(parseFloat(rawJson['운동_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수']))) : 4,
+              "식단_실행률_점수": Number.isFinite(parseFloat(rawJson['식단_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수']))) : 5
+            };
+          }
+        }
+      } catch (e) {
+        if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
+          hideLoadingOverlay();
+          showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+          return;
+        }
+        console.warn('[브라우저 직통 AI 데일리 피드백 파싱 실패, GAS 백엔드 대체]', e);
       }
-      if (directRes && directRes.text) {
-        let cleaned = directRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
-        const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-        if (jsonMatch) cleaned = jsonMatch[0];
-        const rawJson = JSON.parse(cleaned);
+    }
 
-        aiData = {
-          "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
-          "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
-          "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
-          "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
-          "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
-          "운동_실행률_점수": Number.isFinite(parseFloat(rawJson['운동_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수']))) : 4,
-          "식단_실행률_점수": Number.isFinite(parseFloat(rawJson['식단_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수']))) : 5
-        };
-      }
-    } catch (e) {
+    // 2. 브라우저 직통 미사용 또는 파싱 실패 시 GAS 백엔드 호출
+    if (!aiData) {
       if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
         hideLoadingOverlay();
         showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
         return;
       }
-      console.warn('[브라우저 직통 AI 데일리 피드백 파싱 실패, GAS 백엔드 대체]', e);
+      showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '대기'}) ➔ GAS 백엔드로 전환하여 피드백 생성 중...`);
+      const gasStartTime = performance.now();
+      const res = await postToGasBackend({
+        action: 'generateDailyFeedback',
+        member: mem,
+        feedback: cleanTargetFb,
+        recentFeedbacks: recentFeedbacks,
+        guidelines: AppState.guidelines
+      });
+      gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
+      if (res && res.debug && res.debug.model) gasModelName = res.debug.model;
+
+      if (res && res.status === 'cancelled') {
+        hideLoadingOverlay();
+        showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
+        return;
+      }
+      if (res && res.status === 'success' && res.data) {
+        aiData = res.data;
+      }
+    }
+  } finally {
+    hideLoadingOverlay();
+    if (btnRunAi) {
+      btnRunAi.disabled = false;
+      btnRunAi.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>🤖 AI 피드백 재생성';
     }
   }
-
-  // 2. 브라우저 직통 미사용 또는 파싱 실패 시 GAS 백엔드 호출
-  if (!aiData) {
-    if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
-      hideLoadingOverlay();
-      showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
-      return;
-    }
-    const res = await postToGasBackend({
-      action: 'generateDailyFeedback',
-      member: mem,
-      feedback: targetFb,
-      recentFeedbacks: recentFeedbacks
-    });
-    if (res && res.status === 'cancelled') {
-      hideLoadingOverlay();
-      showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
-      return;
-    }
-    if (res && res.status === 'success' && res.data) {
-      aiData = res.data;
-    }
-  }
-
-  hideLoadingOverlay();
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
     showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
@@ -3602,7 +3690,7 @@ ${weightHistorySummary}
   if (aiData) {
     AppState.currentFeedbackContext.aiData = aiData;
 
-    // 모달 입력칸들을 AI 생성 결과로 갱신
+    // [3] 모달 입력칸들을 새로 생성된 AI 결과로 완벽 덮어쓰기
     const exScoreVal = aiData.운동_실행률_점수 !== undefined ? aiData.운동_실행률_점수 : 4;
     const dietScoreVal = aiData.식단_실행률_점수 !== undefined ? aiData.식단_실행률_점수 : 5;
 
@@ -3662,12 +3750,46 @@ ${weightHistorySummary}
       }
     }
 
-    const statusNoticeEl = document.getElementById('dfModalStatusNotice');
+    // [4] targetFb 및 AppState 피드백 객체에 새 피드백 데이터 즉시 덮어쓰기
+    targetFb['운동_실행률_점수'] = exScoreVal;
+    targetFb['운동실행률점수'] = exScoreVal;
+    targetFb['운동 점수'] = exScoreVal;
+
+    targetFb['식단_실행률_점수'] = dietScoreVal;
+    targetFb['식단실행률점수'] = dietScoreVal;
+    targetFb['식단 점수'] = dietScoreVal;
+
+    targetFb['피드백_요약'] = summaryVal;
+    targetFb['피드백요약'] = summaryVal;
+
+    targetFb['문제점_분석'] = problemVal;
+    targetFb['문제점분석'] = problemVal;
+
+    targetFb['보완점_및_개선방안'] = solutionVal;
+    targetFb['보완점및개선방안'] = solutionVal;
+
+    targetFb['운동_수정_제안'] = exProposal;
+    targetFb['식단_수정_제안'] = dietProposal;
+
+    targetFb['피드백 코멘트'] = fullComment.trim();
+    targetFb['피드백코멘트'] = fullComment.trim();
+
+    targetFb['피드백 상태'] = 'AI초안';
+    targetFb['피드백상태'] = 'AI초안';
+
+    // [5] 대시보드 메인 화면의 피드백 일지 누적 테이블도 즉시 갱신 (덮어쓰기 시각적 확인)
+    renderFeedbackTable();
+
     if (statusNoticeEl) {
-      statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✨ AI 분석 완료:</span> 최신 분석 결과가 입력되었습니다. 내용을 검토/수정한 후 하단 <strong>[피드백 코멘트 저장]</strong>을 눌러주세요.`;
+      statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✨ 새 AI 피드백 덮어쓰기 완료:</span> 최신 분석 결과가 입력되었습니다. 내용을 검토/수정한 후 하단 <strong>[피드백 코멘트 저장]</strong>을 눌러 최종 완료해 주세요.`;
     }
 
-    showToast('AI 피드백 분석이 완료되었습니다. 검토 후 저장해 주세요.', 'success');
+    // [6] 루틴/식단 생성 완료 토스트와 동일한 고품질 완료 알림 표기
+    if (directRes && directRes.text) {
+      showToast(`✓ [브라우저 직통 ${directRes.elapsedSec}초] AI 데일리 피드백 생성 완료 (${directRes.model})`, 'success', 5000);
+    } else {
+      showToast(`✓ [GAS 백엔드 ${gasElapsedSec}초] AI 데일리 피드백 생성 완료 (${gasModelName})`, 'success', 5000);
+    }
   } else {
     showToast('AI 피드백 분석에 실패했습니다. 다시 시도해 주세요.', 'warning');
   }

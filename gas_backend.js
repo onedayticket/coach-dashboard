@@ -1572,8 +1572,17 @@ function generateDailyFeedbackCore(ss, payload) {
   }
 
   // [요구사항 1 & 2] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
+  // (이전 피드백 코멘트 필드는 제외하여 신규 생성/재생성 시 기존 내용에 편향되지 않고 순수한 회원 일지 기준으로 분석)
+  const cleanFeedbackForAi = {};
+  const feedbackExcludeKeys = ['피드백 코멘트', '피드백코멘트', '피드백_요약', '피드백요약', '코치 피드백', '코치피드백', '코치 코멘트', '코치코멘트', '문제점_분석', '문제점분석', '보완점_및_개선방안', '보완점및개선방안', '운동_수정_제안', '식단_수정_제안', '피드백 상태', '피드백상태'];
+  Object.keys(currentFeedback).forEach(k => {
+    if (!feedbackExcludeKeys.includes(k)) {
+      cleanFeedbackForAi[k] = currentFeedback[k];
+    }
+  });
+
   const memberFullProfile = formatObjectAsFullProfile(member);
-  const feedbackFullData = formatObjectAsFullProfile(currentFeedback);
+  const feedbackFullData = formatObjectAsFullProfile(cleanFeedbackForAi);
 
   const prompt = `
 당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
@@ -1610,24 +1619,58 @@ ${weightHistorySummary}
   let parsed = null;
   if (aiResult.text) {
     try {
-      let cleaned = aiResult.text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) cleaned = jsonMatch[0];
-      const rawJson = JSON.parse(cleaned);
+      let str = aiResult.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const firstBrace = str.indexOf('{');
+      const lastBrace = str.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+        str = str.substring(firstBrace, lastBrace + 1);
+      }
+      let rawJson = null;
+      try {
+        rawJson = JSON.parse(str);
+      } catch (e1) {
+        let inString = false;
+        let escaped = false;
+        let out = '';
+        for (let i = 0; i < str.length; i++) {
+          const c = str[i];
+          if (c === '"' && !escaped) {
+            inString = !inString;
+            out += c;
+          } else if (c === '\\' && inString) {
+            escaped = !escaped;
+            out += c;
+          } else {
+            if (inString) {
+              if (c === '\n') out += '\\n';
+              else if (c === '\r') out += '\\r';
+              else if (c === '\t') out += '\\t';
+              else out += c;
+            } else {
+              out += c;
+            }
+            escaped = false;
+          }
+        }
+        out = out.replace(/,\s*([\}\]])/g, '$1');
+        rawJson = JSON.parse(out);
+      }
 
-      parsed = {
-        "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
-        "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
-        "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
-        "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
-        "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
-        "운동_실행률_점수": (rawJson['운동_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['운동_실행률_점수'])))
-          ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수'])))
-          : ((!isNaN(parseFloat(curExScore)) && parseFloat(curExScore) <= 5) ? parseFloat(curExScore) : 4),
-        "식단_실행률_점수": (rawJson['식단_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['식단_실행률_점수'])))
-          ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수'])))
-          : ((!isNaN(parseFloat(curDietScore)) && parseFloat(curDietScore) <= 5) ? parseFloat(curDietScore) : 5)
-      };
+      if (rawJson) {
+        parsed = {
+          "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
+          "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
+          "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
+          "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
+          "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
+          "운동_실행률_점수": (rawJson['운동_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['운동_실행률_점수'])))
+            ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수'])))
+            : ((!isNaN(parseFloat(curExScore)) && parseFloat(curExScore) <= 5) ? parseFloat(curExScore) : 4),
+          "식단_실행률_점수": (rawJson['식단_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['식단_실행률_점수'])))
+            ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수'])))
+            : ((!isNaN(parseFloat(curDietScore)) && parseFloat(curDietScore) <= 5) ? parseFloat(curDietScore) : 5)
+        };
+      }
     } catch (e) {
       Logger.log('JSON 파싱 실패: ' + e.toString());
     }
