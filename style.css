@@ -730,7 +730,8 @@ body.coach-locked .main-wrapper {
 /* DAY별 테이블 디자인 (Colspan=5 병합 셀 포함) */
 .routine-day-table-wrapper {
   border-radius: 0.65rem;
-  overflow: hidden;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
   border: 1px solid #cbd5e1;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
@@ -844,7 +845,8 @@ body.coach-locked .main-wrapper {
 /* 식단 테이블 디자인 */
 .diet-table-wrapper {
   border-radius: 0.65rem;
-  overflow: hidden;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
   border: 1px solid #fed7aa;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
@@ -882,6 +884,209 @@ body.coach-locked .main-wrapper {
   border-radius: 0.85rem;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
+
+/* ==============================================================================
+ * [모바일 화면 전체 활용 UI 대개편 (max-width: 768px)]
+ * - 양옆 여백 낭비 최소화 (풀스크린 활용도 96%+)
+ * - 모바일 전용 뷰 스위처 (참여자 목록 <-> 상세 코칭 원터치 전환)
+ * - 터치 친화적 버튼 및 카드 레이아웃
+ * ============================================================================== */
+@media (max-width: 768px) {
+  /* 1. 컨테이너 및 래퍼 여백 다이어트 */
+  body {
+    background-color: #f1f5f9;
+  }
+
+  .main-wrapper {
+    padding-left: 0.35rem !important;
+    padding-right: 0.35rem !important;
+    padding-top: 0.35rem !important;
+    padding-bottom: 2rem !important;
+  }
+
+  .container-fluid {
+    padding-left: 0.35rem !important;
+    padding-right: 0.35rem !important;
+  }
+
+  .row.g-2.g-md-3 {
+    --bs-gutter-x: 0.35rem;
+    --bs-gutter-y: 0.35rem;
+  }
+
+  /* 2. 상단 글로벌 네비게이션 모바일 최적화 */
+  .navbar {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    padding-top: 0.35rem !important;
+    padding-bottom: 0.35rem !important;
+  }
+
+  .navbar-brand {
+    font-size: 0.95rem;
+    letter-spacing: -0.3px;
+  }
+
+  .view-nav-btn {
+    padding: 0.3rem 0.55rem;
+    font-size: 0.78rem;
+    border-radius: 0.375rem;
+  }
+
+  /* 3. 모바일 전용 뷰 탭 스위처 */
+  .mobile-view-tabs {
+    position: sticky;
+    top: 52px;
+    z-index: 1025;
+    background: rgba(255, 255, 255, 0.95) !important;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+  }
+
+  .mobile-tab-btn {
+    padding: 0.45rem 0.5rem;
+    font-size: 0.85rem;
+    border-radius: 0.5rem;
+    border: none;
+    transition: all 0.2s ease;
+  }
+
+  .mobile-tab-btn.active {
+    background-color: #4f46e5 !important;
+    color: #ffffff !important;
+    box-shadow: 0 2px 6px rgba(79, 70, 229, 0.3);
+  }
+
+  /* 4. 모바일 화면 전환 (목록 보기 vs 상세 보기) */
+  body.mobile-view-list #sidebarColumn {
+    display: block !important;
+  }
+  body.mobile-view-list #mainContentColumn {
+    display: none !important;
+  }
+
+  body.mobile-view-detail #sidebarColumn {
+    display: none !important;
+  }
+  body.mobile-view-detail #mainContentColumn {
+    display: block !important;
+  }
+
+  /* 5. 좌측 사이드바 모바일 적응 */
+  .sidebar-panel {
+    height: auto;
+    max-height: calc(100vh - 110px);
+    position: static;
+    border-radius: 0.75rem;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+
+  .sidebar-header {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .sidebar-body {
+    padding: 0.5rem 0.5rem 1.5rem 0.5rem;
+    max-height: calc(100vh - 220px);
+  }
+
+  .member-card-item {
+    padding: 0.65rem 0.75rem;
+    margin-bottom: 0.45rem;
+    border-radius: 0.65rem;
+  }
+
+  /* 6. 상세 메인 패널 및 섹션 카드 */
+  .section-panel {
+    border-radius: 0.75rem;
+    margin-bottom: 0.5rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .section-header {
+    padding: 0.65rem 0.75rem;
+  }
+
+  .section-title {
+    font-size: 0.95rem;
+  }
+
+  .section-body {
+    padding: 0.65rem !important;
+  }
+
+  /* 7. 모바일 인적 사항 그리드 & 필드 */
+  .info-field-box {
+    padding: 0.5rem 0.6rem;
+    border-radius: 0.5rem;
+  }
+
+  .info-field-label {
+    font-size: 0.68rem;
+    margin-bottom: 0.15rem;
+  }
+
+  .info-field-val {
+    font-size: 0.88rem;
+  }
+
+  .personal-lifestyle-card {
+    padding: 0.65rem !important;
+    border-radius: 0.5rem;
+  }
+
+  .stat-icon-circle {
+    width: 32px;
+    height: 32px;
+    font-size: 0.95rem;
+  }
+
+  /* 8. 지침 및 루틴 / 식단 관리 박스 */
+  .routine-box {
+    padding: 0.65rem;
+    border-radius: 0.65rem;
+  }
+
+  .routine-accordion .accordion-button,
+  .diet-accordion .accordion-button {
+    padding: 0.6rem 0.75rem;
+    font-size: 0.88rem;
+  }
+
+  .routine-accordion .accordion-body,
+  .diet-accordion .accordion-body {
+    padding: 0.5rem;
+  }
+
+  /* 9. 차트 및 피드백 테이블 모바일 튜닝 */
+  .chart-card {
+    height: 210px;
+    padding: 0.65rem;
+    border-radius: 0.65rem;
+  }
+
+  .feedback-table th {
+    padding: 0.5rem 0.4rem;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .feedback-table td {
+    padding: 0.55rem 0.4rem;
+    font-size: 0.8rem;
+  }
+
+  /* 10. 모바일 뒤로가기 바 */
+  .mobile-back-bar {
+    position: sticky;
+    top: 52px;
+    z-index: 1020;
+    box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08) !important;
+  }
+}
+
 
 
 

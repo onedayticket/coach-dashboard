@@ -22,25 +22,26 @@
   <!-- [상단 내비게이션 바] -->
   <!-- ========================================================================= -->
   <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top shadow-sm py-2">
-    <div class="container-fluid px-lg-4">
-      <a class="navbar-brand d-flex align-items-center" href="#" onclick="switchDashboardView('members'); return false;">
-        <i class="bi bi-heart-pulse-fill text-danger me-2 fs-4"></i>
-        <span>4주 온라인 습관화 코칭 대시보드</span>
+    <div class="container-fluid px-2 px-lg-4">
+      <a class="navbar-brand d-flex align-items-center me-1 me-md-2" href="#" onclick="switchDashboardView('members'); return false;">
+        <i class="bi bi-heart-pulse-fill text-danger me-1 me-md-2 fs-5 fs-md-4"></i>
+        <span class="d-none d-sm-inline">4주 온라인 습관화 코칭 대시보드</span>
+        <span class="d-inline d-sm-none fw-bold" style="font-size: 0.95rem;">코칭 대시보드</span>
       </a>
 
-      <!-- 사이드바 접기/펼치기 토글 버튼 (요청 1) -->
-      <button type="button" class="btn btn-outline-secondary btn-sm text-white border-secondary px-2 py-1 ms-2" id="btnToggleSidebar" onclick="toggleSidebar()" title="목록 사이드바 접기/펼치기">
+      <!-- 사이드바 접기/펼치기 토글 버튼 (데스크톱 전용) -->
+      <button type="button" class="btn btn-outline-secondary btn-sm text-white border-secondary px-2 py-1 ms-1 d-none d-md-inline-flex align-items-center" id="btnToggleSidebar" onclick="toggleSidebar()" title="목록 사이드바 접기/펼치기">
         <i class="bi bi-layout-sidebar-inset" id="iconSidebarToggle"></i>
         <span class="d-none d-md-inline ms-1 small fw-medium" id="textSidebarToggle">목록 접기</span>
       </button>
 
       <!-- [요구사항 1] 대시보드 메인 뷰 전환 탭: 참여자 관리 vs 지침서 관리 (모달 아님) -->
-      <div class="d-flex align-items-center gap-1 ms-lg-3">
-        <button type="button" class="view-nav-btn active" id="btnNavViewMembers" onclick="switchDashboardView('members')">
-          <i class="bi bi-people-fill me-1"></i> 참여자 관리
+      <div class="d-flex align-items-center gap-1 ms-1 ms-lg-3">
+        <button type="button" class="view-nav-btn active px-2 px-md-3 py-1" id="btnNavViewMembers" onclick="switchDashboardView('members')">
+          <i class="bi bi-people-fill me-1"></i><span class="d-none d-sm-inline">참여자 관리</span><span class="d-inline d-sm-none">참여자</span>
         </button>
-        <button type="button" class="view-nav-btn" id="btnNavViewGuidelines" onclick="switchDashboardView('guidelines')">
-          <i class="bi bi-journal-text me-1 text-warning"></i> 코칭 지침서 관리 (5종)
+        <button type="button" class="view-nav-btn px-2 px-md-3 py-1" id="btnNavViewGuidelines" onclick="switchDashboardView('guidelines')">
+          <i class="bi bi-journal-text me-1 text-warning"></i><span class="d-none d-sm-inline">코칭 지침서 관리 (5종)</span><span class="d-inline d-sm-none">지침서</span>
         </button>
       </div>
 
@@ -98,18 +99,18 @@
           </ul>
         </div>
 
-        <!-- GAS 연결 상태 배지 -->
-        <span id="apiStatusBadge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-2 px-3 small">
-          <span class="status-dot bg-secondary me-1"></span> Mock 모드
+        <!-- GAS 연결 상태 배지 (모바일에서는 상태 점만 깔끔하게 표시) -->
+        <span id="apiStatusBadge" class="badge bg-secondary-subtle text-secondary border border-secondary-subtle py-1.5 px-2 px-md-3 small">
+          <span class="status-dot bg-secondary me-0 me-sm-1"></span><span class="d-none d-sm-inline"> Mock 모드</span>
         </span>
 
         <!-- 설정 모달 버튼 -->
-        <button type="button" class="btn btn-dark btn-sm border-secondary text-white" data-bs-toggle="modal" data-bs-target="#apiConfigModal" title="GAS Web App 설정">
+        <button type="button" class="btn btn-dark btn-sm border-secondary text-white px-2 py-1" data-bs-toggle="modal" data-bs-target="#apiConfigModal" title="GAS Web App 설정">
           <i class="bi bi-gear-fill"></i>
         </button>
 
         <!-- [보안: 코치 세션 잠금 버튼] -->
-        <button type="button" class="btn btn-dark btn-sm border-secondary text-white" id="btnCoachLogout" onclick="coachLogout()" title="대시보드 화면 잠금 (로그아웃)">
+        <button type="button" class="btn btn-dark btn-sm border-secondary text-white px-2 py-1" id="btnCoachLogout" onclick="coachLogout()" title="대시보드 화면 잠금 (로그아웃)">
           <i class="bi bi-shield-lock-fill text-warning"></i>
         </button>
       </div>
@@ -119,8 +120,19 @@
   <!-- ========================================================================= -->
   <!-- [메인 화면 분할 레이아웃 컨테이너] -->
   <!-- ========================================================================= -->
-  <div class="container-fluid px-lg-4 py-3 main-wrapper">
-    <div class="row g-3">
+  <div class="container-fluid px-1 px-md-3 px-lg-4 py-2 py-md-3 main-wrapper">
+
+    <!-- [모바일 전용 뷰 전환 탭: 참여자 목록 vs 상세 코칭] -->
+    <div class="d-flex d-md-none w-100 p-1 mb-2 bg-white rounded-3 border shadow-sm mobile-view-tabs" id="mobileModeSwitchBar">
+      <button type="button" class="btn btn-sm flex-fill fw-bold mobile-tab-btn active" id="btnMobileTabList" onclick="switchMobileCoachView('list')">
+        <i class="bi bi-people-fill me-1"></i>참여자 목록 <span class="badge bg-primary text-white ms-1" id="mobileTabCountBadge">0</span>
+      </button>
+      <button type="button" class="btn btn-sm flex-fill fw-bold mobile-tab-btn text-muted" id="btnMobileTabDetail" onclick="switchMobileCoachView('detail')">
+        <i class="bi bi-clipboard2-pulse me-1"></i>상세 코칭 <span class="badge bg-secondary-subtle text-secondary ms-1" id="mobileTabMemberBadge">미선택</span>
+      </button>
+    </div>
+
+    <div class="row g-2 g-md-3">
 
       <!-- ===================================================================== -->
       <!-- [1. 좌측 사이드바: 탭에 따라 참여자 목록 또는 지침서 목록 표시] -->
@@ -259,6 +271,19 @@
 
           <!-- 참여자 상세 정보 컨테이너 -->
           <div id="memberDetailContent" class="d-none">
+
+            <!-- [모바일 전용 상단 퀵 바: 목록으로 돌아가기] -->
+            <div class="d-flex d-md-none align-items-center justify-content-between p-2 mb-2 bg-white border rounded-3 shadow-sm mobile-back-bar">
+              <button type="button" class="btn btn-sm btn-primary fw-bold px-3 py-1.5 d-inline-flex align-items-center" onclick="switchMobileCoachView('list')">
+                <i class="bi bi-arrow-left me-1"></i>참여자 목록
+              </button>
+              <div class="text-truncate px-2 text-center flex-grow-1">
+                <span class="fw-bold text-dark small" id="mobileSelectedMemberNameTop">회원 선택됨</span>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary px-2.5 py-1" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="상단으로 이동">
+                <i class="bi bi-arrow-up"></i>
+              </button>
+            </div>
 
             <!-- ----------------------------------------------------------------- -->
             <!-- [상단] 인적 사항 (사전 설문 기반, 접기/펴기 가능) -->

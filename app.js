@@ -568,6 +568,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       toggleSidebar(true);
     }
 
+    // [모바일 UI 초기화] 모바일 화면일 경우 기본적으로 목록 뷰 활성화
+    if (window.innerWidth < 768) {
+      if (!document.body.classList.contains('mobile-view-detail')) {
+        document.body.classList.add('mobile-view-list');
+      }
+    }
+
     // [보안 1단계 & 2단계] 코치 인증 확인
     if (!isCoachAuthenticated()) {
       showCoachAuthModal(true);
@@ -1212,6 +1219,38 @@ function toggleSidebar(forceState) {
 window.toggleSidebar = toggleSidebar;
 
 /**
+ * [모바일 UI 최적화] 참여자 목록 <-> 상세 코칭 뷰 전환 (원터치 전환)
+ */
+function switchMobileCoachView(view) {
+  if (window.innerWidth >= 768) return; // 데스크톱에서는 2열 레이아웃 유지
+
+  const btnList = document.getElementById('btnMobileTabList');
+  const btnDetail = document.getElementById('btnMobileTabDetail');
+
+  if (view === 'detail') {
+    document.body.classList.remove('mobile-view-list');
+    document.body.classList.add('mobile-view-detail');
+    if (btnList) { btnList.classList.remove('active'); btnList.classList.add('text-muted'); }
+    if (btnDetail) { btnDetail.classList.add('active'); btnDetail.classList.remove('text-muted'); }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    setTimeout(() => {
+      if (AppState && AppState.charts) {
+        if (AppState.charts.weight && AppState.charts.weight.resize) AppState.charts.weight.resize();
+        if (AppState.charts.exercise && AppState.charts.exercise.resize) AppState.charts.exercise.resize();
+        if (AppState.charts.diet && AppState.charts.diet.resize) AppState.charts.diet.resize();
+      }
+    }, 150);
+  } else {
+    document.body.classList.remove('mobile-view-detail');
+    document.body.classList.add('mobile-view-list');
+    if (btnList) { btnList.classList.add('active'); btnList.classList.remove('text-muted'); }
+    if (btnDetail) { btnDetail.classList.remove('active'); btnDetail.classList.add('text-muted'); }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+window.switchMobileCoachView = switchMobileCoachView;
+
+/**
  * 참여자 관리 뷰 <-> 코칭 지침서 관리 뷰 전환
  */
 function switchDashboardView(viewName) {
@@ -1402,6 +1441,8 @@ function applyFiltersAndRenderMemberList() {
   // 카운트 업데이트
   const countEl = document.getElementById('memberCountText');
   if (countEl) countEl.textContent = `${filtered.length}명`;
+  const mobileCountBadge = document.getElementById('mobileTabCountBadge');
+  if (mobileCountBadge) mobileCountBadge.textContent = filtered.length;
 
   if (filtered.length === 0) {
     container.innerHTML = `
@@ -1645,6 +1686,20 @@ function selectMember(memberKey) {
 
   // 3. [하단] 피드백 누적 및 3개 독립 Chart.js 그래프 렌더링
   updateFeedbackSection(mem);
+
+  // 4. [모바일 UI 최적화] 모바일 화면일 경우 상세 코칭 뷰로 자동 전환
+  if (window.innerWidth < 768) {
+    switchMobileCoachView('detail');
+    const mobileMemberTop = document.getElementById('mobileSelectedMemberNameTop');
+    if (mobileMemberTop) {
+      mobileMemberTop.textContent = `${getMemberName(mem)} (${getField(mem, '상태', 'status') || '유효'})`;
+    }
+    const mobileTabBadge = document.getElementById('mobileTabMemberBadge');
+    if (mobileTabBadge) {
+      mobileTabBadge.textContent = getMemberName(mem);
+      mobileTabBadge.className = 'badge bg-primary text-white ms-1';
+    }
+  }
 }
 
 /**

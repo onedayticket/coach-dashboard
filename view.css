@@ -285,23 +285,169 @@ body {
   width: 100%;
 }
 
-/* 모바일 반응형 튜닝 */
+/* ========================================================================= */
+/* [모바일 화면 전체 활용 UI 대개편 (max-width: 768px)] */
+/* ========================================================================= */
 @media (max-width: 768px) {
+  /* 1. 컨테이너 여백 다이어트: 화면 폭 96%+ 활용 */
+  .container-xl {
+    padding-left: 0.35rem !important;
+    padding-right: 0.35rem !important;
+  }
+
+  /* 2. 상단 글로벌 네비게이션 */
+  .member-navbar {
+    padding-left: 0.5rem !important;
+    padding-right: 0.5rem !important;
+    padding-top: 0.4rem !important;
+    padding-bottom: 0.4rem !important;
+  }
+
+  .member-nav-brand {
+    font-size: 0.95rem;
+  }
+
+  /* 3. 히어로 환영 헤더 & 체중 인포그래픽 */
   .member-hero-card {
-    padding: 1.5rem 1.25rem;
+    padding: 1.15rem 0.85rem !important;
+    border-radius: 0.75rem !important;
+    margin-bottom: 0.5rem !important;
   }
-  .routine-table td, .diet-table td {
-    padding: 0.85rem 0.65rem;
-    font-size: 0.88rem;
+
+  .member-hero-card h2 {
+    font-size: 1.25rem !important;
   }
-  .routine-table th, .diet-table th {
-    padding: 0.75rem 0.65rem;
-    font-size: 0.82rem;
+
+  .weight-stat-pill {
+    padding: 0.45rem 0.2rem !important;
+    border-radius: 0.65rem !important;
   }
+
+  .weight-stat-pill .fs-5 {
+    font-size: 0.95rem !important;
+  }
+
+  /* 4. 회원 콘텐츠 카드 */
+  .member-content-card {
+    border-radius: 0.75rem !important;
+    margin-bottom: 0.5rem !important;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  }
+
+  .member-card-header {
+    padding: 0.65rem 0.75rem !important;
+  }
+
+  .member-card-title {
+    font-size: 0.95rem !important;
+  }
+
+  /* 5. 인적 사항 그리드 & 라이프스타일 */
+  .info-field-box {
+    padding: 0.5rem 0.6rem !important;
+    border-radius: 0.5rem !important;
+  }
+
+  .info-field-label {
+    font-size: 0.68rem !important;
+    margin-bottom: 0.15rem !important;
+  }
+
+  .info-field-val {
+    font-size: 0.88rem !important;
+  }
+
+  .personal-lifestyle-card {
+    padding: 0.65rem !important;
+    border-radius: 0.5rem !important;
+  }
+
+  .stat-icon-circle {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0.95rem !important;
+  }
+
+  /* 6. 피드백 배너 */
   .cta-feedback-btn {
     width: 100%;
     justify-content: center;
     text-align: center;
+    padding: 0.6rem 1rem !important;
+    font-size: 0.88rem !important;
+  }
+
+  /* 7. 운동 & 식단 루틴 디스플레이 박스 */
+  .routine-display-box {
+    padding: 0.5rem !important;
+  }
+
+  .routine-accordion .accordion-button,
+  .diet-accordion .accordion-button {
+    padding: 0.6rem 0.75rem !important;
+    font-size: 0.88rem !important;
+  }
+
+  .routine-accordion .accordion-body,
+  .diet-accordion .accordion-body {
+    padding: 0.5rem !important;
+  }
+
+  /* 8. 운동 & 식단 테이블 */
+  .routine-day-table-wrapper,
+  .diet-table-wrapper {
+    border-radius: 0.5rem !important;
+  }
+
+  .routine-day-table,
+  .diet-day-table {
+    min-width: 310px;
+    font-size: 0.82rem !important;
+  }
+
+  .routine-day-table tbody td,
+  .diet-day-table tbody td {
+    padding: 0.5rem 0.4rem !important;
+  }
+
+  .routine-day-table thead .table-day-header-row th,
+  .diet-day-table thead tr th {
+    padding: 0.45rem 0.35rem !important;
+    font-size: 0.78rem !important;
+    white-space: nowrap;
+  }
+
+  .routine-rest-card {
+    padding: 1.15rem 0.85rem !important;
+  }
+
+  /* 9. 차트 카드 */
+  .chart-card {
+    padding: 0.65rem !important;
+    border-radius: 0.65rem !important;
+    height: 220px !important;
+  }
+
+  .chart-canvas-wrapper {
+    height: 175px !important;
+  }
+
+  /* 10. 피드백 누적 테이블 */
+  .member-feedback-table thead th {
+    padding: 0.5rem 0.4rem !important;
+    font-size: 0.75rem !important;
+    white-space: nowrap;
+  }
+
+  .member-feedback-table tbody td {
+    padding: 0.55rem 0.4rem !important;
+    font-size: 0.82rem !important;
+  }
+
+  .feedback-comment-cell,
+  .member-log-cell {
+    padding: 0.5rem 0.6rem !important;
+    font-size: 0.8rem !important;
   }
 }
 
@@ -463,7 +609,8 @@ body {
 /* DAY별 테이블 디자인 (Colspan=5 병합 셀 포함) */
 .routine-day-table-wrapper {
   border-radius: 0.65rem;
-  overflow: hidden;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
   border: 1px solid #cbd5e1;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
@@ -577,7 +724,8 @@ body {
 /* 식단 테이블 디자인 */
 .diet-table-wrapper {
   border-radius: 0.65rem;
-  overflow: hidden;
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
   border: 1px solid #fed7aa;
   background: #ffffff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
