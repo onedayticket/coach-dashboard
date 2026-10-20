@@ -1053,14 +1053,15 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 모델 우선순위 정렬: gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash]
+        // [구글 공식 권장 최신 플래그십 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-2.5-flash' || lower.includes('2.5-flash')) return 100;
-          if (lower === 'gemini-2.0-flash' || lower.includes('2.0-flash')) return 95;
-          if (lower === 'gemini-1.5-flash' || lower.includes('1.5-flash')) return 90;
-          if (lower === 'gemini-2.5-pro' || lower.includes('2.5-pro')) return 85;
-          if (lower === 'gemini-1.5-pro' || lower.includes('1.5-pro')) return 80;
+          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
+          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return 95;
+          if (lower.includes('3.8')) return 90;
+          if (lower.includes('2.5-flash')) return 85;
+          if (lower.includes('2.0-flash')) return 80;
+          if (lower.includes('1.5-flash')) return 75;
           if (lower.includes('flash')) return 70;
           if (lower.includes('pro')) return 60;
           return 10;
@@ -1079,7 +1080,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
 }
 
 /**
@@ -1133,9 +1134,9 @@ function callGemini(prompt, systemInstruction, payload) {
   const supportedModels = getGoogleSupportedTextModels(apiKey);
   let targetModels = (supportedModels && supportedModels.length > 0)
     ? supportedModels.slice(0, 2)
-    : ['gemini-2.5-flash', 'gemini-2.0-flash'];
+    : ['gemini-3.8-flash', 'gemini-3.8-pro'];
 
-  // Pro 선호 시 gemini-2.5-pro 우선
+  // Pro 선호 시 gemini-3.8-pro 우선
   if (modelPref === 'pro') {
     targetModels.sort((a, b) => (b.includes('pro') ? 1 : 0) - (a.includes('pro') ? 1 : 0));
   } else {

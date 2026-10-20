@@ -801,14 +801,14 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 모델 우선순위 정렬: gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash]
+        // [구글 공식 권장 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
         const getScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-2.5-flash' || lower.includes('2.5-flash')) return isProPref ? 90 : 100;
-          if (lower === 'gemini-2.0-flash' || lower.includes('2.0-flash')) return isProPref ? 85 : 95;
-          if (lower === 'gemini-1.5-flash' || lower.includes('1.5-flash')) return isProPref ? 80 : 90;
-          if (lower === 'gemini-2.5-pro' || lower.includes('2.5-pro')) return isProPref ? 100 : 85;
-          if (lower === 'gemini-1.5-pro' || lower.includes('1.5-pro')) return isProPref ? 95 : 80;
+          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return isProPref ? 100 : 90;
+          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return isProPref ? 90 : 100;
+          if (lower.includes('3.8')) return 85;
+          if (lower.includes('2.5-flash')) return isProPref ? 80 : 85;
+          if (lower.includes('2.5-pro')) return isProPref ? 85 : 80;
           if (lower.includes('flash')) return isProPref ? 50 : 70;
           if (lower.includes('pro')) return isProPref ? 70 : 50;
           return 10;
@@ -829,9 +829,9 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   }
 
   if (isProPref) {
-    return ['gemini-2.5-pro', 'gemini-2.5-flash'];
+    return ['gemini-3.8-pro', 'gemini-3.8-flash'];
   }
-  return ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -849,7 +849,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   const startTime = performance.now();
   // 상위 최적 1~2개 모델만 신속 시도 (타임아웃 원천 차단)
   const rawModels = await getBrowserSupportedGeminiModels(apiKey);
-  const candidateModels = (rawModels && rawModels.length > 0) ? rawModels.slice(0, 2) : ['gemini-2.5-flash', 'gemini-2.0-flash'];
+  const candidateModels = (rawModels && rawModels.length > 0) ? rawModels.slice(0, 2) : ['gemini-3.8-flash', 'gemini-3.8-pro'];
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
     return { text: null, error: 'ABORTED', isAborted: true };

@@ -20,7 +20,7 @@
 | **UI Framework** | Bootstrap 5.3.2 (CSS & JS 번들 CDN), Bootstrap Icons 1.11.3 | 모달, 탭, 드롭다운, 반응형 그리드 |
 | **Data Visualization** | Chart.js 4.4.1 (UMD CDN) | 3개의 독립 단위 꺾은선 그래프 (체중, 운동 점수, 식단 점수) |
 | **Backend & DB** | Google Apps Script (GAS) Web App + Google Spreadsheet | `gas_backend.js`를 웹 앱으로 배포하여 RESTful API 제공 |
-| **AI Engine** | Google Gemini API (`gemini-2.5-flash`, `gemini-1.5-pro` 등) | 브라우저 직통 호출(Direct Mode) & GAS 백엔드 호출 하이브리드 지원 |
+| **AI Engine** | Google Gemini API (`gemini-3.8-flash`, `gemini-3.8-pro` 등) | 브라우저 직통 호출(Direct Mode) & GAS 백엔드 호출 하이브리드 지원 |
 | **Persistence** | `localStorage` (설정 및 캐시) + Google Sheets (영구 DB) | 오프라인 시 완벽한 Mock DB Fall-Safe 제공 |
 
 ---
