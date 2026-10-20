@@ -1053,12 +1053,14 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
+        // [구글 공식 권장 모델 우선순위 정렬: gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash]
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
-          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return 90;
-          if (lower.includes('3.8')) return 80;
+          if (lower === 'gemini-2.5-flash' || lower.includes('2.5-flash')) return 100;
+          if (lower === 'gemini-2.0-flash' || lower.includes('2.0-flash')) return 95;
+          if (lower === 'gemini-1.5-flash' || lower.includes('1.5-flash')) return 90;
+          if (lower === 'gemini-2.5-pro' || lower.includes('2.5-pro')) return 85;
+          if (lower === 'gemini-1.5-pro' || lower.includes('1.5-pro')) return 80;
           if (lower.includes('flash')) return 70;
           if (lower.includes('pro')) return 60;
           return 10;
@@ -1067,8 +1069,9 @@ function getGoogleSupportedTextModels(apiKey) {
         textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
 
         if (textModels.length > 0) {
-          cache.put('SUPPORTED_MODELS_CACHE_V38', JSON.stringify(textModels), 21600);
-          return textModels;
+          const topModels = textModels.slice(0, 2);
+          cache.put('SUPPORTED_MODELS_CACHE_V38', JSON.stringify(topModels), 21600);
+          return topModels;
         }
       }
     }
@@ -1076,7 +1079,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
+  return ['gemini-2.5-flash', 'gemini-2.0-flash'];
 }
 
 /**
@@ -1125,14 +1128,14 @@ function callGemini(prompt, systemInstruction, payload) {
     return { text: null, debug: debugInfo };
   }
 
-  // 1. 구글 권장 최신 모델 (gemini-3.8-flash, gemini-3.8-pro)
+  // 1. 구글 권장 초고속 모델 (상위 2개로 엄격 제한하여 타임아웃 원천 차단)
   const modelPref = (payload && payload.modelPref) ? payload.modelPref : 'auto';
   const supportedModels = getGoogleSupportedTextModels(apiKey);
   let targetModels = (supportedModels && supportedModels.length > 0)
-    ? supportedModels.slice()
-    : ['gemini-3.8-flash', 'gemini-3.8-pro'];
+    ? supportedModels.slice(0, 2)
+    : ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
-  // Pro 선호 시 gemini-3.8-pro를 1순위로 승격
+  // Pro 선호 시 gemini-2.5-pro 우선
   if (modelPref === 'pro') {
     targetModels.sort((a, b) => (b.includes('pro') ? 1 : 0) - (a.includes('pro') ? 1 : 0));
   } else {
@@ -1152,10 +1155,7 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 4096,
-        thinkingConfig: {
-          thinkingBudget: 512
-        }
+        maxOutputTokens: 4096
       }
     };
     if (systemInstruction) {
@@ -1163,29 +1163,15 @@ function callGemini(prompt, systemInstruction, payload) {
     }
 
     try {
-      let response = UrlFetchApp.fetch(url, {
+      const response = UrlFetchApp.fetch(url, {
         method: 'post',
         contentType: 'application/json',
         payload: JSON.stringify(bodyObj),
         muteHttpExceptions: true
       });
 
-      let code = response.getResponseCode();
-      let responseText = response.getContentText();
-
-      // 특정 모델에서 thinkingConfig 미지원으로 HTTP 400 발생 시, thinkingConfig 제거 후 1회 즉시 재시도
-      if (code === 400 && bodyObj.generationConfig.thinkingConfig) {
-        delete bodyObj.generationConfig.thinkingConfig;
-        response = UrlFetchApp.fetch(url, {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify(bodyObj),
-          muteHttpExceptions: true
-        });
-        code = response.getResponseCode();
-        responseText = response.getContentText();
-      }
-
+      const code = response.getResponseCode();
+      const responseText = response.getContentText();
       debugInfo.httpStatus = code;
 
       if (code === 200) {
@@ -1278,8 +1264,9 @@ function formatObjectAsFullProfile(obj, excludeKeys) {
  * - '운동 루틴 수정 제안 지침'이 있다면 최우선 반영
  */
 function handleAiWorkoutRoutine(ss, payload) {
-  const guidelineSheet = findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']);
-  const guidelines = getGuidelinesData(guidelineSheet);
+  const guidelines = (payload && payload.guidelines && payload.guidelines.exercise)
+    ? payload.guidelines
+    : getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
   const baseExerciseGuideline = guidelines.exercise || '점진적 과부하와 관절 부상 방지(스트레칭 10분 필수), 주 3~4회 루틴';
 
   const member = payload.member || {};
@@ -1419,8 +1406,9 @@ DAY7 (휴식) - 완전 휴식 및 에너지 재충전`;
  * - '식단 수정 제안 지침'이 있다면 최우선 반영
  */
 function handleAiDietPlan(ss, payload) {
-  const guidelineSheet = findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']);
-  const guidelines = getGuidelinesData(guidelineSheet);
+  const guidelines = (payload && payload.guidelines && payload.guidelines.diet)
+    ? payload.guidelines
+    : getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
   const baseDietGuideline = guidelines.diet || '극단적 탄수화물 제한 지양, 매끼니 양질의 단백질 20~30g과 식이섬유 포함';
 
   const member = payload.member || {};

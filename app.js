@@ -801,22 +801,25 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 모델 우선순위 정렬: gemini-3.8-flash / gemini-3.8-pro]
+        // [구글 공식 권장 모델 우선순위 정렬: gemini-2.5-flash / gemini-2.0-flash / gemini-1.5-flash]
         const getScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return isProPref ? 100 : 90;
-          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return isProPref ? 90 : 100;
-          if (lower.includes('3.8')) return 85;
-          if (lower.includes('pro')) return isProPref ? 70 : 50;
+          if (lower === 'gemini-2.5-flash' || lower.includes('2.5-flash')) return isProPref ? 90 : 100;
+          if (lower === 'gemini-2.0-flash' || lower.includes('2.0-flash')) return isProPref ? 85 : 95;
+          if (lower === 'gemini-1.5-flash' || lower.includes('1.5-flash')) return isProPref ? 80 : 90;
+          if (lower === 'gemini-2.5-pro' || lower.includes('2.5-pro')) return isProPref ? 100 : 85;
+          if (lower === 'gemini-1.5-pro' || lower.includes('1.5-pro')) return isProPref ? 95 : 80;
           if (lower.includes('flash')) return isProPref ? 50 : 70;
+          if (lower.includes('pro')) return isProPref ? 70 : 50;
           return 10;
         };
 
         textModels.sort((a, b) => getScore(b) - getScore(a));
 
         if (textModels.length > 0) {
-          localStorage.setItem(cacheKey, JSON.stringify(textModels));
-          return textModels;
+          const topModels = textModels.slice(0, 2);
+          localStorage.setItem(cacheKey, JSON.stringify(topModels));
+          return topModels;
         }
       }
     }
@@ -826,9 +829,9 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   }
 
   if (isProPref) {
-    return ['gemini-3.8-pro', 'gemini-3.8-flash'];
+    return ['gemini-2.5-pro', 'gemini-2.5-flash'];
   }
-  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
+  return ['gemini-2.5-flash', 'gemini-2.0-flash'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -844,8 +847,9 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
 
   const startTime = performance.now();
-  // 서로 다른 인프라 클러스터 모델 목록 (1.5-flash, 1.5-pro, 2.0-flash)
-  const candidateModels = await getBrowserSupportedGeminiModels(apiKey);
+  // 상위 최적 1~2개 모델만 신속 시도 (타임아웃 원천 차단)
+  const rawModels = await getBrowserSupportedGeminiModels(apiKey);
+  const candidateModels = (rawModels && rawModels.length > 0) ? rawModels.slice(0, 2) : ['gemini-2.5-flash', 'gemini-2.0-flash'];
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
     return { text: null, error: 'ABORTED', isAborted: true };
@@ -860,6 +864,15 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
+    // 15초 제한 타임아웃 컨트롤러 (한 모델에서 무한정 대기 방지)
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), 15000);
+
+    const onUserAbort = () => timeoutController.abort();
+    if (currentTaskAbortController) {
+      currentTaskAbortController.signal.addEventListener('abort', onUserAbort, { once: true });
+    }
+
     try {
       const bodyObj = {
         contents: [{ parts: [{ text: prompt }] }],
@@ -868,30 +881,17 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
           temperature: 0.7,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 4096,
-          thinkingConfig: {
-            thinkingBudget: 512
-          }
+          maxOutputTokens: 4096
         }
       };
 
-      let res = await fetch(url, {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined,
+        signal: timeoutController.signal,
         body: JSON.stringify(bodyObj)
       });
-
-      // 특정 모델에서 thinkingConfig 미지원으로 HTTP 400 발생 시, thinkingConfig 제거 후 1회 즉시 재시도
-      if (!res.ok && res.status === 400 && bodyObj.generationConfig.thinkingConfig) {
-        delete bodyObj.generationConfig.thinkingConfig;
-        res = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined,
-          body: JSON.stringify(bodyObj)
-        });
-      }
+      clearTimeout(timeoutId);
 
       if (res.ok) {
         const json = await res.json();
@@ -922,21 +922,29 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
         lastErrorDetail = `[HTTP ${res.status}] ${errText.slice(0, 150)}`;
         console.warn(`[브라우저 직통 ${model} 응답 오류 HTTP ${res.status}]`, errText);
 
-        // 503(High demand) 발생 시 0.8초 백오프 후 다른 클러스터 모델로 전환
+        // 429 또는 503인 경우 다음 모델로 빠르게 전환 (0.3초 대기)
         if (res.status === 503 || res.status === 429) {
           if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
             return { text: null, error: 'ABORTED', isAborted: true };
           }
-          await new Promise(r => setTimeout(r, 800));
+          await new Promise(r => setTimeout(r, 300));
         }
       }
     } catch (e) {
-      if (e.name === 'AbortError' || (currentTaskAbortController && currentTaskAbortController.signal.aborted)) {
-        console.log('[브라우저 직통 AI 호출 취소됨]');
+      clearTimeout(timeoutId);
+      if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
         return { text: null, error: 'ABORTED', isAborted: true };
       }
-      lastErrorDetail = `[네트워크 예외] ${e.message}`;
-      console.warn(`[브라우저 직통 ${model} 네트워크 예외]`, e);
+      if (e.name === 'AbortError') {
+        lastErrorDetail = `[타임아웃 15초 초과] ${model}`;
+      } else {
+        lastErrorDetail = `[네트워크 예외] ${e.message}`;
+      }
+      console.warn(`[브라우저 직통 ${model} 예외]`, e);
+    } finally {
+      if (currentTaskAbortController) {
+        currentTaskAbortController.signal.removeEventListener('abort', onUserAbort);
+      }
     }
   }
 
@@ -2703,7 +2711,8 @@ DAY7 (휴식) - 완전 휴식 및 컨디션 회복
       const res = await postToGasBackend({
         action: 'generateWorkoutRoutine',
         member: AppState.selectedMember,
-        customExerciseGuideline: customGuideline
+        customExerciseGuideline: customGuideline,
+        guidelines: AppState.guidelines
       });
       hideLoadingOverlay();
       if (res && res.status === 'cancelled') {
@@ -2835,7 +2844,8 @@ ${customGuideline ? customGuideline : '현재 별도 수정 지침 없음. 기�
       const res = await postToGasBackend({
         action: 'generateDietPlan',
         member: AppState.selectedMember,
-        customDietGuideline: customGuideline
+        customDietGuideline: customGuideline,
+        guidelines: AppState.guidelines
       });
       hideLoadingOverlay();
       if (res && res.status === 'cancelled') {
