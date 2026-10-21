@@ -22,6 +22,10 @@ const COACH_OFFLINE_PASSWORD_HASH = '297ddf5c3d11c1cfdc16118d667afb3d68fa7fe4eb6
 
 // 로컬 스토리지 키
 const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
+
+// 기본 구글 Apps Script 웹앱 연동 URL (대시보드 및 회원 페이지 자동 직결용)
+const DEFAULT_GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzkKdXbM2KNOC2PvBcOtzxR13wt5Em_JUQdvotr22wdb2hxwYTc2eGZmzSHUArqGSNYWQ/exec';
+
 const STORAGE_GEMINI_KEY = 'coach_dash_gemini_key_v1';
 const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
 const STORAGE_READ_AI_DRAFTS_KEY = 'coach_dash_read_ai_drafts_v1';
@@ -229,7 +233,7 @@ const MOCK_DB = {
 
 // 애플리케이션 전역 상태 객체
 const AppState = {
-  gasUrl: localStorage.getItem(STORAGE_GAS_URL_KEY) || '',
+  gasUrl: (localStorage.getItem(STORAGE_GAS_URL_KEY) || DEFAULT_GAS_API_URL || '').trim(),
   geminiApiKey: localStorage.getItem(STORAGE_GEMINI_KEY) || '',
   modelPref: localStorage.getItem(STORAGE_MODEL_PREF_KEY) || 'auto',
   isOnline: false,
@@ -610,7 +614,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  * ==============================================================================
  */
 async function loadAllData() {
-  const gasUrl = AppState.gasUrl.trim();
+  const gasUrl = (AppState.gasUrl || DEFAULT_GAS_API_URL || '').trim();
 
   if (gasUrl) {
     let controller = null;
@@ -4749,3 +4753,41 @@ function escapeHtml(str) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#039;');
 }
+
+/**
+ * [코치 대시보드] 선택된 회원의 전용 마이페이지 링크 복사 (스마트폰 직결용)
+ * - gas 파라미터를 자동으로 포함하여 회원이 모바일 브라우저로 열었을 때 설정 없이 즉시 시트 데이터 로드
+ */
+function copyMemberViewLink() {
+  const mem = AppState.selectedMember;
+  if (!mem) {
+    showToast('선택된 회원이 없습니다. 좌측 목록에서 회원을 먼저 선택해 주세요.', 'warning');
+    return;
+  }
+  const memberId = getMemberNo(mem) || getMemberName(mem);
+  const gasUrl = (AppState.gasUrl || localStorage.getItem(STORAGE_GAS_URL_KEY) || DEFAULT_GAS_API_URL || '').trim();
+
+  let currentPath = window.location.pathname;
+  if (currentPath.endsWith('index.html')) {
+    currentPath = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+  } else if (!currentPath.endsWith('/')) {
+    currentPath = currentPath.substring(0, currentPath.lastIndexOf('/') + 1);
+  }
+  const baseUrl = `${window.location.origin}${currentPath}view.html`;
+  let fullUrl = `${baseUrl}?id=${encodeURIComponent(memberId)}`;
+  if (gasUrl) {
+    fullUrl += `&gas=${encodeURIComponent(gasUrl)}`;
+  }
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(fullUrl).then(() => {
+      showToast(`🔗 [${getMemberName(mem)}] 회원의 마이페이지 전용 링크가 복사되었습니다!\n회원님께 카카오톡/문자로 전달해 주세요.`, 'success', 5000);
+    }).catch(() => {
+      prompt('아래 회원 전용 링크를 복사하여 회원님께 전달해 주세요:', fullUrl);
+    });
+  } else {
+    prompt('아래 회원 전용 링크를 복사하여 회원님께 전달해 주세요:', fullUrl);
+  }
+}
+window.copyMemberViewLink = copyMemberViewLink;
+

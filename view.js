@@ -329,15 +329,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /**
- * 올바르지 않은 접근 화면 표시 (원인별 지능형 힌트 제공)
+ * 올바르지 않은 접근 또는 통신 지연 화면 표시 (원인별 지능형 힌트 및 제목 제공)
  */
-function showInvalidAccessScreen(reasonHint = '') {
+function showInvalidAccessScreen(reasonHint = '', customTitle = '', customDesc = '') {
   document.getElementById('pageLoadingScreen')?.classList.add('d-none');
   const invalidScreen = document.getElementById('invalidAccessScreen');
   if (invalidScreen) {
     invalidScreen.classList.remove('d-none');
   }
   document.getElementById('memberPageContent')?.classList.add('d-none');
+
+  const titleEl = document.getElementById('invalidAccessTitle');
+  if (titleEl) {
+    titleEl.textContent = customTitle || '올바르지 않은 접근입니다';
+  }
+
+  const descEl = document.getElementById('invalidAccessMainDesc');
+  if (descEl && customDesc) {
+    descEl.innerHTML = customDesc;
+  }
 
   const reasonEl = document.getElementById('invalidAccessReasonHint');
   if (reasonEl) {
@@ -592,7 +602,50 @@ function extractFeedbackMemberNo(fb) {
 const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v3';
 
 /**
- * 회원 데이터 로드 (캐시 우선 즉시 렌더링 + 백그라운드 최신 동기화)
+ * 구글 Apps Script(GAS) 백엔드 데이터 비동기 호출 (지능형 2회 재시도 & 넉넉한 콜드스타트 대기)
+ * 1차: 38초 (구글 클라우드 컨테이너 콜드스타트 및 302 리다이렉트 대기)
+ * 2차: 20초 (1차 실패 시 1.2초 대기 후 활성화된 컨테이너로 초고속 재시도)
+ */
+async function fetchSheetDataWithRetry(apiUrl) {
+  if (!apiUrl) return null;
+  const attempts = [
+    { timeoutMs: 38000, delayMs: 0 },
+    { timeoutMs: 20000, delayMs: 1200 }
+  ];
+
+  for (let i = 0; i < attempts.length; i++) {
+    const { timeoutMs, delayMs } = attempts[i];
+    if (delayMs > 0) {
+      console.log(`[회원 뷰어] ⏳ 구글 서버 콜드스타트 대기 후 ${delayMs}ms 뒤 ${i + 1}차 재시도...`);
+      await new Promise(res => setTimeout(res, delayMs));
+    }
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+      const fetchUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=getAll&t=${Date.now()}`;
+      
+      const res = await fetch(fetchUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
+      const json = await res.json();
+      if (json && json.status === 'success' && json.data) {
+        return json.data;
+      }
+    } catch (err) {
+      console.warn(`[회원 뷰어] GAS 통신 ${i + 1}차 시도 실패:`, err.message || err);
+    }
+  }
+  return null;
+}
+
+/**
+ * 회원 데이터 로드 (초고속 캐시 우선 렌더링 + 백그라운드 최신 동기화 + 안전 캐시 보호)
  */
 async function loadMemberPageData(targetId) {
   const loadingScreen = document.getElementById('pageLoadingScreen');
@@ -602,114 +655,150 @@ async function loadMemberPageData(targetId) {
   const storageGas = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
   const gasUrl = urlGas || storageGas || DEFAULT_GAS_API_URL;
 
-
-  if (urlGas && urlGas !== storageGas) {
+  // 유효한 GAS URL은 로컬 스토리지에 자동 보관하여 이후 브라우저 재방문 시에도 즉시 활용
+  if (gasUrl && storageGas !== gasUrl) {
     try {
-      localStorage.setItem(STORAGE_GAS_URL_KEY, urlGas);
+      localStorage.setItem(STORAGE_GAS_URL_KEY, gasUrl);
     } catch (e) {}
   }
 
   // -------------------------------------------------------------------------
-  // [1단계: 초고속 캐시 검사 (0.05초 즉시 로딩)]
+  // [1단계: 초고속 캐시 검사 (0.05초 즉시 렌더링)]
   // -------------------------------------------------------------------------
   let hasRenderedFromCache = false;
+  let cachedMembers = [];
+  let cachedFeedbacks = [];
   try {
     const rawCache = localStorage.getItem(CACHE_KEY_VIEW_DATA) || sessionStorage.getItem(CACHE_KEY_VIEW_DATA);
     if (rawCache) {
       const cached = JSON.parse(rawCache);
-      const combinedMembers = [...(cached.members || []), ...VIEW_MOCK_DB.members];
+      cachedMembers = Array.isArray(cached.members) ? cached.members : [];
+      cachedFeedbacks = Array.isArray(cached.feedbacks) ? cached.feedbacks : [];
+      const combinedMembers = [...cachedMembers, ...VIEW_MOCK_DB.members];
       const matched = findMemberInList(combinedMembers, targetId);
       if (matched) {
         console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(matched)}`);
-        // 실제 캐시된 시트 피드백만 사용 (더미 데이터 혼합 배제)
-        applyMemberData(matched, cached.feedbacks || [], false);
+        applyMemberData(matched, cachedFeedbacks, false);
+
+        // 캐시 즉시 렌더링 중 상태 표시
+        const statusBadge = document.getElementById('dataConnectionStatusBadge');
+        if (statusBadge) {
+          statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+          statusBadge.textContent = '🟢 저장된 데이터 표시 중 (최신 동기화 확인 중...)';
+          statusBadge.title = '이전에 정상 동기화된 회원 데이터가 즉시 표시되었습니다. 구글 서버와 최신 내용을 확인하는 중입니다.';
+        }
+
         if (loadingScreen) loadingScreen.classList.add('d-none');
         checkMemberAuthAndDisplay();
         hasRenderedFromCache = true;
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    console.warn('[회원 뷰어] 캐시 복원 예외 무시:', e);
+  }
 
   // -------------------------------------------------------------------------
-  // [2단계: 구글 시트 백엔드(GAS) 최신 데이터 동기화 (넉넉한 25초 타임아웃)]
+  // [2단계: 구글 시트 백엔드(GAS) 최신 데이터 비동기 동기화 (38s + 20s 자동 재시도)]
   // -------------------------------------------------------------------------
   let allMembers = [...VIEW_MOCK_DB.members];
   let allFeedbacks = [];
   let isSheetSuccess = false;
 
-  if (gasUrl) {
+  const sheetData = await fetchSheetDataWithRetry(gasUrl);
+
+  if (sheetData) {
+    const freshMembers = Array.isArray(sheetData.members) ? sheetData.members : [];
+    const freshFeedbacks = Array.isArray(sheetData.feedbacks) ? sheetData.feedbacks : [];
+
+    allMembers = [...freshMembers, ...VIEW_MOCK_DB.members];
+    allFeedbacks = freshFeedbacks;
+    isSheetSuccess = true;
+
+    console.log(`[회원 뷰어] GAS 최신 동기화 성공! 시트 회원: ${freshMembers.length}명, 실제 시트 피드백: ${allFeedbacks.length}건`);
+
+    // 최신 정상 시트 데이터 로컬 영구 캐시 갱신
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 25000); // 콜드스타트 충분히 대기
-
-      const fetchUrl = `${gasUrl}?action=getAll&t=${Date.now()}`;
-      const res = await fetch(fetchUrl, { signal: controller.signal });
-      clearTimeout(timeoutId);
-
-      const json = await res.json();
-      if (json && json.status === 'success' && json.data) {
-        const freshMembers = Array.isArray(json.data.members) ? json.data.members : [];
-        const freshFeedbacks = Array.isArray(json.data.feedbacks) ? json.data.feedbacks : [];
-
-        // 회원은 시트 회원 우선 + 테스트 대비 Mock 회원 결합
-        allMembers = [...freshMembers, ...VIEW_MOCK_DB.members];
-        // ★ 피드백은 100% 실제 구글 시트 피드백만 사용! (M001, M002 더미 피드백 혼입 완전 차단)
-        allFeedbacks = freshFeedbacks;
-        isSheetSuccess = true;
-
-        console.log(`[회원 뷰어] GAS 최신 동기화 성공! 시트 회원: ${freshMembers.length}명, 실제 시트 피드백: ${allFeedbacks.length}건`);
-
-        // 캐시 업데이트 (순수 시트 데이터만 캐싱)
-        try {
-          const cachePayload = {
-            members: freshMembers,
-            feedbacks: freshFeedbacks,
-            timestamp: Date.now()
-          };
-          localStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
-          sessionStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
-        } catch (e) {}
-      }
-    } catch (e) {
-      console.warn('[회원 뷰어] GAS 통신 대기 초과 또는 실패, 안전 백업 모드로 전환:', e);
-    }
+      const cachePayload = {
+        members: freshMembers,
+        feedbacks: freshFeedbacks,
+        timestamp: Date.now()
+      };
+      localStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
+      sessionStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
+    } catch (e) {}
+  } else {
+    console.warn('[회원 뷰어] GAS 통신 응답 지연 또는 일시적 오류 발생');
   }
-
-  // 시트 연결 실패 시에만 순수 오프라인 Mock DB 사용
-  if (!isSheetSuccess) {
-    allMembers = VIEW_MOCK_DB.members;
-    allFeedbacks = VIEW_MOCK_DB.feedbacks;
-  }
-
 
   // -------------------------------------------------------------------------
-  // [3단계: 최종 회원 매칭 및 마이페이지 활성화]
+  // [3단계: 최종 회원 매칭 및 마이페이지 활성화 (절대 캐시 훼손 금지 원칙)]
   // -------------------------------------------------------------------------
   if (loadingScreen) loadingScreen.classList.add('d-none');
 
-  const matchedMember = findMemberInList(allMembers, targetId);
+  if (isSheetSuccess) {
+    // [성공] 구글 시트 최신 데이터로 정확히 갱신
+    const matchedMember = findMemberInList(allMembers, targetId);
 
-  if (matchedMember) {
-    applyMemberData(matchedMember, allFeedbacks, !isSheetSuccess);
-    console.log(`[회원 뷰어] 회원 매칭 완료: ${getMemberName(matchedMember)} (ID: ${targetId})`);
+    if (matchedMember) {
+      applyMemberData(matchedMember, allFeedbacks, false);
+      console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(matchedMember)} (ID: ${targetId})`);
 
-    if (!hasRenderedFromCache) {
-      checkMemberAuthAndDisplay();
-    } else {
-      const memberId = getMemberNo(matchedMember) || getMemberName(matchedMember);
-      const authKey = `member_auth_${memberId}`;
-      if (localStorage.getItem(authKey) === 'true' || sessionStorage.getItem(authKey) === 'true') {
-        unlockAndRenderMemberPage();
+      if (!hasRenderedFromCache) {
+        checkMemberAuthAndDisplay();
+      } else {
+        const memberId = getMemberNo(matchedMember) || getMemberName(matchedMember);
+        const authKey = `member_auth_${memberId}`;
+        if (localStorage.getItem(authKey) === 'true' || sessionStorage.getItem(authKey) === 'true') {
+          unlockAndRenderMemberPage();
+        }
       }
+    } else {
+      console.warn(`[회원 뷰어] 시트 내 회원 매칭 실패: ${targetId}`);
+      showInvalidAccessScreen(`
+        <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
+        <div class="text-secondary small mt-1">
+          등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
+        </div>
+      `);
     }
   } else {
-    console.warn(`[회원 뷰어] 최종 매칭 실패: ${targetId}`);
-    showInvalidAccessScreen(`
-      <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
-      <div class="text-secondary small mt-1">
-        등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
-      </div>
-    `);
+    // [실패 / 지연 발생 시 방어 로직]
+    if (hasRenderedFromCache) {
+      // ★ [핵심 방어] 이미 캐시된 실제 회원 데이터로 화면을 보고 있는 중이라면
+      // 백그라운드 통신 실패 시 절대 Mock으로 덮어쓰거나 에러 화면을 띄우지 않고 기존 데이터 유지!
+      console.log('[회원 뷰어] 🛡️ 통신 지연에도 불구하고 기존 캐시된 실제 회원 화면을 안전하게 보존합니다.');
+      const statusBadge = document.getElementById('dataConnectionStatusBadge');
+      if (statusBadge) {
+        statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+        statusBadge.textContent = '🟢 저장된 데이터 표시 중 (실시간 재동기화 대기)';
+        statusBadge.title = '구글 서버 응답이 지연되어 최근 저장된 정상 데이터를 안전하게 표시하고 있습니다. 화면은 계속 정상 이용하실 수 있습니다.';
+      }
+    } else {
+      // 캐시도 없고 시트 연결도 안 된 첫 접속의 경우:
+      const mockMatched = findMemberInList(VIEW_MOCK_DB.members, targetId);
+      if (mockMatched) {
+        // Mock DB에 존재하는 테스트 회원인 경우에만 Mock 표시
+        applyMemberData(mockMatched, VIEW_MOCK_DB.feedbacks, true);
+        checkMemberAuthAndDisplay();
+      } else {
+        // 실존 회원이지만 첫 접속 시 구글 서버가 지연된 경우: 에러가 아닌 친절한 재연결 안내 제공
+        showInvalidAccessScreen(`
+          <div class="alert alert-warning border text-start mb-3">
+            <div class="fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>구글 시트 서버 응답 지연</div>
+            <div class="small">
+              회원님의 코칭 데이터를 구글 시트에서 불러오는 도중 통신 지연이 발생했습니다.<br>
+              잠시 후 아래 <strong>[🔄 다시 시도]</strong> 버튼을 눌러주시면 즉시 정상 연결됩니다.
+            </div>
+          </div>
+          <div class="text-muted small mb-2">
+            확인 대상 회원 식별값: <code>${escapeHtml(targetId)}</code>
+          </div>
+        `, '구글 시트 서버 응답 지연', `
+          코치님께서 회원님의 데이터를 정상 등록하셨으나, 구글 서버의 응답이 일시적으로 지연되고 있습니다.<br>
+          <span class="small text-secondary">아래 [다시 시도]를 누르시거나 잠시 후 다시 접속해 주세요.</span>
+        `);
+      }
+    }
   }
 }
 
@@ -2222,7 +2311,7 @@ function promptGasUrl() {
 function copyFullMemberLink() {
   const member = CurrentMemberState.member;
   const memberId = member ? (getMemberNo(member) || getMemberName(member)) : (extractMemberIdSmartly() || 'M001');
-  const gasUrl = (localStorage.getItem(STORAGE_GAS_URL_KEY) || '').trim();
+  const gasUrl = (localStorage.getItem(STORAGE_GAS_URL_KEY) || DEFAULT_GAS_API_URL || '').trim();
 
   const baseUrl = window.location.origin + window.location.pathname;
   let fullUrl = `${baseUrl}?id=${encodeURIComponent(memberId)}`;

@@ -290,16 +290,21 @@
             <!-- ----------------------------------------------------------------- -->
             <section class="section-panel" id="panelPersonalInfo">
               <div class="section-header">
-                <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-wrap flex-grow-1">
                   <i class="bi bi-person-vcard text-primary fs-5"></i>
-                  <h5 class="section-title">인적 사항 (사전 설문)</h5>
+                  <h5 class="section-title mb-0">인적 사항 (사전 설문)</h5>
                   <span class="badge bg-dark text-white font-monospace" id="badgeMemberId">M001</span>
                   <span class="badge bg-light text-dark border fw-normal" id="badgeMemberStatus">유효</span>
                   <span class="git-tag-pill" id="badgeMemberTag"><i class="bi bi-tag-fill"></i>4주-체중감량반</span>
                 </div>
-                <button class="btn btn-sm btn-toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePersonalInfo" aria-expanded="true">
-                  <i class="bi bi-chevron-down fs-6"></i>
-                </button>
+                <div class="d-flex align-items-center gap-1 ms-auto">
+                  <button type="button" class="btn btn-xs btn-outline-primary d-inline-flex align-items-center gap-1 px-2.5 py-1 rounded-pill shadow-sm" id="btnCopyMemberLink" onclick="copyMemberViewLink()" title="회원에게 전송할 전용 마이페이지 링크 복사 (스마트폰 즉시 접속용)">
+                    <i class="bi bi-link-45deg"></i><span class="small fw-bold">회원 링크 복사</span>
+                  </button>
+                  <button class="btn btn-sm btn-toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#collapsePersonalInfo" aria-expanded="true">
+                    <i class="bi bi-chevron-down fs-6"></i>
+                  </button>
+                </div>
               </div>
 
               <div class="collapse show" id="collapsePersonalInfo">
