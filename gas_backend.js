@@ -1057,11 +1057,28 @@ function getGoogleSupportedTextModels(apiKey) {
   if (!apiKey) return [];
 
   const cache = CacheService.getScriptCache();
-  const cachedJson = cache.get('SUPPORTED_MODELS_CACHE_V38');
+  // 1. [구버전 캐시 강제 청소] 2.5 이하 모델이 포함되어 있을 수 있는 모든 레거시 캐시 키 강제 즉시 삭제
+  try {
+    cache.remove('SUPPORTED_MODELS_CACHE_V38');
+    cache.remove('SUPPORTED_MODELS_CACHE_V38_ONLY');
+    cache.remove('SUPPORTED_MODELS_CACHE_V38_AND_PRO');
+    cache.remove('SUPPORTED_MODELS_CACHE_V6');
+  } catch (e) { }
+
+  // 2. 신규 전용 캐시 키 (2.5 이하 절대 불가 모델 전용)
+  const CACHE_KEY = 'SUPPORTED_MODELS_V38_STABLE_ONLY_2026';
+  const cachedJson = cache.get(CACHE_KEY);
   if (cachedJson) {
     try {
       const parsed = JSON.parse(cachedJson);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // [중요 2중 방어] 캐시에서 꺼낼 때도 2.5 이하 모델이 포함되어 있다면 즉시 필터링
+        const cleanCached = parsed.filter(m => {
+          const lower = String(m || '').toLowerCase();
+          return !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
+        });
+        if (cleanCached.length > 0) return cleanCached;
+      }
     } catch (e) { }
   }
 
@@ -1101,7 +1118,7 @@ function getGoogleSupportedTextModels(apiKey) {
 
         if (qualifiedModels.length > 0) {
           const topModels = qualifiedModels.slice(0, 2);
-          cache.put('SUPPORTED_MODELS_CACHE_V38_AND_PRO', JSON.stringify(topModels), 21600);
+          cache.put(CACHE_KEY, JSON.stringify(topModels), 21600);
           return topModels;
         }
       }
@@ -1124,6 +1141,7 @@ function testAndAuthorizeUrlFetch() {
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38');
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38_ONLY');
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38_AND_PRO');
+    CacheService.getScriptCache().remove('SUPPORTED_MODELS_V38_STABLE_ONLY_2026');
     const models = getGoogleSupportedTextModels(apiKey);
     Logger.log('✓ 구글이 현재 지원하는 실제 텍스트 모델 (' + models.length + '개): ' + models.join(', '));
   } else {
@@ -1168,6 +1186,15 @@ function callGemini(prompt, systemInstruction, payload) {
     ? supportedModels.slice(0, 2)
     : ['gemini-3.8-flash', 'gemini-pro-latest'];
 
+  // [철통 방어 1] 2.5 이하 모델은 targetModels 목록에서 즉시 필터링 제거
+  targetModels = targetModels.filter(m => {
+    const lower = String(m || '').toLowerCase();
+    return !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
+  });
+  if (targetModels.length === 0) {
+    targetModels = ['gemini-3.8-flash', 'gemini-pro-latest'];
+  }
+
   // Pro 선호 시 gemini-pro-latest 우선
   if (modelPref === 'pro' || modelPref === 'gemini-pro-latest' || modelPref === 'gemini-3.8-pro') {
     targetModels.sort((a, b) => (b.includes('pro') ? 1 : 0) - (a.includes('pro') ? 1 : 0));
@@ -1178,7 +1205,15 @@ function callGemini(prompt, systemInstruction, payload) {
   let lastError = null;
 
   for (let i = 0; i < targetModels.length; i++) {
-    let modelName = targetModels[i];
+    let modelName = String(targetModels[i] || '').trim();
+
+    // [철통 방어 2] 혹시라도 2.5 이하 모델명이 전달되면 즉시 gemini-3.8-flash로 자동 치환
+    const lowerModel = modelName.toLowerCase();
+    if (lowerModel.includes('2.5') || lowerModel.includes('2.0') || lowerModel.includes('1.5') || lowerModel.includes('1.0')) {
+      Logger.log(`[차단] 2.5 이하 레거시 모델(${modelName}) 시도 차단 -> gemini-3.8-flash로 자동 치환`);
+      modelName = 'gemini-3.8-flash';
+    }
+
     // [중요 404 방어] 구글 API에 존재하지 않는 gemini-3.8-pro 요청 시 404 방지를 위해 실제 공식 엔드포인트인 gemini-pro-latest로 자동 매핑
     if (modelName === 'gemini-3.8-pro' || modelName === 'gemini-pro') {
       modelName = 'gemini-pro-latest';
