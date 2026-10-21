@@ -25,8 +25,7 @@
 // 전역 시트 명칭 동의어 목록 (띄어쓰기 및 대소문자 무관 탐색 지원)
 const SHEET_NAMES = {
   MEMBERS: [
-    'Members', 'members', 'Applications', 'applications', '회원목록', '신청서',
-    '회원', '참여자', '참여자목록', '참가자', '설문결과', '응답', '회원관리'
+    'Members', 'members', '회원목록', '회원', '참여자', '참여자목록', '회원관리'
   ],
   FEEDBACKS: [
     'Feedbacks', 'feedbacks', 'DailyFeedbacks', '데일리피드백', '피드백',
@@ -835,9 +834,14 @@ function handleUpdateFeedbackComment(ss, payload) {
   const phoneCol = findColIndex(colMap, [
     '전화번호', '연락처', '휴대폰', 'phone', '핸드폰'
   ]);
-  const dateCol = findColIndex(colMap, [
-    '날짜', 'date', '일자', '피드백날짜', '피드백 날짜', '타임스탬프', '제출일시', '작성일자'
-  ]) || 2;
+  // [핵심] 사용자가 폼에서 입력한 '오늘 날짜' 열을 1순위로 지정 (제출 시점인 타임스탬프와 분리)
+  const todayDateCol = findColIndex(colMap, [
+    '오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자'
+  ]);
+  const timestampCol = findColIndex(colMap, [
+    '타임스탬프', '제출일시', '작성일자', '생성일시'
+  ]);
+  const dateCol = todayDateCol || timestampCol || 2;
   
   let commentCol = findColIndex(colMap, [
     '피드백 코멘트', '피드백코멘트',
@@ -879,22 +883,47 @@ function handleUpdateFeedbackComment(ss, payload) {
     else if (cleanTargetKey && cleanRowName === cleanTargetKey) isNameMatch = true;
     else if (cleanTargetId && rowId && cleanTargetId === rowId) isNameMatch = true;
     else if (cleanTargetKey && rowId && cleanTargetKey === rowId) isNameMatch = true;
-    else if (memberPhone && rowPhone && memberPhone.endsWith(rowPhone) || (rowPhone && rowPhone.endsWith(memberPhone))) isNameMatch = true;
+    else if (memberPhone && rowPhone && (memberPhone.endsWith(rowPhone) || rowPhone.endsWith(memberPhone))) isNameMatch = true;
     else if (cleanTargetName && cleanRowName && (cleanRowName.includes(cleanTargetName) || cleanTargetName.includes(cleanRowName))) isNameMatch = true;
 
-    // 2. 날짜 매칭 (Date 객체, yyyy-MM-dd, 20261012 숫자 추출 매칭 모두 지원)
-    let rawRowDate = values[i][dateCol - 1];
-    let rowDateStr = '';
-    if (rawRowDate instanceof Date) {
-      rowDateStr = Utilities.formatDate(rawRowDate, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
-    } else {
-      rowDateStr = String(rawRowDate || '').trim();
-    }
-    const cleanRowDate = rowDateStr.replace(/[^0-9]/g, '');
-
+    // 2. 날짜 매칭: 피드백 작성 시점(타임스탬프)과 무관하게 회원이 입력한 '오늘 날짜' 기준 1순위 매칭
     let isDateMatch = false;
-    if (rowDateStr && dateStr && (rowDateStr.includes(dateStr) || dateStr.includes(rowDateStr))) isDateMatch = true;
-    else if (cleanRowDate && cleanTargetDate && (cleanRowDate.includes(cleanTargetDate) || cleanTargetDate.includes(cleanRowDate))) isDateMatch = true;
+
+    // (A) 회원이 입력한 '오늘 날짜' 열 1순위 매칭
+    if (todayDateCol) {
+      const rawVal = values[i][todayDateCol - 1];
+      const strVal = (rawVal instanceof Date)
+        ? Utilities.formatDate(rawVal, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd')
+        : String(rawVal || '').trim();
+      const cleanVal = strVal.replace(/[^0-9]/g, '');
+      if (strVal && dateStr && (strVal.includes(dateStr) || dateStr.includes(strVal))) isDateMatch = true;
+      else if (cleanVal && cleanTargetDate && (cleanVal.includes(cleanTargetDate) || cleanTargetDate.includes(cleanVal))) isDateMatch = true;
+    }
+
+    // (B) 1순위 열이 없거나 매칭되지 않은 경우 타임스탬프 열 매칭
+    if (!isDateMatch && timestampCol) {
+      const rawVal = values[i][timestampCol - 1];
+      const strVal = (rawVal instanceof Date)
+        ? Utilities.formatDate(rawVal, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd')
+        : String(rawVal || '').trim();
+      const cleanVal = strVal.replace(/[^0-9]/g, '');
+      if (strVal && dateStr && (strVal.includes(dateStr) || dateStr.includes(strVal))) isDateMatch = true;
+      else if (cleanVal && cleanTargetDate && (cleanVal.includes(cleanTargetDate) || cleanTargetDate.includes(cleanVal))) isDateMatch = true;
+    }
+
+    // (C) 행 내 셀 전체에서 날짜 텍스트 보조 매칭
+    if (!isDateMatch && cleanTargetDate && cleanTargetDate.length >= 8) {
+      for (let c = 0; c < values[i].length; c++) {
+        const cell = values[i][c];
+        const cellStr = (cell instanceof Date)
+          ? Utilities.formatDate(cell, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd')
+          : String(cell || '');
+        if (cellStr.replace(/[^0-9]/g, '').includes(cleanTargetDate)) {
+          isDateMatch = true;
+          break;
+        }
+      }
+    }
 
     if (isNameMatch && isDateMatch) {
       targetRow = i + 1;
@@ -1047,7 +1076,7 @@ function getGoogleSupportedTextModels(apiKey) {
           const desc = String(m.description || '').toLowerCase();
           // [핵심] 2.5 이하 레거시 버전(2.5, 2.0, 1.5, 1.0) 및 1분 이상 걸리는 thinking/비텍스트 모델 엄격 제외
           const isLegacyOrUnder25 = name.includes('2.5') || name.includes('2.0') || name.includes('1.5') || name.includes('1.0') ||
-            desc.includes('2.5') || desc.includes('2.0') || desc.includes('1.5');
+            desc.includes('2.5') || desc.includes('2.0') || desc.includes('1.5') || desc.includes('1.0');
           const isSlowOrNonText = isLegacyOrUnder25 || name.includes('thinking') || desc.includes('thinking') ||
             name.includes('tts') || name.includes('audio') || name.includes('embed') ||
             name.includes('imagen') || name.includes('aqa') || name.includes('speech') ||
@@ -1055,12 +1084,14 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 최신 플래그십 3.8 모델 전용 정렬 (2.5 이하 버전 완전 배제)]
+        // [구글 공식 권장 최신 플래그십 3.8 flash 및 pro 전용 정렬 (2.5 이하 버전 완전 배제)]
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
+          if (lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0')) return 0;
           if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
-          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return 95;
+          if (lower === 'gemini-pro-latest' || lower.includes('pro-latest') || lower.includes('3.1-pro')) return 95;
           if (lower.includes('3.8')) return 90;
+          if (lower.includes('pro')) return 85;
           return 0; // 2.5 이하 및 기타 버전은 0점 처리하여 완전 제외
         };
 
@@ -1070,7 +1101,7 @@ function getGoogleSupportedTextModels(apiKey) {
 
         if (qualifiedModels.length > 0) {
           const topModels = qualifiedModels.slice(0, 2);
-          cache.put('SUPPORTED_MODELS_CACHE_V38_ONLY', JSON.stringify(topModels), 21600);
+          cache.put('SUPPORTED_MODELS_CACHE_V38_AND_PRO', JSON.stringify(topModels), 21600);
           return topModels;
         }
       }
@@ -1079,7 +1110,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
+  return ['gemini-3.8-flash', 'gemini-pro-latest'];
 }
 
 /**
@@ -1092,6 +1123,7 @@ function testAndAuthorizeUrlFetch() {
   if (apiKey) {
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38');
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38_ONLY');
+    CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38_AND_PRO');
     const models = getGoogleSupportedTextModels(apiKey);
     Logger.log('✓ 구글이 현재 지원하는 실제 텍스트 모델 (' + models.length + '개): ' + models.join(', '));
   } else {
@@ -1134,10 +1166,10 @@ function callGemini(prompt, systemInstruction, payload) {
   const supportedModels = getGoogleSupportedTextModels(apiKey);
   let targetModels = (supportedModels && supportedModels.length > 0)
     ? supportedModels.slice(0, 2)
-    : ['gemini-3.8-flash', 'gemini-3.8-pro'];
+    : ['gemini-3.8-flash', 'gemini-pro-latest'];
 
-  // Pro 선호 시 gemini-3.8-pro 우선
-  if (modelPref === 'pro') {
+  // Pro 선호 시 gemini-pro-latest 우선
+  if (modelPref === 'pro' || modelPref === 'gemini-pro-latest' || modelPref === 'gemini-3.8-pro') {
     targetModels.sort((a, b) => (b.includes('pro') ? 1 : 0) - (a.includes('pro') ? 1 : 0));
   } else {
     targetModels.sort((a, b) => (b.includes('flash') ? 1 : 0) - (a.includes('flash') ? 1 : 0));
@@ -1146,7 +1178,11 @@ function callGemini(prompt, systemInstruction, payload) {
   let lastError = null;
 
   for (let i = 0; i < targetModels.length; i++) {
-    const modelName = targetModels[i];
+    let modelName = targetModels[i];
+    // [중요 404 방어] 구글 API에 존재하지 않는 gemini-3.8-pro 요청 시 404 방지를 위해 실제 공식 엔드포인트인 gemini-pro-latest로 자동 매핑
+    if (modelName === 'gemini-3.8-pro' || modelName === 'gemini-pro') {
+      modelName = 'gemini-pro-latest';
+    }
     debugInfo.model = modelName;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
 
@@ -1554,18 +1590,35 @@ function generateDailyFeedbackCore(ss, payload) {
 
   // 최근 체중 추이 텍스트 요약 (운동_실행률_점수, 식단_실행률_점수 동의어 반영)
   let weightHistorySummary = recentFeedbacks.map(f => {
-    const fDate = getGasField(f, ['날짜', 'date', '일자']);
+    const fDate = getGasField(f, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자']);
     const fWeight = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
     const fExScore = getGasField(f, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']);
     const fDietScore = getGasField(f, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']);
-    return `${fDate}: ${fWeight}kg (운동: ${fExScore}점, 식단: ${fDietScore}점)`;
+    const dispEx = (fExScore !== '' && fExScore !== null && fExScore !== undefined) ? fExScore : '-';
+    const dispDiet = (fDietScore !== '' && fDietScore !== null && fDietScore !== undefined) ? fDietScore : '-';
+    return `${fDate}: ${fWeight}kg (운동: ${dispEx}점, 식단: ${dispDiet}점)`;
   }).join('\n');
 
-  const curDate = getGasField(currentFeedback, ['날짜', 'date', '일자']) || '오늘';
+  const curDate = getGasField(currentFeedback, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자']) || '오늘';
   const curWeight = getGasField(currentFeedback, ['공복 몸무게', '공복몸무게', '체중', 'weight']) || '-';
-  const curExScore = getGasField(currentFeedback, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']);
-  const curDietScore = getGasField(currentFeedback, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']);
+  const curExScoreRaw = getGasField(currentFeedback, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']);
+  const curDietScoreRaw = getGasField(currentFeedback, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']);
   const memberStartWeight = getGasField(member, ['시작 체중', '시작체중', '체중', 'weight']) || curWeight;
+
+  const rawExText = String(getGasField(currentFeedback, ['운동내용', '운동 내용', '오늘의 운동', '운동']) || '').toLowerCase();
+  const isNoEx = !rawExText || rawExText.includes('기록된 운동 내용이 없습니다') || rawExText.includes('안함') || rawExText.includes('휴식') || rawExText === 'x' || rawExText.includes('쉬었') || rawExText.includes('못했') || rawExText.includes('없음');
+
+  let defaultExScore = 0;
+  if (curExScoreRaw !== '' && curExScoreRaw !== null && curExScoreRaw !== undefined && !isNaN(parseFloat(curExScoreRaw))) {
+    defaultExScore = Math.max(0, Math.min(5, parseFloat(curExScoreRaw)));
+  } else {
+    defaultExScore = isNoEx ? 0 : 4;
+  }
+
+  let defaultDietScore = 5;
+  if (curDietScoreRaw !== '' && curDietScoreRaw !== null && curDietScoreRaw !== undefined && !isNaN(parseFloat(curDietScoreRaw))) {
+    defaultDietScore = Math.max(0, Math.min(5, parseFloat(curDietScoreRaw)));
+  }
 
   if (!weightHistorySummary) {
     weightHistorySummary = `${curDate}: ${curWeight}kg`;
@@ -1609,8 +1662,8 @@ ${weightHistorySummary}
   "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
   "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
   "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)",
-  "운동_실행률_점수": 4,
-  "식단_실행률_점수": 5
+  "운동_실행률_점수": ${defaultExScore},
+  "식단_실행률_점수": ${defaultDietScore}
 }
 `;
 
@@ -1663,12 +1716,16 @@ ${weightHistorySummary}
           "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
           "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
           "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
-          "운동_실행률_점수": (rawJson['운동_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['운동_실행률_점수'])))
-            ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수'])))
-            : ((!isNaN(parseFloat(curExScore)) && parseFloat(curExScore) <= 5) ? parseFloat(curExScore) : 4),
-          "식단_실행률_점수": (rawJson['식단_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['식단_실행률_점수'])))
-            ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수'])))
-            : ((!isNaN(parseFloat(curDietScore)) && parseFloat(curDietScore) <= 5) ? parseFloat(curDietScore) : 5)
+          "운동_실행률_점수": (curExScoreRaw !== '' && curExScoreRaw !== null && curExScoreRaw !== undefined && !isNaN(parseFloat(curExScoreRaw)))
+            ? Math.max(0, Math.min(5, parseFloat(curExScoreRaw)))
+            : ((rawJson['운동_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['운동_실행률_점수'])))
+                ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수'])))
+                : defaultExScore),
+          "식단_실행률_점수": (curDietScoreRaw !== '' && curDietScoreRaw !== null && curDietScoreRaw !== undefined && !isNaN(parseFloat(curDietScoreRaw)))
+            ? Math.max(0, Math.min(5, parseFloat(curDietScoreRaw)))
+            : ((rawJson['식단_실행률_점수'] !== undefined && !isNaN(parseFloat(rawJson['식단_실행률_점수'])))
+                ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수'])))
+                : defaultDietScore)
         };
       }
     } catch (e) {
@@ -1700,8 +1757,8 @@ ${weightHistorySummary}
       "식단_수정_제안": isWeightStall
         ? "저녁 식단에서 나트륨 섭취를 최소화하고, 칼륨이 풍부한 오이나 토마토 1개를 추가하여 체내 수분 정체 완화"
         : "",
-      "운동_실행률_점수": (parseFloat(curExScore) <= 5 ? parseFloat(curExScore) : 4) || 4,
-      "식단_실행률_점수": (parseFloat(curDietScore) <= 5 ? parseFloat(curDietScore) : 5) || 5
+      "운동_실행률_점수": defaultExScore,
+      "식단_실행률_점수": defaultDietScore
     };
   }
 
@@ -1926,13 +1983,46 @@ function onFormSubmitHandler(e) {
       return { status: 'error', message: '활성 스프레드시트 없음' };
     }
 
-    // [핵심 1] 폼 응답이 기록된 실제 시트 특정
+    // [핵심 1] 폼 응답이 기록된 실제 시트 특정 및 '신청리스트' 등 비피드백 시트 완전 무시
     let feedbackSheet = null;
+    let submittedSheet = null;
     if (e && e.range) {
       try {
-        feedbackSheet = e.range.getSheet();
+        submittedSheet = e.range.getSheet();
       } catch (se) {}
     }
+
+    if (submittedSheet) {
+      const sheetName = submittedSheet.getName().toLowerCase();
+      // [핵심 원칙] 신청리스트 sheet의 데이터는 아무런 역할을 하지 않으며 순전히 신청자 식별용임.
+      // 신청리스트, members, 회원, guidelines 등 피드백 일지가 아닌 시트에서 발생한 제출 트리거는 무조건 스킵
+      if (
+        sheetName.includes('신청') ||
+        sheetName.includes('apply') ||
+        sheetName.includes('application') ||
+        sheetName.includes('member') ||
+        sheetName.includes('회원') ||
+        sheetName.includes('guideline') ||
+        sheetName.includes('지침')
+      ) {
+        Logger.log(`[onFormSubmitHandler 스킵] 피드백 시트가 아닌 시트('${submittedSheet.getName()}')에서 폼 제출 감지 -> 피드백 생성 무시함`);
+        return { status: 'skipped', message: `'${submittedSheet.getName()}' 시트는 피드백 시트가 아니므로 피드백 생성을 스킵합니다.` };
+      }
+
+      // 제출된 시트가 피드백 관련 시트인지 명시적으로 확인 (feedbacks, 피드백, 일지 등)
+      const isFeedbackSheet = sheetName.includes('feedback') || sheetName.includes('피드백') || sheetName.includes('일지') || sheetName.includes('데일리');
+      if (!isFeedbackSheet) {
+        // 혹시 헤더를 확인하여 피드백 시트의 필수 열(공복몸무게, 운동, 식단 등)이 없으면 스킵
+        const firstRowHeaders = submittedSheet.getRange(1, 1, 1, Math.min(submittedSheet.getLastColumn(), 20)).getValues()[0].map(h => String(h).toLowerCase());
+        const hasFeedbackField = firstRowHeaders.some(h => h.includes('몸무게') || h.includes('운동') || h.includes('식단') || h.includes('체중'));
+        if (!hasFeedbackField) {
+          Logger.log(`[onFormSubmitHandler 스킵] 피드백 관련 열이 없는 시트('${submittedSheet.getName()}') 제출 감지 -> 무시함`);
+          return { status: 'skipped', message: `'${submittedSheet.getName()}' 시트는 피드백 시트가 아닙니다.` };
+        }
+      }
+      feedbackSheet = submittedSheet;
+    }
+
     if (!feedbackSheet) {
       feedbackSheet = ss.getSheetByName('feedbacks') || ss.getSheetByName('Feedbacks')
         || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
@@ -2030,10 +2120,10 @@ function onFormSubmitHandler(e) {
       return fName && String(fName).replace(/\s+/g, '').toLowerCase() === cleanTargetName;
     });
 
-    // 날짜 기준 오름차순 정렬 후 최근 3건
+    // 날짜 기준 오름차순 정렬 후 최근 3건 (회원이 입력한 '오늘 날짜' 1순위 반영)
     memberFeedbacks.sort((a, b) => {
-      const dA = new Date(getGasField(a, ['날짜', 'date', '일자']) || 0);
-      const dB = new Date(getGasField(b, ['날짜', 'date', '일자']) || 0);
+      const dA = new Date(getGasField(a, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자']) || 0);
+      const dB = new Date(getGasField(b, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자']) || 0);
       return dA - dB;
     });
     const recentFeedbacks = memberFeedbacks.slice(-3);

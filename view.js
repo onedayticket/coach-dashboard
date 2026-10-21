@@ -481,7 +481,7 @@ function extractFeedbackWeight(fb) {
 }
 
 /**
- * 4. 운동_실행률_점수 추출
+ * 4. 운동_실행률_점수 추출 (0점 미운동 포함 완벽 지원)
  * 실제 시트 헤더: '운동_실행률_점수' 또는 "오늘 운동 강도는 어땠나요? (1 ~ 10)\n예) 7"
  */
 function extractFeedbackExerciseScore(fb) {
@@ -489,11 +489,11 @@ function extractFeedbackExerciseScore(fb) {
   // 1순위: '운동' & '실행률'
   let raw = findValByKeywords(fb, ['운동', '실행률']);
   // 2순위: '운동' & '점수'
-  if (!raw) raw = findValByKeywords(fb, ['운동', '점수']);
+  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['운동', '점수']);
   // 3순위: '운동' & '강도'
-  if (!raw) raw = findValByKeywords(fb, ['운동', '강도']);
+  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['운동', '강도']);
 
-  if (!raw) return '-';
+  if (raw === '' || raw === null || raw === undefined) return '-';
 
   const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
   if (match) {
@@ -504,7 +504,7 @@ function extractFeedbackExerciseScore(fb) {
 }
 
 /**
- * 5. 식단_실행률_점수 추출
+ * 5. 식단_실행률_점수 추출 (0점 포함 완벽 지원)
  * 실제 시트 헤더: '식단_실행률_점수' 또는 "오늘 계획했던 식단 대비 본인의 수행률은 몇점이라고 생각하시나요? (5점 만점)\n예) 3.7"
  */
 function extractFeedbackDietScore(fb) {
@@ -512,11 +512,11 @@ function extractFeedbackDietScore(fb) {
   // 1순위: '식단' & '실행률'
   let raw = findValByKeywords(fb, ['식단', '실행률']);
   // 2순위: '식단' & '수행률'
-  if (!raw) raw = findValByKeywords(fb, ['식단', '수행률']);
+  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['식단', '수행률']);
   // 3순위: '식단' & '점수'
-  if (!raw) raw = findValByKeywords(fb, ['식단', '점수']);
+  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['식단', '점수']);
 
-  if (!raw) return '-';
+  if (raw === '' || raw === null || raw === undefined) return '-';
 
   const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
   if (match) {

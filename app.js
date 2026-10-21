@@ -814,11 +814,13 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 최신 플래그십 3.8 모델 전용 정렬 (2.5 이하 버전 완전 배제)]
+        // [구글 공식 3.8 flash 및 pro 전용 정렬 (2.5 이하 버전 엄격 완전 배제)]
         const getScore = (m) => {
           const lower = m.toLowerCase();
-          if (lower === 'gemini-3.8-pro' || lower.includes('3.8-pro')) return isProPref ? 100 : 90;
+          // 2.5 이하 레거시 버전은 엄격 배제 (0점 처리)
+          if (lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0')) return 0;
           if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return isProPref ? 90 : 100;
+          if (lower === 'gemini-pro-latest' || lower.includes('pro-latest') || lower.includes('3.1-pro')) return isProPref ? 100 : 90;
           if (lower.includes('3.8')) return 85;
           return 0; // 2.5 이하 및 기타 버전은 0점 처리하여 완전 제외
         };
@@ -840,9 +842,9 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   }
 
   if (isProPref) {
-    return ['gemini-3.8-pro', 'gemini-3.8-flash'];
+    return ['gemini-pro-latest', 'gemini-3.8-flash'];
   }
-  return ['gemini-3.8-flash', 'gemini-3.8-pro'];
+  return ['gemini-3.8-flash', 'gemini-pro-latest'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -861,9 +863,12 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   localStorage.removeItem('CACHE_GEMINI_MODELS_V38_flash');
 
   const startTime = performance.now();
-  // 상위 최적 1~2개 모델만 신속 시도 (타임아웃 원천 차단)
+  const isProPref = AppState.modelPref === 'pro';
+  // 상위 최적 1~2개 모델만 신속 시도 (타임아웃 및 404 원천 차단)
   const rawModels = await getBrowserSupportedGeminiModels(apiKey);
-  const candidateModels = (rawModels && rawModels.length > 0) ? rawModels.slice(0, 2) : ['gemini-3.8-flash', 'gemini-3.8-pro'];
+  const candidateModels = (rawModels && rawModels.length > 0)
+    ? rawModels.slice(0, 2)
+    : (isProPref ? ['gemini-pro-latest', 'gemini-3.8-flash'] : ['gemini-3.8-flash', 'gemini-pro-latest']);
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
     return { text: null, error: 'ABORTED', isAborted: true };
@@ -876,7 +881,9 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
       return { text: null, error: 'ABORTED', isAborted: true };
     }
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    let targetModel = model;
+    if (targetModel === 'gemini-3.8-pro') targetModel = 'gemini-pro-latest';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
 
     // 15초 제한 타임아웃 컨트롤러 (한 모델에서 무한정 대기 방지)
     const timeoutController = new AbortController();
@@ -1114,23 +1121,34 @@ DAY7 (휴식) - 완전 휴식 및 에너지 재충전`
         keySource: 'None (로컬 Mock 모드)',
         errorMessage: '로컬 Mock 모드 데일리 피드백'
       },
-      data: {
-        "피드백_요약": `오늘도 바쁜 일상 속에서 운동(${getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore') || 4}점)과 식단(${getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore') || 5}점)을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다.`,
-        "문제점_분석": isWeightStall
-          ? `최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어 순환 대사가 다소 저하된 상태입니다.`
-          : `특이사항 없음`,
-        "보완점_및_개선방안": isWeightStall
-          ? `유산소 운동 비중을 15분 늘리고 저녁 식사의 염분 섭취를 최소화해 보세요. 한 끼의 정체는 4주의 실패가 아니므로 충분한 수분 섭취와 함께 회복탄력성을 유지해 봅시다!`
-          : `현재의 페이스를 안정적으로 유지하면서, 피로도가 느껴질 때는 30분 일찍 취침하여 근육 회복을 도와주세요.`,
-        "운동_수정_제안": isWeightStall
-          ? `기존 웨이트 후 [경사도 러닝머신 20분(속도 5.5, 인클라인 6%)] 또는 [빠르게 걷기 30분] 추가하여 대사율 부스팅`
-          : ``,
-        "식단_수정_제안": isWeightStall
-          ? `저녁 식단에서 나트륨 섭취를 최소화하고, 칼륨이 풍부한 오이나 토마토 1개를 추가하여 체내 수분 정체 완화`
-          : ``,
-        "운동_실행률_점수": (parseFloat(getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore')) <= 5 ? parseFloat(getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore')) : 4) || 4,
-        "식단_실행률_점수": (parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) <= 5 ? parseFloat(getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore')) : 5) || 5
-      }
+      data: (() => {
+        const exScoreRaw = getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore');
+        const exScoreVal = (exScoreRaw !== '' && exScoreRaw !== null && exScoreRaw !== undefined && !isNaN(parseFloat(exScoreRaw)))
+          ? Math.max(0, Math.min(5, parseFloat(exScoreRaw)))
+          : 0;
+        const dietScoreRaw = getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore');
+        const dietScoreVal = (dietScoreRaw !== '' && dietScoreRaw !== null && dietScoreRaw !== undefined && !isNaN(parseFloat(dietScoreRaw)))
+          ? Math.max(0, Math.min(5, parseFloat(dietScoreRaw)))
+          : 5;
+
+        return {
+          "피드백_요약": `오늘도 바쁜 일상 속에서 운동(${exScoreVal}점)과 식단(${dietScoreVal}점)을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다.`,
+          "문제점_분석": isWeightStall
+            ? `최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어 순환 대사가 다소 저하된 상태입니다.`
+            : `특이사항 없음`,
+          "보완점_및_개선방안": isWeightStall
+            ? `유산소 운동 비중을 15분 늘리고 저녁 식사의 염분 섭취를 최소화해 보세요. 한 끼의 정체는 4주의 실패가 아니므로 충분한 수분 섭취와 함께 회복탄력성을 유지해 봅시다!`
+            : `현재의 페이스를 안정적으로 유지하면서, 피로도가 느껴질 때는 30분 일찍 취침하여 근육 회복을 도와주세요.`,
+          "운동_수정_제안": isWeightStall
+            ? `기존 웨이트 후 [경사도 러닝머신 20분(속도 5.5, 인클라인 6%)] 또는 [빠르게 걷기 30분] 추가하여 대사율 부스팅`
+            : ``,
+          "식단_수정_제안": isWeightStall
+            ? `저녁 식단에서 나트륨 섭취를 최소화하고, 칼륨이 풍부한 오이나 토마토 1개를 추가하여 체내 수분 정체 완화`
+            : ``,
+          "운동_실행률_점수": exScoreVal,
+          "식단_실행률_점수": dietScoreVal
+        };
+      })()
     };
   }
 
@@ -2958,7 +2976,7 @@ function updateFeedbackSection(mem) {
 
   const userFeedbacks = AppState.feedbacks
     .filter(f => getMemberName(f) === memberName)
-    .sort((a, b) => new Date(getField(a, '날짜', 'date', '일자')) - new Date(getField(b, '날짜', 'date', '일자')));
+    .sort((a, b) => new Date(getFeedbackDate(a)) - new Date(getFeedbackDate(b)));
 
   renderThreeIndependentCharts(userFeedbacks);
   renderFeedbackTable(userFeedbacks);
@@ -2970,7 +2988,7 @@ function renderThreeIndependentCharts(feedbacks) {
   if (AppState.charts.diet) AppState.charts.diet.destroy();
 
   const labels = feedbacks.map(f => {
-    const raw = String(getField(f, '날짜', 'date', '일자'));
+    const raw = getFeedbackDate(f);
     const d = new Date(raw);
     return isNaN(d) ? raw : `${d.getMonth() + 1}/${d.getDate()}`;
   });
@@ -3186,10 +3204,10 @@ function renderFeedbackTable(feedbacks) {
     return;
   }
 
-  // [요구사항 5-1] 날짜 기준 최신순(내림차순) 정렬
+  // [요구사항 5-1] 날짜 기준 최신순(내림차순) 정렬 (회원 입력 '오늘 날짜' 1순위)
   const sorted = [...feedbacks].sort((a, b) => {
-    const rawA = getField(a, '날짜', 'date', '일자') || '';
-    const rawB = getField(b, '날짜', 'date', '일자') || '';
+    const rawA = getFeedbackDate(a);
+    const rawB = getFeedbackDate(b);
     const timeA = new Date(rawA).getTime() || 0;
     const timeB = new Date(rawB).getTime() || 0;
     if (timeA !== timeB) return timeB - timeA;
@@ -3198,13 +3216,15 @@ function renderFeedbackTable(feedbacks) {
 
   let html = '';
   sorted.forEach((fb) => {
-    const date = getField(fb, '날짜', 'date', '일자') || '-';
+    const date = getFeedbackDate(fb) || '-';
     const memberName = getMemberName(fb) || (AppState.selectedMember ? getMemberName(AppState.selectedMember) : '-');
     const weight = getField(fb, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight') || '-';
 
-    // 1. 점수 추출 (fb['운동_실행률_점수'], fb['식단_실행률_점수'] 우선)
-    const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
-    const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
+    // 1. 점수 추출 (fb['운동_실행률_점수'], fb['식단_실행률_점수'] 우선, 0점 미운동 완벽 보존)
+    const rawEx = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
+    const exScore = (rawEx !== '' && rawEx !== null && rawEx !== undefined) ? rawEx : '-';
+    const rawDiet = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
+    const dietScore = (rawDiet !== '' && rawDiet !== null && rawDiet !== undefined) ? rawDiet : '-';
     
     // 2. 텍스트 추출 (fb['피드백_요약'], fb['문제점_분석'], fb['보완점_및_개선방안'] 우선 탐색)
     let summary = getField(fb, '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary') || '';
@@ -3335,7 +3355,11 @@ function openDailyFeedbackModal(targetDate) {
   const mem = AppState.selectedMember;
   const memberName = getMemberName(mem);
 
-  const targetFb = AppState.feedbacks.find(f => getMemberName(f) === memberName && String(getField(f, '날짜', 'date', '일자')).includes(targetDate));
+  const targetFb = AppState.feedbacks.find(f => {
+    if (getMemberName(f) !== memberName) return false;
+    const fbDate = getFeedbackDate(f);
+    return fbDate === targetDate || fbDate.includes(targetDate) || targetDate.includes(fbDate);
+  });
   if (!targetFb) return;
 
   AppState.currentFeedbackContext = {
@@ -3346,7 +3370,8 @@ function openDailyFeedbackModal(targetDate) {
   // 1. 기본 대상 정보 헤더 세팅
   setElementText('dfModalTargetDate', targetDate);
   setElementText('dfModalTargetName', memberName);
-  setElementText('dfModalWeight', getField(targetFb, '공복 몸무게', '공복몸무게', '체중', 'weight') || '-');
+  const weightVal = getField(targetFb, '공복 몸무게', '공복몸무게', '체중', 'weight');
+  setElementText('dfModalWeight', (weightVal !== '' && weightVal !== null && weightVal !== undefined && weightVal !== '-') ? (String(weightVal).endsWith('kg') ? weightVal : `${weightVal}kg`) : '-');
 
   // 2. [2단계] 회원 오늘 제출 설문 원본 박스 바인딩
   const rawExercise = getField(targetFb, '운동내용', '운동 내용', '오늘의 운동', '운동수행', '운동', 'exerciseContent') || '기록된 운동 내용이 없습니다.';
@@ -3364,11 +3389,24 @@ function openDailyFeedbackModal(targetDate) {
     rawBadge.className = hasRaw ? 'badge bg-success-subtle text-success ms-2 fw-normal' : 'badge bg-secondary-subtle text-secondary ms-2 fw-normal';
   }
 
-  // 3. 점수 필드 세팅 (기존 저장 점수 또는 초안 점수, 없으면 기본값)
+  // 3. 점수 필드 세팅 (구글 시트의 운동_실행률_점수 0점 포함 완벽 보존)
   const currentEx = getField(targetFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
   const currentDiet = getField(targetFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
-  const initialExScore = (currentEx && currentEx !== '-' && !isNaN(parseFloat(currentEx))) ? parseFloat(currentEx) : 4;
-  const initialDietScore = (currentDiet && currentDiet !== '-' && !isNaN(parseFloat(currentDiet))) ? parseFloat(currentDiet) : 5;
+
+  let initialExScore = 0;
+  if (currentEx !== '' && currentEx !== null && currentEx !== undefined && currentEx !== '-' && !isNaN(parseFloat(currentEx))) {
+    initialExScore = Math.max(0, Math.min(5, parseFloat(currentEx)));
+  } else {
+    // 시트에 점수 열이 비어있다면 제출한 운동 내용을 파악하여 미운동(안함/휴식/X 등)이면 0점, 수행했으면 4점 기본
+    const rawExText = String(rawExercise || '').trim().toLowerCase();
+    const isNoEx = !rawExText || rawExText.includes('기록된 운동 내용이 없습니다') || rawExText.includes('안함') || rawExText.includes('휴식') || rawExText === 'x' || rawExText.includes('쉬었') || rawExText.includes('못했');
+    initialExScore = isNoEx ? 0 : 4;
+  }
+
+  let initialDietScore = 5;
+  if (currentDiet !== '' && currentDiet !== null && currentDiet !== undefined && currentDiet !== '-' && !isNaN(parseFloat(currentDiet))) {
+    initialDietScore = Math.max(0, Math.min(5, parseFloat(currentDiet)));
+  }
 
   setInputValue('dfModalInputExScore', initialExScore);
   setInputValue('dfModalInputDietScore', initialDietScore);
@@ -3546,7 +3584,7 @@ async function runAiDailyFeedbackForCurrentModal() {
 
   const recentFeedbacks = AppState.feedbacks
     .filter(f => getMemberName(f) === memberName)
-    .sort((a, b) => new Date(getField(a, '날짜', 'date', '일자')) - new Date(getField(b, '날짜', 'date', '일자')));
+    .sort((a, b) => new Date(getFeedbackDate(a)) - new Date(getFeedbackDate(b)));
 
   const btnRunAi = document.getElementById('btnRunAiDailyFeedback');
   const statusNoticeEl = document.getElementById('dfModalStatusNotice');
@@ -3580,12 +3618,31 @@ async function runAiDailyFeedbackForCurrentModal() {
 
     const recent3 = recentFeedbacks.slice(-3);
     const weightHistorySummary = recent3.map(f => {
-      const d = getField(f, '날짜', 'date', '일자') || '-';
+      const d = getFeedbackDate(f) || '-';
       const w = getField(f, '공복 몸무게', '공복몸무게', '체중', 'weight') || '-';
-      const es = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
-      const ds = getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
+      const rawEs = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
+      const es = (rawEs !== '' && rawEs !== null && rawEs !== undefined) ? rawEs : '-';
+      const rawDs = getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
+      const ds = (rawDs !== '' && rawDs !== null && rawDs !== undefined) ? rawDs : '-';
       return `- ${d}: 몸무게 ${w}kg, 운동점수 ${es}점, 식단점수 ${ds}점`;
     }).join('\n') || '이전 피드백 기록 없음';
+
+    const curExScoreRaw = getField(targetFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
+    const curDietScoreRaw = getField(targetFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
+    const rawExText = String(getField(targetFb, '운동내용', '운동 내용', '오늘의 운동', '운동', 'exerciseContent') || '').toLowerCase();
+    const isNoEx = !rawExText || rawExText.includes('기록된 운동 내용이 없습니다') || rawExText.includes('안함') || rawExText.includes('휴식') || rawExText === 'x' || rawExText.includes('쉬었') || rawExText.includes('못했') || rawExText.includes('없음');
+
+    let defaultExScore = 0;
+    if (curExScoreRaw !== '' && curExScoreRaw !== null && curExScoreRaw !== undefined && !isNaN(parseFloat(curExScoreRaw))) {
+      defaultExScore = Math.max(0, Math.min(5, parseFloat(curExScoreRaw)));
+    } else {
+      defaultExScore = isNoEx ? 0 : 4;
+    }
+
+    let defaultDietScore = 5;
+    if (curDietScoreRaw !== '' && curDietScoreRaw !== null && curDietScoreRaw !== undefined && !isNaN(parseFloat(curDietScoreRaw))) {
+      defaultDietScore = Math.max(0, Math.min(5, parseFloat(curDietScoreRaw)));
+    }
 
     const prompt = `
 당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
@@ -3612,8 +3669,8 @@ ${weightHistorySummary}
   "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
   "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
   "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)",
-  "운동_실행률_점수": 4,
-  "식단_실행률_점수": 5
+  "운동_실행률_점수": ${defaultExScore},
+  "식단_실행률_점수": ${defaultDietScore}
 }
 `;
 
@@ -3635,8 +3692,12 @@ ${weightHistorySummary}
               "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
               "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
               "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
-              "운동_실행률_점수": Number.isFinite(parseFloat(rawJson['운동_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수']))) : 4,
-              "식단_실행률_점수": Number.isFinite(parseFloat(rawJson['식단_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수']))) : 5
+              "운동_실행률_점수": (curExScoreRaw !== '' && curExScoreRaw !== null && curExScoreRaw !== undefined && !isNaN(parseFloat(curExScoreRaw)))
+                ? Math.max(0, Math.min(5, parseFloat(curExScoreRaw)))
+                : (Number.isFinite(parseFloat(rawJson['운동_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수']))) : defaultExScore),
+              "식단_실행률_점수": (curDietScoreRaw !== '' && curDietScoreRaw !== null && curDietScoreRaw !== undefined && !isNaN(parseFloat(curDietScoreRaw)))
+                ? Math.max(0, Math.min(5, parseFloat(curDietScoreRaw)))
+                : (Number.isFinite(parseFloat(rawJson['식단_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수']))) : defaultDietScore)
             };
           }
         }
@@ -3851,7 +3912,7 @@ function initDailyFeedbackModalActions() {
       // 로컬 Feedbacks 배열 즉시 스마트 동기화
       const targetFb = AppState.feedbacks.find(f => {
         const fName = getMemberName(f);
-        const fDate = getField(f, '날짜', 'date', '일자');
+        const fDate = getFeedbackDate(f);
         const isNameMatch = fName === memberName || (memberKey && fName === memberKey);
         const isDateMatch = String(fDate).includes(dateStr) || String(dateStr).includes(String(fDate)) || (cleanDateStr(fDate) === cleanDateStr(dateStr));
         return isNameMatch && isDateMatch;
@@ -4075,7 +4136,7 @@ function getUnreadAiDraftItems() {
 
     if (isAiDraft) {
       const memberName = getMemberName(fb);
-      const date = getField(fb, '날짜', 'date', '일자') || '-';
+      const date = getFeedbackDate(fb) || '-';
       const key = `${memberName}_${date}`;
 
       if (!readKeys.has(key)) {
@@ -4120,7 +4181,7 @@ function getUnreadPendingItems() {
     if (isFeedbackRecordCompleted(fb)) return;
 
     const memberName = getMemberName(fb);
-    const date = getField(fb, '날짜', 'date', '일자') || '-';
+    const date = getFeedbackDate(fb) || '-';
     const key = `${memberName}_${date}`;
 
     if (!readKeys.has(key)) {
@@ -4133,8 +4194,10 @@ function getUnreadPendingItems() {
         });
       }
       const memberKey = matchedMem ? getMemberKey(matchedMem) : memberName;
-      const exScore = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore') || '-';
-      const dietScore = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore') || '-';
+      const rawEx = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
+      const exScore = (rawEx !== '' && rawEx !== null && rawEx !== undefined) ? rawEx : '-';
+      const rawDiet = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
+      const dietScore = (rawDiet !== '' && rawDiet !== null && rawDiet !== undefined) ? rawDiet : '-';
       const userComment = getField(fb, '회원 일기/코멘트', '회원일기/코멘트', '회원 일기', '회원일기', '코멘트', 'userComment') || '';
       const status = String(getField(fb, '피드백 상태', '피드백상태', 'status') || '').trim();
 
@@ -4599,6 +4662,30 @@ function getMemberName(m) {
 function getMemberPhone(m) {
   if (!m) return '';
   return String(getField(m, '전화번호', '연락처', '휴대폰', 'phone', '핸드폰') || '').replace(/[^0-9]/g, '');
+}
+
+/**
+ * [핵심] 피드백 날짜 안전 추출 (제출 시점과 무관하게 회원이 폼에서 직접 입력한 '오늘 날짜' 1순위)
+ */
+function getFeedbackDate(f) {
+  if (!f) return '';
+  // 1순위: 설문지 응답에서 참여자가 직접 입력한 '오늘 날짜'
+  const explicitDate = getField(f, '오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자');
+  if (explicitDate) {
+    let str = String(explicitDate).trim();
+    if (str.includes('T')) str = str.split('T')[0];
+    if (str.includes(' ')) str = str.split(' ')[0];
+    return str;
+  }
+  // 2순위: 제출 타임스탬프 (작성일시)
+  const ts = getField(f, '타임스탬프', '제출일시', '작성일자', 'timestamp');
+  if (ts) {
+    let str = String(ts).trim();
+    if (str.includes('T')) str = str.split('T')[0];
+    if (str.includes(' ')) str = str.split(' ')[0];
+    return str;
+  }
+  return '';
 }
 
 function cleanDateStr(d) {
