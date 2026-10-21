@@ -2982,6 +2982,34 @@ function updateFeedbackSection(mem) {
   renderFeedbackTable(userFeedbacks);
 }
 
+/**
+ * [0점 포인트 바닥 잘림 방지 전용 Chart.js 플러그인]
+ * - y축에 음수 영역(-1, -0.5 등)을 표시하지 않고도,
+ * - 0점인 데이터 포인트의 원이 x축 기준선에 의해 반토막 잘리지 않고
+ *   온전한 원 형태로 0점 기준선 위에 안착하도록 Y좌표를 지능형 보정
+ */
+const zeroBaselinePointPlugin = {
+  id: 'zeroBaselinePointPlugin',
+  beforeDatasetsDraw(chart) {
+    const yAxis = chart.scales.y;
+    if (!yAxis) return;
+    const bottomPixel = yAxis.getPixelForValue(0);
+
+    chart.data.datasets.forEach((dataset, dIdx) => {
+      const meta = chart.getDatasetMeta(dIdx);
+      if (!meta || !meta.data) return;
+      meta.data.forEach((point, pIdx) => {
+        const val = dataset.data[pIdx];
+        if (val === 0) {
+          const r = point.active ? (point.options.hoverRadius || 7) : (point.options.radius || 4.5);
+          // 0점인 지점의 점이 x축 바닥선에 잘리지 않고 온전한 원으로 바닥선 바로 위에 안착하도록 보정
+          point.y = bottomPixel - r - 1;
+        }
+      });
+    });
+  }
+};
+
 function renderThreeIndependentCharts(feedbacks) {
   if (AppState.charts.weight) AppState.charts.weight.destroy();
   if (AppState.charts.exercise) AppState.charts.exercise.destroy();
@@ -2993,9 +3021,22 @@ function renderThreeIndependentCharts(feedbacks) {
     return isNaN(d) ? raw : `${d.getMonth() + 1}/${d.getDate()}`;
   });
 
-  const weightData = feedbacks.map(f => parseFloat(getField(f, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight')) || null);
-  const exScoreData = feedbacks.map(f => parseFloat(getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore')) || null);
-  const dietScoreData = feedbacks.map(f => parseFloat(getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore')) || null);
+  // [핵심] 0점 미운동 점수를 null로 버리지 않고 숫자 0으로 완벽 보존하여 그래프에 점 표시
+  const weightData = feedbacks.map(f => {
+    const val = getField(f, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight');
+    const num = parseFloat(val);
+    return isNaN(num) ? null : num;
+  });
+  const exScoreData = feedbacks.map(f => {
+    const val = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
+    const num = parseFloat(val);
+    return isNaN(num) ? null : num;
+  });
+  const dietScoreData = feedbacks.map(f => {
+    const val = getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
+    const num = parseFloat(val);
+    return isNaN(num) ? null : num;
+  });
 
   // 차트 1: 공복 몸무게 (kg)
   const ctxWeight = document.getElementById('chartWeight');
@@ -3026,7 +3067,7 @@ function renderThreeIndependentCharts(feedbacks) {
     });
   }
 
-  // 차트 2: 운동 점수 (점) - 5점 만점 (5점 포인트 잘림 방지: max 5.5, 상단 여백 확보)
+  // 차트 2: 운동 점수 (점) - 5점 만점 (5점 포인트 여백 확보: max 5.5, 0점 바닥선 안착 플러그인 탑재)
   const ctxEx = document.getElementById('chartExercise');
   if (ctxEx) {
     AppState.charts.exercise = new Chart(ctxEx, {
@@ -3044,14 +3085,17 @@ function renderThreeIndependentCharts(feedbacks) {
           clip: false,
           pointRadius: 4.5,
           pointHoverRadius: 7,
-          pointBackgroundColor: '#10b981'
+          pointBackgroundColor: '#10b981',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5
         }]
       },
-      options: createSingleChartOptions('점', 0, 5.5, 1)
+      options: createSingleChartOptions('점', 0, 5.5, 1),
+      plugins: [zeroBaselinePointPlugin]
     });
   }
 
-  // 차트 3: 식단 점수 (점) - 5점 만점 (5점 포인트 잘림 방지: max 5.5, 상단 여백 확보)
+  // 차트 3: 식단 점수 (점) - 5점 만점 (5점 포인트 여백 확보: max 5.5, 0점 바닥선 안착 플러그인 탑재)
   const ctxDiet = document.getElementById('chartDiet');
   if (ctxDiet) {
     AppState.charts.diet = new Chart(ctxDiet, {
@@ -3069,10 +3113,13 @@ function renderThreeIndependentCharts(feedbacks) {
           clip: false,
           pointRadius: 4.5,
           pointHoverRadius: 7,
-          pointBackgroundColor: '#f59e0b'
+          pointBackgroundColor: '#f59e0b',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5
         }]
       },
-      options: createSingleChartOptions('점', 0, 5.5, 1)
+      options: createSingleChartOptions('점', 0, 5.5, 1),
+      plugins: [zeroBaselinePointPlugin]
     });
   }
 }
@@ -3085,7 +3132,7 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
       padding: {
         top: 14,
         right: 10,
-        bottom: 6,
+        bottom: 8,
         left: 4
       }
     },

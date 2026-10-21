@@ -1998,7 +1998,35 @@ function renderThreeIndependentCharts(feedbacks) {
     });
   }
 
-  // 차트 2: 운동 점수 (5점 만점)
+/**
+ * [0점 포인트 바닥 잘림 방지 전용 Chart.js 플러그인]
+ * - y축에 음수 영역(-1, -0.5 등)을 표시하지 않고도,
+ * - 0점인 데이터 포인트의 원이 x축 기준선에 의해 반토막 잘리지 않고
+ *   온전한 원 형태로 0점 기준선 위에 안착하도록 Y좌표를 지능형 보정
+ */
+const zeroBaselinePointPlugin = {
+  id: 'zeroBaselinePointPlugin',
+  beforeDatasetsDraw(chart) {
+    const yAxis = chart.scales.y;
+    if (!yAxis) return;
+    const bottomPixel = yAxis.getPixelForValue(0);
+
+    chart.data.datasets.forEach((dataset, dIdx) => {
+      const meta = chart.getDatasetMeta(dIdx);
+      if (!meta || !meta.data) return;
+      meta.data.forEach((point, pIdx) => {
+        const val = dataset.data[pIdx];
+        if (val === 0) {
+          const r = point.active ? (point.options.hoverRadius || 7) : (point.options.radius || 4.5);
+          // 0점인 지점의 점이 x축 바닥선에 잘리지 않고 온전한 원으로 바닥선 바로 위에 안착하도록 보정
+          point.y = bottomPixel - r - 1;
+        }
+      });
+    });
+  }
+};
+
+  // 차트 2: 운동 점수 (5점 만점, 0점 바닥선 안착 플러그인 탑재)
   const ctxEx = document.getElementById('chartExercise');
   if (ctxEx) {
     CurrentMemberState.charts.exercise = new Chart(ctxEx, {
@@ -2013,16 +2041,20 @@ function renderThreeIndependentCharts(feedbacks) {
           borderWidth: 2.5,
           tension: 0.2,
           fill: true,
+          clip: false,
           pointRadius: 4.5,
           pointHoverRadius: 7,
-          pointBackgroundColor: '#10b981'
+          pointBackgroundColor: '#10b981',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5
         }]
       },
-      options: createMemberChartOptions('점', 0, 5.5, 1)
+      options: createMemberChartOptions('점', 0, 5.5, 1),
+      plugins: [zeroBaselinePointPlugin]
     });
   }
 
-  // 차트 3: 식단 점수 (5점 만점)
+  // 차트 3: 식단 점수 (5점 만점, 0점 바닥선 안착 플러그인 탑재)
   const ctxDiet = document.getElementById('chartDiet');
   if (ctxDiet) {
     CurrentMemberState.charts.diet = new Chart(ctxDiet, {
@@ -2037,12 +2069,16 @@ function renderThreeIndependentCharts(feedbacks) {
           borderWidth: 2.5,
           tension: 0.2,
           fill: true,
+          clip: false,
           pointRadius: 4.5,
           pointHoverRadius: 7,
-          pointBackgroundColor: '#f59e0b'
+          pointBackgroundColor: '#f59e0b',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5
         }]
       },
-      options: createMemberChartOptions('점', 0, 5.5, 1)
+      options: createMemberChartOptions('점', 0, 5.5, 1),
+      plugins: [zeroBaselinePointPlugin]
     });
   }
 }
@@ -2052,7 +2088,7 @@ function createMemberChartOptions(unit, minVal, maxVal, stepSize) {
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      padding: { top: 12, right: 8, bottom: 4, left: 4 }
+      padding: { top: 12, right: 8, bottom: 8, left: 4 }
     },
     plugins: {
       legend: { display: false },
@@ -2073,7 +2109,10 @@ function createMemberChartOptions(unit, minVal, maxVal, stepSize) {
         ticks: {
           stepSize: stepSize || undefined,
           font: { size: 10 },
-          callback: (value) => `${value} ${unit}`
+          callback: (value) => {
+            if (value > 5 && maxVal <= 6) return '';
+            return `${value} ${unit}`;
+          }
         },
         grid: { color: 'rgba(226, 232, 240, 0.6)' }
       }
