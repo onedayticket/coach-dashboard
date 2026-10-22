@@ -807,13 +807,6 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
-  // 구버전 및 이전 캐시들 모두 정리
-  try {
-    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
-    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_flash');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_auto');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_pro');
