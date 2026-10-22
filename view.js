@@ -1959,7 +1959,7 @@ function renderThreeIndependentCharts(feedbacks) {
 
   const weightData = sorted.map(f => {
     const w = parseFloat(extractFeedbackWeight(f));
-    return isNaN(w) ? null : w;
+    return isNaN(w) || w <= 0 ? null : w;
   });
   const exScoreData = sorted.map(f => {
     const s = parseFloat(extractFeedbackExerciseScore(f));
@@ -1984,13 +1984,20 @@ function renderThreeIndependentCharts(feedbacks) {
         datasets: [{
           label: '공복 몸무게',
           data: weightData,
+          spanGaps: true, // [요청 반영] 체중 미입력일은 비워두지 않고 전후 입력일을 잇는 연속선 연결
           borderColor: '#4f46e5',
           backgroundColor: 'rgba(79, 70, 229, 0.12)',
           borderWidth: 2.5,
           tension: 0.25,
           fill: true,
-          pointRadius: 4.5,
-          pointHoverRadius: 7,
+          pointRadius: (ctx) => {
+            const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
+            return (val === null || val === undefined) ? 0 : 4.5;
+          },
+          pointHoverRadius: (ctx) => {
+            const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
+            return (val === null || val === undefined) ? 0 : 7;
+          },
           pointBackgroundColor: '#4f46e5'
         }]
       },
@@ -2093,6 +2100,7 @@ function createMemberChartOptions(unit, minVal, maxVal, stepSize) {
     plugins: {
       legend: { display: false },
       tooltip: {
+        filter: (item) => item.raw !== null && item.raw !== undefined,
         callbacks: {
           label: (context) => ` ${context.parsed.y !== null ? context.parsed.y : '-'} ${unit}`
         }

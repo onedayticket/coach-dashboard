@@ -807,29 +807,34 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
+  // 구버전 및 이전 캐시들 모두 정리
+  try {
+    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
+    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_flash');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_auto');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_pro');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_flash');
   } catch (e) {}
 
-  const cacheKey = `CACHE_GEMINI_MODELS_V38_STABLE_2026_${AppState.modelPref || 'auto'}`;
+  const cacheKey = `CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_${AppState.modelPref || 'auto'}`;
   const cached = localStorage.getItem(cacheKey);
   if (cached) {
     try {
       const arr = JSON.parse(cached);
       if (Array.isArray(arr) && arr.length > 0) {
-        // [중요] 캐시에서 꺼낼 때도 2.5 이하 모델이 포함되어 있다면 즉시 필터링
+        // [중요] 캐시에서 꺼낼 때도 2.5 이하 및 Pro(무료 쿼터 0 에러) 모델 제외
         const cleanArr = arr.filter(m => {
           const lower = String(m || '').toLowerCase();
-          return !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
+          return !lower.includes('pro') && !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
         });
         if (cleanArr.length > 0) return cleanArr;
       }
     } catch (e) {}
   }
-
-  const isProPref = AppState.modelPref === 'pro';
 
   try {
     const listRes = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`, {
@@ -841,25 +846,29 @@ async function getBrowserSupportedGeminiModels(apiKey) {
         const textModels = data.models.filter(m => {
           const name = String(m.name || '').toLowerCase();
           const desc = String(m.description || '').toLowerCase();
-          // [핵심] 2.5 이하 레거시 버전(2.5, 2.0, 1.5, 1.0) 및 1분 이상 걸리는 thinking/비텍스트 모델 엄격 제외
+          // [핵심 1] 2.5 이하 레거시 버전(2.5, 2.0, 1.5, 1.0) 엄격 제외
           const isLegacyOrUnder25 = name.includes('2.5') || name.includes('2.0') || name.includes('1.5') || name.includes('1.0') ||
                             desc.includes('2.5') || desc.includes('2.0') || desc.includes('1.5') || desc.includes('1.0');
-          const isSlowOrNonText = isLegacyOrUnder25 || name.includes('thinking') || desc.includes('thinking') ||
+          // [핵심 2] 무료 티어 키에서 limit: 0 (쿼터 0 에러)을 일으키는 Pro 모델 엄격 제외
+          const isProModel = name.includes('pro') || desc.includes('pro');
+          const isSlowOrNonText = isLegacyOrUnder25 || isProModel || name.includes('thinking') || desc.includes('thinking') ||
                             name.includes('tts') || name.includes('audio') || name.includes('embed') || 
                             name.includes('imagen') || name.includes('aqa') || name.includes('speech') ||
                             desc.includes('audio') || desc.includes('text-to-speech') || desc.includes('embedding');
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 3.8 flash 및 pro 전용 정렬 (2.5 이하 버전 엄격 완전 배제)]
+        // [구글 공식 Flash 클러스터 정렬 (무료 쿼터 정상 상시 제공)]
         const getScore = (m) => {
           const lower = m.toLowerCase();
-          // 2.5 이하 레거시 버전은 엄격 배제 (0점 처리)
-          if (lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0')) return 0;
-          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return isProPref ? 90 : 100;
-          if (lower === 'gemini-pro-latest' || lower.includes('pro-latest') || lower.includes('3.1-pro')) return isProPref ? 100 : 90;
-          if (lower.includes('3.8')) return 85;
-          return 0; // 2.5 이하 및 기타 버전은 0점 처리하여 완전 제외
+          if (lower.includes('pro') || lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0')) return 0;
+          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
+          if (lower === 'gemini-flash-latest' || lower.includes('flash-latest')) return 95;
+          if (lower.includes('3.8')) return 90;
+          if (lower.includes('3.7-flash')) return 85;
+          if (lower.includes('3.5-flash')) return 80;
+          if (lower.includes('flash')) return 70;
+          return 0; // Pro 및 기타 버전은 0점 처리하여 완전 제외
         };
 
         textModels.sort((a, b) => getScore(b) - getScore(a));
@@ -878,10 +887,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
 
-  if (isProPref) {
-    return ['gemini-pro-latest', 'gemini-3.8-flash'];
-  }
-  return ['gemini-3.8-flash', 'gemini-pro-latest'];
+  return ['gemini-3.8-flash', 'gemini-flash-latest'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -892,7 +898,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     return { text: null, error: 'ABORTED', isAborted: true };
   }
 
-  // 구버전 및 2.5 이하 캐시 청소
+  // 구버전 및 이전 캐시 청소
   try {
     localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
     localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
@@ -902,23 +908,25 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_flash');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_auto');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_pro');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_flash');
   } catch (e) {}
 
   const startTime = performance.now();
-  const isProPref = AppState.modelPref === 'pro';
-  // 상위 최적 1~2개 모델만 신속 시도 (타임아웃 및 404 원천 차단)
+  // 상위 최적 1~2개 Flash 모델만 신속 시도 (무료 쿼터 0 에러 및 타임아웃 원천 차단)
   const rawModels = await getBrowserSupportedGeminiModels(apiKey);
   let candidateModels = (rawModels && rawModels.length > 0)
     ? rawModels.slice(0, 2)
-    : (isProPref ? ['gemini-pro-latest', 'gemini-3.8-flash'] : ['gemini-3.8-flash', 'gemini-pro-latest']);
+    : ['gemini-3.8-flash', 'gemini-flash-latest'];
 
-  // [철통 방어 1] 2.5 이하 모델 목록 필터링
+  // [철통 방어 1] 2.5 이하 모델 및 Pro 모델 목록 필터링
   candidateModels = candidateModels.filter(m => {
     const lower = String(m || '').toLowerCase();
-    return !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
+    return !lower.includes('pro') && !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
   });
   if (candidateModels.length === 0) {
-    candidateModels = isProPref ? ['gemini-pro-latest', 'gemini-3.8-flash'] : ['gemini-3.8-flash', 'gemini-pro-latest'];
+    candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
   }
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
@@ -927,19 +935,18 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
 
   let lastErrorDetail = '';
 
-  for (const model of candidateModels) {
+  for (let i = 0; i < candidateModels.length; i++) {
     if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
       return { text: null, error: 'ABORTED', isAborted: true };
     }
 
-    let targetModel = String(model || '').trim();
-    // [철통 방어 2] 혹시라도 2.5 이하 모델이면 gemini-3.8-flash로 자동 치환
-    const lowerTarget = targetModel.toLowerCase();
-    if (lowerTarget.includes('2.5') || lowerTarget.includes('2.0') || lowerTarget.includes('1.5') || lowerTarget.includes('1.0')) {
-      targetModel = 'gemini-3.8-flash';
+    let model = String(candidateModels[i] || '').trim();
+    // [철통 방어 2] 혹시라도 Pro 또는 2.5 이하 모델이면 안전한 Flash 모델로 자동 치환
+    const lowerTarget = model.toLowerCase();
+    if (lowerTarget.includes('pro') || lowerTarget.includes('2.5') || lowerTarget.includes('2.0') || lowerTarget.includes('1.5') || lowerTarget.includes('1.0')) {
+      model = (i === 0) ? 'gemini-3.8-flash' : 'gemini-flash-latest';
     }
-    if (targetModel === 'gemini-3.8-pro' || targetModel === 'gemini-pro') targetModel = 'gemini-pro-latest';
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     // 15초 제한 타임아웃 컨트롤러 (한 모델에서 무한정 대기 방지)
     const timeoutController = new AbortController();
@@ -3077,11 +3084,11 @@ function renderThreeIndependentCharts(feedbacks) {
     return isNaN(d) ? raw : `${d.getMonth() + 1}/${d.getDate()}`;
   });
 
-  // [핵심] 0점 미운동 점수를 null로 버리지 않고 숫자 0으로 완벽 보존하여 그래프에 점 표시
+  // [핵심] 체중 미입력일은 null로 처리하여 spanGaps로 잇고 점은 찍지 않음
   const weightData = feedbacks.map(f => {
     const val = getField(f, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight');
     const num = parseFloat(val);
-    return isNaN(num) ? null : num;
+    return isNaN(num) || num <= 0 ? null : num;
   });
   const exScoreData = feedbacks.map(f => {
     const val = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
@@ -3108,14 +3115,21 @@ function renderThreeIndependentCharts(feedbacks) {
         datasets: [{
           label: '공복 몸무게',
           data: weightData,
+          spanGaps: true, // [요청 반영] 체중 미입력일은 비워두지 않고 전후 입력일을 잇는 연속선 연결
           borderColor: '#4f46e5',
           backgroundColor: 'rgba(79, 70, 229, 0.12)',
           borderWidth: 2.5,
           tension: 0.25,
           fill: true,
           clip: false,
-          pointRadius: 4.5,
-          pointHoverRadius: 7,
+          pointRadius: (ctx) => {
+            const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
+            return (val === null || val === undefined) ? 0 : 4.5;
+          },
+          pointHoverRadius: (ctx) => {
+            const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
+            return (val === null || val === undefined) ? 0 : 7;
+          },
           pointBackgroundColor: '#4f46e5'
         }]
       },
@@ -3195,6 +3209,7 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
     plugins: {
       legend: { display: false },
       tooltip: {
+        filter: (item) => item.raw !== null && item.raw !== undefined,
         callbacks: {
           label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} ${unit}`
         }

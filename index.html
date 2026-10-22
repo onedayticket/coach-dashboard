@@ -62,7 +62,7 @@
               <span class="visually-hidden">AI 초안 알림</span>
             </span>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="aiDraftDropdownList" style="min-width: 340px; max-width: 400px; max-height: 420px; overflow-y: auto; z-index: 1055;">
+          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="aiDraftDropdownList">
             <li class="dropdown-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
               <span class="fw-bold text-dark"><i class="bi bi-robot me-1 text-warning"></i>AI 초안 알림</span>
               <div class="d-flex align-items-center gap-2">
@@ -85,7 +85,7 @@
               <span class="visually-hidden">미완료 피드백</span>
             </span>
           </button>
-          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="notificationDropdownList" style="min-width: 340px; max-width: 400px; max-height: 420px; overflow-y: auto; z-index: 1055;">
+          <ul class="dropdown-menu dropdown-menu-end shadow-lg notification-dropdown-menu p-0" id="notificationDropdownList">
             <li class="dropdown-header bg-light py-2 px-3 border-bottom d-flex justify-content-between align-items-center">
               <span class="fw-bold text-dark"><i class="bi bi-clock-history me-1 text-primary"></i>미완료 피드백 대기 목록</span>
               <div class="d-flex align-items-center gap-2">
@@ -1051,12 +1051,12 @@
               <i class="bi bi-cpu-fill text-success me-1"></i>AI 코칭 생성 엔진 선택
             </label>
             <select class="form-select form-select-sm" id="geminiModelSelect">
-              <option value="auto">⚡ [자동 최적화] gemini-3.8-flash 우선 ➔ 과부하 시 Pro 자동 우회 (추천)</option>
-              <option value="flash">🚀 [초고속 Flash 모드] gemini-3.8-flash (초고속 즉시 생성)</option>
-              <option value="pro">💎 [고품질 Pro 모드] gemini-pro-latest (최신 Pro 엔진 심층 분석)</option>
+              <option value="auto">⚡ [자동 최적화] gemini-3.8-flash 우선 ➔ 과부하 시 flash-latest 우회 (강력 추천)</option>
+              <option value="flash">🚀 [초고속 Flash 모드] gemini-3.8-flash (일 1,500회 무료 쿼터)</option>
+              <option value="latest">✨ [최신 Flash 엔진] gemini-flash-latest (초고속 생성)</option>
             </select>
             <div class="form-text small text-muted">
-              Gemini Pro 유료 결제 계정은 <strong>[고품질 Pro 모드]</strong> 선택 시 훨씬 전문적이고 깊이 있는 코칭을 제공합니다.
+              구글 무료 API 키는 Flash 계열(<code>gemini-3.8-flash</code>, <code>gemini-flash-latest</code>)에서 429 쿼터 초과 없이 안정적인 무료 생성(일 1,500회)이 지원됩니다.
             </div>
           </div>
 
