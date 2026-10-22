@@ -813,7 +813,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_flash');
   } catch (e) {}
 
-  const cacheKey = `CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_${AppState.modelPref || 'auto'}`;
+  const cacheKey = `CACHE_GEMINI_MODELS_FLASH_LITE_CLUSTER_2026_${AppState.modelPref || 'auto'}`;
   const cached = localStorage.getItem(cacheKey);
   if (cached) {
     try {
@@ -851,16 +851,20 @@ async function getBrowserSupportedGeminiModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 Flash 클러스터 정렬 (무료 쿼터 정상 상시 제공)]
+        // [구글 공식 Flash 클러스터 정렬 (503 고수요 병목 없는 초고속 무정체 모델 최우선)]
         const getScore = (m) => {
           const lower = m.toLowerCase();
           if (lower.includes('pro') || lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0')) return 0;
-          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
+          // [1순위: 0.8~2초 초고속 무정체 Flash-Lite] 트래픽 집중(503) 병목이 전혀 없는 실시간 엔진
+          if (lower === 'gemini-flash-lite-latest' || lower.includes('flash-lite')) return 100;
+          // [2순위: 최신 공식 플래그십 Flash] 구글 정식 표준 프로덕션
           if (lower === 'gemini-flash-latest' || lower.includes('flash-latest')) return 95;
-          if (lower.includes('3.8')) return 90;
-          if (lower.includes('3.7-flash')) return 85;
-          if (lower.includes('3.5-flash')) return 80;
-          if (lower.includes('flash')) return 70;
+          // [3순위: 안정화 Flash] 3.7 / 3.5 안정 버전
+          if (lower.includes('3.7-flash') || lower.includes('3.7')) return 90;
+          if (lower.includes('3.5-flash') || lower.includes('3.5')) return 85;
+          // [4순위: 3.8 Flash] 현재 구글 서버 고수요(503) 병목이 잦으므로 보조 예비로만 배치
+          if (lower.includes('3.8')) return 80;
+          if (lower.includes('flash')) return 75;
           return 0; // Pro 및 기타 버전은 0점 처리하여 완전 제외
         };
 
@@ -869,7 +873,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
         const qualifiedModels = textModels.filter(m => getScore(m) > 0);
 
         if (qualifiedModels.length > 0) {
-          const topModels = qualifiedModels.slice(0, 2);
+          const topModels = qualifiedModels.slice(0, 4);
           localStorage.setItem(cacheKey, JSON.stringify(topModels));
           return topModels;
         }
@@ -880,7 +884,7 @@ async function getBrowserSupportedGeminiModels(apiKey) {
     console.warn('[브라우저 모델 목록 조회 실패]', e);
   }
 
-  return ['gemini-3.8-flash', 'gemini-flash-latest'];
+  return ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
 }
 
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
@@ -904,14 +908,17 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_auto');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_pro');
     localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_flash');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_auto');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_flash');
+    localStorage.removeItem('CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_latest');
   } catch (e) {}
 
   const startTime = performance.now();
-  // 상위 최적 1~2개 Flash 모델만 신속 시도 (무료 쿼터 0 에러 및 타임아웃 원천 차단)
+  // 상위 최적 Flash 모델만 신속 시도 (503 고수요 병목 및 429 쿼터 0 에러 원천 차단)
   const rawModels = await getBrowserSupportedGeminiModels(apiKey);
   let candidateModels = (rawModels && rawModels.length > 0)
-    ? rawModels.slice(0, 2)
-    : ['gemini-3.8-flash', 'gemini-flash-latest'];
+    ? rawModels.slice(0, 4)
+    : ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
 
   // [철통 방어 1] 2.5 이하 모델 및 Pro 모델 목록 필터링
   candidateModels = candidateModels.filter(m => {
@@ -919,7 +926,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     return !lower.includes('pro') && !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
   });
   if (candidateModels.length === 0) {
-    candidateModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+    candidateModels = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
   }
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
@@ -937,13 +944,13 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     // [철통 방어 2] 혹시라도 Pro 또는 2.5 이하 모델이면 안전한 Flash 모델로 자동 치환
     const lowerTarget = model.toLowerCase();
     if (lowerTarget.includes('pro') || lowerTarget.includes('2.5') || lowerTarget.includes('2.0') || lowerTarget.includes('1.5') || lowerTarget.includes('1.0')) {
-      model = (i === 0) ? 'gemini-3.8-flash' : 'gemini-flash-latest';
+      model = (i === 0) ? 'gemini-flash-lite-latest' : 'gemini-flash-latest';
     }
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-    // 15초 제한 타임아웃 컨트롤러 (한 모델에서 무한정 대기 방지)
+    // 7초 제한 스마트 타임아웃 (고수요 모델 대기 지연 30초~1분 발생 원천 차단, 즉시 다음 모델로 패스)
     const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 15000);
+    const timeoutId = setTimeout(() => timeoutController.abort(), 7000);
 
     const onUserAbort = () => timeoutController.abort();
     if (currentTaskAbortController) {
@@ -999,12 +1006,12 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
         lastErrorDetail = `[HTTP ${res.status}] ${errText.slice(0, 150)}`;
         console.warn(`[브라우저 직통 ${model} 응답 오류 HTTP ${res.status}]`, errText);
 
-        // 429 또는 503인 경우 다음 모델로 빠르게 전환 (0.3초 대기)
+        // 503(고수요 병목) 또는 429인 경우 지체 없이 다음 모델로 즉각 전환
         if (res.status === 503 || res.status === 429) {
           if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
             return { text: null, error: 'ABORTED', isAborted: true };
           }
-          await new Promise(r => setTimeout(r, 300));
+          console.log(`[HTTP ${res.status} 감지: ${model}] 즉시 다음 Flash 대체 모델로 무지연 Failover`);
         }
       }
     } catch (e) {
@@ -1013,7 +1020,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
         return { text: null, error: 'ABORTED', isAborted: true };
       }
       if (e.name === 'AbortError') {
-        lastErrorDetail = `[타임아웃 15초 초과] ${model}`;
+        lastErrorDetail = `[타임아웃 7초 초과] ${model}`;
       } else {
         lastErrorDetail = `[네트워크 예외] ${e.message}`;
       }

@@ -1074,8 +1074,8 @@ function getGoogleSupportedTextModels(apiKey) {
     cache.remove('SUPPORTED_MODELS_V38_STABLE_ONLY_2026');
   } catch (e) { }
 
-  // 2. 신규 전용 캐시 키 (무료 쿼터가 확실한 Flash 클러스터 전용)
-  const CACHE_KEY = 'SUPPORTED_MODELS_V38_FLASH_CLUSTER_2026';
+  // 2. 신규 전용 캐시 키 (503 고수요 병목 없는 초고속 무정체 Flash-Lite 클러스터)
+  const CACHE_KEY = 'SUPPORTED_MODELS_V38_FLASH_LITE_CLUSTER_2026';
   const cachedJson = cache.get(CACHE_KEY);
   if (cachedJson) {
     try {
@@ -1112,17 +1112,21 @@ function getGoogleSupportedTextModels(apiKey) {
           return !isSlowOrNonText && m.supportedGenerationMethods && m.supportedGenerationMethods.includes('generateContent');
         }).map(m => m.name.replace(/^models\//, ''));
 
-        // [구글 공식 권장 최신 플래그십 Flash 클러스터 우선순위 정렬 (무료 쿼터 상시 제공)]
+        // [구글 공식 권장 무정체 고속 Flash 클러스터 정렬 (503 고수요 병목 원천 차단)]
         const getModelScore = (m) => {
           const lower = m.toLowerCase();
           if (lower.includes('pro') || lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0')) return 0;
-          if (lower === 'gemini-3.8-flash' || lower.includes('3.8-flash')) return 100;
+          // [1순위: 0.8~2초 초고속 무정체 Flash-Lite] 트래픽 집중(503) 병목이 전혀 없는 실시간 엔진
+          if (lower === 'gemini-flash-lite-latest' || lower.includes('flash-lite')) return 100;
+          // [2순위: 최신 공식 플래그십 Flash] 구글 정식 표준 프로덕션
           if (lower === 'gemini-flash-latest' || lower.includes('flash-latest')) return 95;
-          if (lower.includes('3.8')) return 90;
-          if (lower.includes('3.7-flash')) return 85;
-          if (lower.includes('3.5-flash')) return 80;
-          if (lower.includes('flash')) return 70;
-          return 0; // Pro 및 기타 버전은 0점 처리하여 완전 제외
+          // [3순위: 안정화 Flash] 3.7 / 3.5 안정 버전
+          if (lower.includes('3.7-flash') || lower.includes('3.7')) return 90;
+          if (lower.includes('3.5-flash') || lower.includes('3.5')) return 85;
+          // [4순위: 3.8 Flash] 현재 구글 서버 고수요(503) 병목이 잦으므로 보조 예비로만 배치
+          if (lower.includes('3.8')) return 80;
+          if (lower.includes('flash')) return 75;
+          return 0; // Pro 및 2.5 이하는 0점 처리하여 완전 제외
         };
 
         textModels.sort((a, b) => getModelScore(b) - getModelScore(a));
@@ -1130,7 +1134,7 @@ function getGoogleSupportedTextModels(apiKey) {
         const qualifiedModels = textModels.filter(m => getModelScore(m) > 0);
 
         if (qualifiedModels.length > 0) {
-          const topModels = qualifiedModels.slice(0, 2);
+          const topModels = qualifiedModels.slice(0, 4);
           cache.put(CACHE_KEY, JSON.stringify(topModels), 21600);
           return topModels;
         }
@@ -1140,7 +1144,7 @@ function getGoogleSupportedTextModels(apiKey) {
     Logger.log('ListModels 조회 예외: ' + e.toString());
   }
 
-  return ['gemini-3.8-flash', 'gemini-flash-latest'];
+  return ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
 }
 
 /**
@@ -1156,6 +1160,7 @@ function testAndAuthorizeUrlFetch() {
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_CACHE_V38_AND_PRO');
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_V38_STABLE_ONLY_2026');
     CacheService.getScriptCache().remove('SUPPORTED_MODELS_V38_FLASH_CLUSTER_2026');
+    CacheService.getScriptCache().remove('SUPPORTED_MODELS_V38_FLASH_LITE_CLUSTER_2026');
     const models = getGoogleSupportedTextModels(apiKey);
     Logger.log('✓ 구글이 현재 지원하는 실제 텍스트 모델 (' + models.length + '개): ' + models.join(', '));
   } else {
@@ -1169,7 +1174,7 @@ function testAndAuthorizeUrlFetch() {
 }
 
 /**
- * [Google 공식 권장 gemini-3.8 직행] Gemini API 호출 엔진
+ * [Google 공식 권장 초고속 Flash 클러스터 직행] Gemini API 호출 엔진
  */
 function callGemini(prompt, systemInstruction, payload) {
   const startGasTime = new Date().getTime();
@@ -1193,11 +1198,11 @@ function callGemini(prompt, systemInstruction, payload) {
     return { text: null, debug: debugInfo };
   }
 
-  // 1. 구글 권장 초고속 Flash 모델 (무료 티어 쿼터가 0인 Pro 모델은 원천 배제)
+  // 1. 구글 권장 초고속 Flash 모델 (503 고수요 병목 방지 & 무료 쿼터 0인 Pro 모델 원천 배제)
   const supportedModels = getGoogleSupportedTextModels(apiKey);
   let targetModels = (supportedModels && supportedModels.length > 0)
-    ? supportedModels.slice(0, 2)
-    : ['gemini-3.8-flash', 'gemini-flash-latest'];
+    ? supportedModels.slice(0, 4)
+    : ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
 
   // [철통 방어 1] 2.5 이하 모델 및 무료 쿼터 0인 Pro 모델 즉시 필터링 제거
   targetModels = targetModels.filter(m => {
@@ -1205,21 +1210,18 @@ function callGemini(prompt, systemInstruction, payload) {
     return !lower.includes('pro') && !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
   });
   if (targetModels.length === 0) {
-    targetModels = ['gemini-3.8-flash', 'gemini-flash-latest'];
+    targetModels = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
   }
-
-  // gemini-3.8-flash 최우선 정렬
-  targetModels.sort((a, b) => (b.includes('3.8') ? 1 : 0) - (a.includes('3.8') ? 1 : 0));
 
   let lastError = null;
 
   for (let i = 0; i < targetModels.length; i++) {
     let modelName = String(targetModels[i] || '').trim();
 
-    // [철통 방어 2] 혹시라도 Pro 또는 2.5 이하 모델명이 전달되면 즉시 gemini-3.8-flash 또는 gemini-flash-latest로 안전 치환
+    // [철통 방어 2] 혹시라도 Pro 또는 2.5 이하 모델명이 전달되면 즉시 고속 Flash 모델로 안전 치환
     const lowerModel = modelName.toLowerCase();
     if (lowerModel.includes('pro') || lowerModel.includes('2.5') || lowerModel.includes('2.0') || lowerModel.includes('1.5') || lowerModel.includes('1.0')) {
-      modelName = (i === 0) ? 'gemini-3.8-flash' : 'gemini-flash-latest';
+      modelName = (i === 0) ? 'gemini-flash-lite-latest' : 'gemini-flash-latest';
     }
 
     debugInfo.model = modelName;
@@ -1281,19 +1283,18 @@ function callGemini(prompt, systemInstruction, payload) {
 
       Logger.log(`${modelName} 호출 실패 (HTTP ${code}): ${lastError}`);
 
-      // [핵심] HTTP 429 또는 503 발생 시:
-      // 만약 'limit: 0' (무료 티어 미지원 모델) 에러인 경우 다른 Flash 모델로 즉시 자동 우회
-      if (code === 429 || code === 503) {
-        if (lastError && (lastError.includes('limit: 0') || lastError.includes('quota'))) {
-          Logger.log(`[쿼터 부족/0 감지: ${modelName}] Flash 대체 모델로 즉각 전환 시도`);
-          if (modelName !== 'gemini-flash-latest' && !targetModels.includes('gemini-flash-latest')) {
-            targetModels.push('gemini-flash-latest');
-          }
-          if (modelName !== 'gemini-3.8-flash' && !targetModels.includes('gemini-3.8-flash')) {
-            targetModels.push('gemini-3.8-flash');
-          }
+      // [핵심] HTTP 503 (High Demand) 또는 429 (Rate Limit / Quota) 발생 시 즉시 Failover
+      if (code === 503 || code === 429) {
+        Logger.log(`[HTTP ${code} 트래픽 병목 감지: ${modelName}] 지체 없이 다음 고속 Flash 모델로 즉각 전환 시도`);
+        if (!targetModels.includes('gemini-flash-lite-latest')) {
+          targetModels.push('gemini-flash-lite-latest');
         }
-        Utilities.sleep(600);
+        if (!targetModels.includes('gemini-flash-latest')) {
+          targetModels.push('gemini-flash-latest');
+        }
+        if (!targetModels.includes('gemini-3.7-flash')) {
+          targetModels.push('gemini-3.7-flash');
+        }
         continue;
       }
 
