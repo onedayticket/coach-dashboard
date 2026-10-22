@@ -81,9 +81,9 @@ function doGet(e) {
     }
 
     if (action === 'getAll') {
-      const memberSheet = findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
-      const feedbackSheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-      const guidelineSheet = findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침', '지침', '내용']);
+      const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+      const feedbackSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+      const guidelineSheet = ss.getSheetByName('Guidelines') || findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침', '지침', '내용']);
 
       return createJsonResponse({
         status: 'success',
@@ -202,6 +202,14 @@ function doPost(e) {
  */
 function findSheetSmartly(ss, aliases, signatureKeywords) {
   if (!ss) return null;
+
+  // [초고속 0단계] ss.getSheetByName 직접 조회 (RPC 시트목록 루프 없이 0.001초 완료)
+  if (aliases && aliases.length > 0) {
+    for (let i = 0; i < aliases.length; i++) {
+      const sh = ss.getSheetByName(aliases[i]);
+      if (sh) return sh;
+    }
+  }
 
   // 1단계: 시트 이름 및 별칭으로 탐색 (공백 제거 및 대소문자 무관)
   const sheets = ss.getSheets();
