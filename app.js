@@ -32,6 +32,7 @@ const STORAGE_READ_AI_DRAFTS_KEY = 'coach_dash_read_ai_drafts_v1';
 const STORAGE_READ_PENDING_NOTIS_KEY = 'coach_dash_read_pending_notis_v1';
 const STORAGE_COACH_AUTH_KEY = 'coach_authenticated';
 const STORAGE_COACH_TOKEN_KEY = 'coach_session_token'; // GAS 서버가 발급한 코치 로그인 토큰 (모든 시트 조회/저장에 필수)
+const STORAGE_COACH_DATA_CACHE_KEY = 'coach_dash_data_cache_v1'; // 마지막으로 불러온 시트 데이터 사본 (새로고침 즉시 표시용, 잠금/로그아웃 시 삭제)
 const STORAGE_COACH_FAIL_COUNT_KEY = 'coach_fail_count';
 const STORAGE_COACH_LOCK_UNTIL_KEY = 'coach_lock_until';
 
@@ -239,6 +240,11 @@ const AppState = {
   serverGeminiApiKey: '', // 코치 로그인 후 GAS에서 받아온 AI 키 (메모리에만 보관, 저장하지 않음)
   modelPref: localStorage.getItem(STORAGE_MODEL_PREF_KEY) || 'auto',
   isOnline: false,
+  dataSource: 'none',     // 'live'(서버 최신) | 'cache'(저장본) | 'mock' | 'none'
+  syncState: 'idle',      // 'syncing' | 'done' | 'failed' (저장본 표시 중 백그라운드 최신화 상태)
+  lastSyncedAt: 0,        // 서버 최신 데이터 수신 시각
+  cacheSavedAt: 0,        // 현재 표시 중인 저장본의 기준 시각
+  userEditedSinceRender: false, // 화면 렌더 후 코치가 입력칸을 수정했는지 (백그라운드 갱신 시 덮어쓰기 방지)
   currentView: 'members', // 'members' | 'guidelines'
   members: [],
   feedbacks: [],
@@ -287,6 +293,7 @@ function isCoachAuthenticated() {
 function handleCoachSessionExpired() {
   localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
   localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
+  clearCoachDataCache();
   AppState.serverGeminiApiKey = '';
   backendSessionInfoSynced = false;
   hideLoadingOverlay();
@@ -478,15 +485,7 @@ async function handleCoachLogin() {
 
     // 아직 데이터가 로드되지 않았다면 로드
     if (!AppState.members || AppState.members.length === 0) {
-      loadAllData().then(() => {
-        renderTagFilterButtons();
-        applyFiltersAndRenderMemberList();
-        populateInlineGuidelines();
-        if (AppState.members.length > 0) {
-          const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
-          selectMember(getMemberKey(firstActive));
-        }
-      });
+      startDashboard();
     }
   } else {
     // [비밀번호 불일치]
@@ -558,6 +557,7 @@ function showCoachAuthModal(force = false) {
 function coachLogout() {
   localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
   localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
+  clearCoachDataCache();
   AppState.serverGeminiApiKey = '';
   backendSessionInfoSynced = false;
   showCoachAuthModal(true);
@@ -618,19 +618,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     document.body.classList.remove('coach-locked');
 
-    // 데이터 로드 (구글 시트 콜드스타트 대비 35초 안전 타임아웃 및 Fail-Safe 적용)
-    await loadAllData();
-
-    // 초기 렌더링
-    renderTagFilterButtons();
-    applyFiltersAndRenderMemberList();
-    populateInlineGuidelines();
-
-    // 첫 번째 유효 회원 자동 선택
-    if (AppState.members.length > 0) {
-      const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
-      selectMember(getMemberKey(firstActive));
-    }
+    // 데이터 로드: 저장본이 있으면 즉시 표시 후 백그라운드 최신화, 없으면 서버에서 로드
+    await startDashboard();
   } catch (initErr) {
     console.error('[대시보드 초기화 오류 방어]', initErr);
   } finally {
@@ -758,6 +747,184 @@ async function fetchJsonHedged(url, init, opts = {}) {
   });
 }
 
+/**
+ * ==============================================================================
+ * [저장본 우선 표시 + 백그라운드 최신화 (Stale-While-Revalidate)]
+ * - 새로고침 시 마지막으로 받은 시트 데이터를 즉시 표시하고, 서버 최신 데이터는 뒤에서 받아 조용히 교체
+ * - 상단 상태 배지로 '저장된 데이터(기준 시각) · 최신화 중 / 실시간 연동 / 서버 연결 실패' 구분 표시
+ * - 저장본은 코치 브라우저에만 보관되며 화면 잠금(로그아웃)·인증 만료 시 즉시 삭제
+ * ==============================================================================
+ */
+function saveCoachDataCache() {
+  try {
+    localStorage.setItem(STORAGE_COACH_DATA_CACHE_KEY, JSON.stringify({
+      gasUrl: (AppState.gasUrl || '').trim(),
+      savedAt: AppState.lastSyncedAt || AppState.cacheSavedAt || Date.now(), // '기준 시각' = 마지막 서버 수신 시각
+      members: AppState.members,
+      feedbacks: AppState.feedbacks,
+      guidelines: AppState.guidelines
+    }));
+  } catch (e) {
+    console.warn('[데이터 저장본 기록 실패 - 용량 초과 등]', e);
+  }
+}
+
+function loadCoachDataCache() {
+  try {
+    const cached = JSON.parse(localStorage.getItem(STORAGE_COACH_DATA_CACHE_KEY) || 'null');
+    if (cached && Array.isArray(cached.members) && cached.gasUrl === (AppState.gasUrl || '').trim()) return cached;
+  } catch (e) {}
+  return null;
+}
+
+function clearCoachDataCache() {
+  try { localStorage.removeItem(STORAGE_COACH_DATA_CACHE_KEY); } catch (e) {}
+}
+
+/**
+ * 서버(getAll) 응답 데이터를 AppState에 반영하고 저장본·상태 배지 갱신
+ */
+function applyServerData(data, gasUrl) {
+  AppState.members = Array.isArray(data.members) ? data.members : [];
+  AppState.feedbacks = Array.isArray(data.feedbacks) ? data.feedbacks : [];
+  if (data.guidelines) {
+    const g = { ...data.guidelines };
+    const invalidTitles = ['데일리 피드백 지침', '데일리피드백지침', '피드백 지침', '피드백지침', '피드백지침서'];
+    if (g.motivation && invalidTitles.includes(String(g.motivation).trim())) {
+      g.motivation = MOCK_DB.guidelines.motivation;
+    }
+    AppState.guidelines = { ...AppState.guidelines, ...g };
+  }
+  AppState.isOnline = true;
+  AppState.dataSource = 'live';
+  AppState.syncState = 'done';
+  AppState.lastSyncedAt = Date.now();
+  saveCoachDataCache();
+  syncBackendSessionInfo(gasUrl);
+  updateApiStatusUI();
+  const syncText = document.getElementById('guidelinesSyncStatusText');
+  if (syncText) {
+    syncText.textContent = `구글 시트(Guidelines) 동기화 완료 (${new Date().toLocaleTimeString()})`;
+  }
+  try {
+    updateGlobalNotificationBadge();
+  } catch (badgeErr) {
+    console.warn('[알림 뱃지 갱신 예외 무시]', badgeErr);
+  }
+}
+
+/**
+ * 데이터 준비 후 대시보드 최초 렌더링 (목록/태그/지침서 + 첫 유효 회원 선택)
+ */
+function renderDashboardAfterData() {
+  renderTagFilterButtons();
+  applyFiltersAndRenderMemberList();
+  populateInlineGuidelines();
+  AppState.userEditedSinceRender = false;
+  if (AppState.members.length > 0) {
+    const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
+    selectMember(getMemberKey(firstActive));
+  }
+}
+
+/**
+ * 대시보드 시작: 저장본이 있으면 즉시 표시 + 백그라운드 최신화, 없으면 서버 로드 후 표시
+ */
+async function startDashboard() {
+  const cached = (AppState.gasUrl || '').trim() ? loadCoachDataCache() : null;
+  if (cached) {
+    AppState.members = cached.members;
+    AppState.feedbacks = Array.isArray(cached.feedbacks) ? cached.feedbacks : [];
+    AppState.guidelines = { ...AppState.guidelines, ...(cached.guidelines || {}) };
+    AppState.isOnline = true;
+    AppState.dataSource = 'cache';
+    AppState.cacheSavedAt = cached.savedAt || 0;
+    AppState.syncState = 'syncing';
+    updateApiStatusUI();
+    try { updateGlobalNotificationBadge(); } catch (e) {}
+    renderDashboardAfterData();
+    hideLoadingOverlay();
+    refreshDataInBackground();
+    return;
+  }
+  await loadAllData();
+  renderDashboardAfterData();
+}
+
+/**
+ * [백그라운드 최신화] 화면을 막지 않고 서버 최신 데이터를 받아 조용히 교체
+ * - 로딩 오버레이/AI 작업 취소 신호와 분리 (AI 생성 중에도 독립적으로 진행)
+ * - 실패 시 저장본 유지 + 배지에 '서버 연결 실패 (눌러서 재시도)' 표시 (Mock으로 덮어쓰지 않음)
+ */
+let backgroundRefreshInFlight = false;
+async function refreshDataInBackground() {
+  const gasUrl = (AppState.gasUrl || '').trim();
+  if (!gasUrl || backgroundRefreshInFlight) return;
+  backgroundRefreshInFlight = true;
+  AppState.syncState = 'syncing';
+  updateApiStatusUI();
+  const startedAt = Date.now();
+  try {
+    const resJson = await fetchJsonHedged(
+      `${gasUrl}?action=getAll&token=${encodeURIComponent(getCoachToken())}`,
+      { method: 'GET' }
+    );
+    if (resJson && resJson.code === 'unauthorized') {
+      handleCoachSessionExpired();
+      return;
+    }
+    if (!(resJson && resJson.status === 'success' && resJson.data)) {
+      throw new Error((resJson && resJson.message) || '데이터 형식 불일치');
+    }
+    console.log(`[백그라운드 최신화 완료] ${((Date.now() - startedAt) / 1000).toFixed(1)}초`);
+    applyServerData(resJson.data, gasUrl);
+    rerenderAfterBackgroundRefresh();
+  } catch (e) {
+    console.warn(`[백그라운드 최신화 실패 ${((Date.now() - startedAt) / 1000).toFixed(1)}초]`, e.message || e);
+    AppState.syncState = 'failed';
+    updateApiStatusUI();
+  } finally {
+    backgroundRefreshInFlight = false;
+  }
+}
+
+/**
+ * 최신 데이터 도착 후 화면 갱신 (코치 작업 보호)
+ * - 목록/태그 필터/알림은 항상 갱신
+ * - 입력 중이거나 모달이 열려 있으면 상세 패널·지침서 입력칸은 덮어쓰지 않음 (다음 회원 선택 시 최신 반영)
+ * - 모바일 목록/상세 화면 전환이나 스크롤 위치는 건드리지 않음
+ */
+function rerenderAfterBackgroundRefresh() {
+  const selectedKey = AppState.selectedMember ? getMemberKey(AppState.selectedMember) : '';
+  const isModalOpen = !!document.querySelector('.modal.show');
+  const canRefreshInputs = !AppState.userEditedSinceRender && !isModalOpen;
+
+  if (selectedKey) {
+    const freshMember = AppState.members.find(m => getMemberKey(m) === selectedKey);
+    if (freshMember) AppState.selectedMember = freshMember;
+  }
+
+  renderTagFilterButtons();
+  applyFiltersAndRenderMemberList();
+
+  if (canRefreshInputs) {
+    populateInlineGuidelines();
+    if (AppState.selectedMember && selectedKey) {
+      updatePersonalInfoPanel(AppState.selectedMember);
+      updateGuidelineRoutinePanel(AppState.selectedMember);
+      updateFeedbackSection(AppState.selectedMember);
+    }
+  } else if (AppState.selectedMember) {
+    // 입력값은 보존하고 피드백 표/차트만 최신화
+    updateFeedbackSection(AppState.selectedMember);
+  }
+
+  if (!AppState.selectedMember && AppState.members.length > 0) {
+    const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
+    selectMember(getMemberKey(firstActive));
+  }
+}
+
 async function loadAllData() {
   const gasUrl = (AppState.gasUrl || DEFAULT_GAS_API_URL || '').trim();
 
@@ -789,29 +956,7 @@ async function loadAllData() {
       }
 
       if (resJson.status === 'success' && resJson.data) {
-        AppState.members = Array.isArray(resJson.data.members) ? resJson.data.members : [];
-        AppState.feedbacks = Array.isArray(resJson.data.feedbacks) ? resJson.data.feedbacks : [];
-        if (resJson.data.guidelines) {
-          const g = { ...resJson.data.guidelines };
-          const invalidTitles = ['데일리 피드백 지침', '데일리피드백지침', '피드백 지침', '피드백지침', '피드백지침서'];
-          if (g.motivation && invalidTitles.includes(String(g.motivation).trim())) {
-            g.motivation = MOCK_DB.guidelines.motivation;
-          }
-          AppState.guidelines = { ...AppState.guidelines, ...g };
-        }
-        AppState.isOnline = true;
-        syncBackendSessionInfo(gasUrl);
-        updateApiStatusUI();
-        const syncText = document.getElementById('guidelinesSyncStatusText');
-        if (syncText) {
-          const now = new Date();
-          syncText.textContent = `구글 시트(Guidelines) 동기화 완료 (${now.toLocaleTimeString()})`;
-        }
-        try {
-          updateGlobalNotificationBadge();
-        } catch (badgeErr) {
-          console.warn('[알림 뱃지 갱신 예외 무시]', badgeErr);
-        }
+        applyServerData(resJson.data, gasUrl);
         hideLoadingOverlay();
         return;
       }
@@ -830,6 +975,7 @@ async function loadAllData() {
   AppState.feedbacks = JSON.parse(JSON.stringify(MOCK_DB.feedbacks));
   AppState.guidelines = JSON.parse(JSON.stringify(MOCK_DB.guidelines));
   AppState.isOnline = false;
+  AppState.dataSource = 'mock';
   updateApiStatusUI();
   try {
     updateGlobalNotificationBadge();
@@ -908,6 +1054,9 @@ async function postToGasBackend(payload) {
       }
       if (json && json.code === 'unauthorized' && payload.action !== 'verifyCoachPassword') {
         handleCoachSessionExpired();
+      } else if (json && json.status === 'success' && /^update/.test(String(payload.action || '')) && AppState.dataSource !== 'mock') {
+        // 저장 성공 시 화면에 반영된 최신 상태를 저장본에도 즉시 기록 (새로고침 직후 이전 내용이 잠깐 보이는 현상 방지)
+        saveCoachDataCache();
       }
       return json;
     } catch (e) {
@@ -4907,6 +5056,7 @@ function initApiSettings() {
         localStorage.removeItem(STORAGE_GAS_URL_KEY);
         localStorage.removeItem(STORAGE_GEMINI_KEY);
         localStorage.removeItem(STORAGE_MODEL_PREF_KEY);
+        clearCoachDataCache();
         localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
         AppState.gasUrl = '';
         AppState.geminiApiKey = '';
@@ -4924,16 +5074,46 @@ function updateApiStatusUI() {
   const badge = document.getElementById('apiStatusBadge');
   if (!badge) return;
 
+  const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+  const fmtDateTime = (ts) => new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  const baseClass = 'badge border py-2 px-3 small';
+  badge.onclick = null;
+  badge.style.cursor = '';
+
+  if (AppState.dataSource === 'cache') {
+    const basis = AppState.cacheSavedAt ? fmtDateTime(AppState.cacheSavedAt) : '이전';
+    if (AppState.syncState === 'failed') {
+      badge.className = `${baseClass} bg-danger-subtle text-danger border-danger-subtle`;
+      badge.innerHTML = `<span class="status-dot bg-danger me-1"></span> 저장된 데이터 (${basis} 기준) · 서버 연결 실패 <u>재시도</u>`;
+      badge.title = '구글 시트 서버에 연결하지 못해 마지막으로 불러온 데이터를 표시하고 있습니다. 클릭하면 다시 최신화를 시도합니다.';
+      badge.style.cursor = 'pointer';
+      badge.onclick = () => refreshDataInBackground();
+    } else {
+      badge.className = `${baseClass} bg-warning-subtle text-warning-emphasis border-warning-subtle`;
+      badge.innerHTML = `<span class="spinner-grow spinner-grow-sm text-warning me-1" style="width: 0.6rem; height: 0.6rem;" role="status" aria-hidden="true"></span> 저장된 데이터 (${basis} 기준) · 최신화 중`;
+      badge.title = '마지막으로 불러온 데이터를 먼저 표시하고, 구글 시트 최신 데이터를 받아오는 중입니다.';
+    }
+    return;
+  }
+
   if (AppState.isOnline) {
-    badge.className = 'badge bg-success-subtle text-success border border-success-subtle py-2 px-3 small';
-    badge.innerHTML = '<span class="status-dot bg-success me-1"></span> Google Sheets 실시간 연동 중';
+    badge.className = `${baseClass} bg-success-subtle text-success border-success-subtle`;
+    const syncedAt = AppState.lastSyncedAt ? ` · ${fmtTime(AppState.lastSyncedAt)} 동기화` : '';
+    badge.innerHTML = `<span class="status-dot bg-success me-1"></span> Google Sheets 실시간 연동${syncedAt}`;
+    badge.title = AppState.lastSyncedAt ? `구글 시트 최신 데이터 (${fmtDateTime(AppState.lastSyncedAt)} 수신)` : '구글 시트와 연결되었습니다.';
   } else {
-    badge.className = 'badge bg-secondary-subtle text-secondary border border-secondary-subtle py-2 px-3 small';
+    badge.className = `${baseClass} bg-secondary-subtle text-secondary border-secondary-subtle`;
     badge.innerHTML = '<span class="status-dot bg-secondary me-1"></span> Mock 모드 (테스트/데모)';
+    badge.title = '';
   }
 }
 
 function initEventListeners() {
+  // 코치가 입력칸을 수정하면 표시 (백그라운드 최신화가 작성 중인 내용을 덮어쓰지 않도록 보호)
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.id !== 'memberSearchInput') AppState.userEditedSinceRender = true;
+  }, true);
+
   const searchInput = document.getElementById('memberSearchInput');
   if (searchInput) {
     searchInput.addEventListener('input', (e) => {
