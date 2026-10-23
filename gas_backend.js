@@ -44,6 +44,12 @@ const SHEET_NAMES = {
 const DEFAULT_GEMINI_API_KEY = '';
 
 /**
+ * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
+ * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
+ */
+const BACKEND_VERSION = '2026-10-23.2';
+
+/**
  * CORS 대응 (doOptions)
  */
 function doOptions(e) {
@@ -78,6 +84,11 @@ function doGet(e) {
         status: 'error',
         message: '활성화된 스프레드시트를 찾을 수 없습니다. 구글 시트 상단 [확장 프로그램 > Apps Script]에서 스크립트를 열고 배포했는지 확인해 주세요.'
       });
+    }
+
+    // 배포 버전 확인용 (데이터 미포함, 인증 불필요)
+    if (action === 'ping') {
+      return createJsonResponse({ status: 'success', version: BACKEND_VERSION });
     }
 
     // [보안] 모든 GET 데이터 조회는 코치 로그인 토큰이 있어야만 허용 (회원 DB 외부 공개 차단)
@@ -159,6 +170,12 @@ function doPost(e) {
     // [보안] 그 외 모든 조회/저장/AI 생성 요청은 코치 로그인 토큰 필수
     if (!verifyCoachToken(payload.token)) {
       return createUnauthorizedResponse();
+    }
+
+    // 0. [AI 설정] 로그인한 코치 브라우저가 스트리밍 직통 호출에 사용할 Gemini 키 전달
+    if (action === 'getAiConfig') {
+      const propKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || DEFAULT_GEMINI_API_KEY || '';
+      return createJsonResponse({ status: 'success', geminiApiKey: String(propKey).trim() });
     }
 
     // 1. 회원 상태 및 태그 즉시 업데이트
@@ -1270,6 +1287,39 @@ function testAndAuthorizeUrlFetch() {
 }
 
 /**
+ * [진단 도구] 후보 Gemini 모델별 실제 응답 속도 측정 (Apps Script 편집기에서 직접 실행 -> [실행 로그] 확인)
+ * - 각 모델에 짧은 문장 생성을 요청하고 HTTP 상태 및 소요 시간(ms)을 기록합니다.
+ */
+function diagnoseGeminiLatency() {
+  const apiKey = getEffectiveGeminiApiKey(null);
+  if (!apiKey) {
+    Logger.log('GEMINI_API_KEY 미등록');
+    return;
+  }
+  const models = getGoogleSupportedTextModels(apiKey);
+  const results = [];
+  models.forEach(model => {
+    const t0 = new Date().getTime();
+    let status = 0;
+    try {
+      const res = UrlFetchApp.fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: '운동 습관 응원 문장을 한 줄로 작성해 주세요.' }] }], generationConfig: { maxOutputTokens: 64 } }),
+        muteHttpExceptions: true
+      });
+      status = res.getResponseCode();
+    } catch (e) {
+      status = 'EXCEPTION ' + e.toString().slice(0, 80);
+    }
+    results.push(`${model}: HTTP ${status}, ${new Date().getTime() - t0}ms`);
+  });
+  Logger.log('=== Gemini 모델별 응답 속도 ===\n' + results.join('\n'));
+  const cache = CacheService.getScriptCache();
+  Logger.log('최근 성공 모델 캐시: ' + (cache.get(GEMINI_LAST_GOOD_CACHE_KEY) || '없음'));
+}
+
+/**
  * [Google 공식 권장 초고속 Flash 클러스터 직행] Gemini API 호출 엔진
  */
 function callGemini(prompt, systemInstruction, payload) {
@@ -1309,14 +1359,31 @@ function callGemini(prompt, systemInstruction, payload) {
     targetModels = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
   }
 
+  // [학습형 우선순위] 최근 성공 모델을 맨 앞으로, 최근 정체(20초 이상 걸리고 실패)한 모델은 맨 뒤로
+  // ※ UrlFetchApp은 요청별 타임아웃 지정이 불가하여 정체 모델 1개당 수십 초씩 대기 -> 같은 모델 반복 대기 방지
+  const modelCache = CacheService.getScriptCache();
+  const lastGoodModel = modelCache.get(GEMINI_LAST_GOOD_CACHE_KEY);
+  if (lastGoodModel && !isBlockedGeminiModel(lastGoodModel)) {
+    targetModels = [lastGoodModel].concat(targetModels.filter(m => m !== lastGoodModel));
+  }
+  const slowFlags = modelCache.getAll(targetModels.map(m => GEMINI_SLOW_CACHE_PREFIX + m)) || {};
+  targetModels = targetModels.filter(m => !slowFlags[GEMINI_SLOW_CACHE_PREFIX + m])
+    .concat(targetModels.filter(m => slowFlags[GEMINI_SLOW_CACHE_PREFIX + m]));
+
   let lastError = null;
+  debugInfo.attempts = [];
 
   for (let i = 0; i < targetModels.length; i++) {
+    // [시간 예산] 누적 대기가 예산을 넘으면 추가 모델 시도 중단 (회원 폼 트리거/웹앱 6분 제한 보호)
+    if (i > 0 && (new Date().getTime() - startGasTime) > GEMINI_GAS_TIME_BUDGET_MS) {
+      lastError = (lastError || '') + ' [시간 예산 초과로 추가 모델 시도 중단]';
+      break;
+    }
+
     let modelName = String(targetModels[i] || '').trim();
 
     // [철통 방어 2] 혹시라도 Pro 또는 2.5 이하 모델명이 전달되면 즉시 고속 Flash 모델로 안전 치환
-    const lowerModel = modelName.toLowerCase();
-    if (lowerModel.includes('pro') || lowerModel.includes('2.5') || lowerModel.includes('2.0') || lowerModel.includes('1.5') || lowerModel.includes('1.0')) {
+    if (isBlockedGeminiModel(modelName)) {
       modelName = (i === 0) ? 'gemini-flash-lite-latest' : 'gemini-flash-latest';
     }
 
@@ -1336,6 +1403,8 @@ function callGemini(prompt, systemInstruction, payload) {
       bodyObj.systemInstruction = { parts: [{ text: systemInstruction }] };
     }
 
+    const attemptStart = new Date().getTime();
+    let code = 0;
     try {
       const response = UrlFetchApp.fetch(url, {
         method: 'post',
@@ -1344,21 +1413,29 @@ function callGemini(prompt, systemInstruction, payload) {
         muteHttpExceptions: true
       });
 
-      const code = response.getResponseCode();
+      code = response.getResponseCode();
       const responseText = response.getContentText();
       debugInfo.httpStatus = code;
+      const attemptMs = new Date().getTime() - attemptStart;
 
       if (code === 200) {
         const json = JSON.parse(responseText);
         if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
           const candidate = json.candidates[0];
-          const generatedText = candidate.content.parts[0].text;
-          const finishReason = candidate.finishReason || 'STOP';
-          debugInfo.finishReason = finishReason;
-          debugInfo.isTruncated = (finishReason === 'MAX_TOKENS');
-          debugInfo.usage = json.usageMetadata || {};
-          debugInfo.elapsedSeconds = ((new Date().getTime() - startGasTime) / 1000).toFixed(1);
-          return { text: generatedText, debug: debugInfo };
+          const generatedText = candidate.content.parts.filter(p => p && !p.thought && typeof p.text === 'string').map(p => p.text).join('');
+          if (generatedText) {
+            const finishReason = candidate.finishReason || 'STOP';
+            debugInfo.attempts.push({ model: modelName, status: code, ms: attemptMs });
+            debugInfo.finishReason = finishReason;
+            debugInfo.isTruncated = (finishReason === 'MAX_TOKENS');
+            debugInfo.usage = json.usageMetadata || {};
+            debugInfo.elapsedSeconds = ((new Date().getTime() - startGasTime) / 1000).toFixed(1);
+            try {
+              modelCache.put(GEMINI_LAST_GOOD_CACHE_KEY, modelName, 21600);
+              modelCache.remove(GEMINI_SLOW_CACHE_PREFIX + modelName);
+            } catch (ce) {}
+            return { text: generatedText, debug: debugInfo };
+          }
         }
       }
 
@@ -1369,6 +1446,8 @@ function callGemini(prompt, systemInstruction, payload) {
       } catch (pe) {
         lastError = `[HTTP ${code}] ${responseText}`;
       }
+      debugInfo.attempts.push({ model: modelName, status: code, ms: attemptMs });
+      markGeminiModelFailure(modelCache, modelName, attemptMs, lastGoodModel);
 
       // API Key 자체가 잘못된 경우 즉시 반환
       if (lastError.includes('API_KEY_INVALID') || lastError.includes('API key not valid')) {
@@ -1377,32 +1456,51 @@ function callGemini(prompt, systemInstruction, payload) {
         return { text: null, debug: debugInfo };
       }
 
-      Logger.log(`${modelName} 호출 실패 (HTTP ${code}): ${lastError}`);
+      Logger.log(`${modelName} 호출 실패 (HTTP ${code}, ${attemptMs}ms): ${lastError}`);
 
       // [핵심] HTTP 503 (High Demand) 또는 429 (Rate Limit / Quota) 발생 시 즉시 Failover
       if (code === 503 || code === 429) {
         Logger.log(`[HTTP ${code} 트래픽 병목 감지: ${modelName}] 지체 없이 다음 고속 Flash 모델로 즉각 전환 시도`);
-        if (!targetModels.includes('gemini-flash-lite-latest')) {
-          targetModels.push('gemini-flash-lite-latest');
-        }
-        if (!targetModels.includes('gemini-flash-latest')) {
-          targetModels.push('gemini-flash-latest');
-        }
-        if (!targetModels.includes('gemini-3.7-flash')) {
-          targetModels.push('gemini-3.7-flash');
-        }
+        ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash'].forEach(fm => {
+          if (!targetModels.includes(fm)) targetModels.push(fm);
+        });
         continue;
       }
 
     } catch (e) {
+      const attemptMs = new Date().getTime() - attemptStart;
       lastError = 'UrlFetchApp 통신 예외: ' + e.toString();
-      Logger.log(`${modelName} 통신 예외: ` + e.toString());
+      debugInfo.attempts.push({ model: modelName, status: code, ms: attemptMs, error: String(e).slice(0, 120) });
+      markGeminiModelFailure(modelCache, modelName, attemptMs, lastGoodModel);
+      Logger.log(`${modelName} 통신 예외 (${attemptMs}ms): ` + e.toString());
     }
   }
 
   debugInfo.errorMessage = lastError;
   debugInfo.elapsedSeconds = ((new Date().getTime() - startGasTime) / 1000).toFixed(1);
   return { text: null, debug: debugInfo };
+}
+
+// [Gemini 모델 학습 캐시] 최근 성공 모델 / 정체 모델 표시
+const GEMINI_LAST_GOOD_CACHE_KEY = 'GEMINI_LAST_GOOD_MODEL_V1';
+const GEMINI_SLOW_CACHE_PREFIX = 'GEMINI_SLOW_V1_';
+const GEMINI_SLOW_THRESHOLD_MS = 20000;   // 20초 이상 걸리고 실패한 모델은 30분간 후순위
+const GEMINI_GAS_TIME_BUDGET_MS = 150000; // 모델 재시도 누적 예산 150초
+
+function isBlockedGeminiModel(m) {
+  const lower = String(m || '').toLowerCase();
+  return lower.includes('pro') || lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0');
+}
+
+function markGeminiModelFailure(modelCache, modelName, attemptMs, lastGoodModel) {
+  try {
+    if (attemptMs >= GEMINI_SLOW_THRESHOLD_MS) {
+      modelCache.put(GEMINI_SLOW_CACHE_PREFIX + modelName, '1', 1800);
+    }
+    if (lastGoodModel && lastGoodModel === modelName) {
+      modelCache.remove(GEMINI_LAST_GOOD_CACHE_KEY);
+    }
+  } catch (e) {}
 }
 
 /**

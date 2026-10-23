@@ -704,6 +704,56 @@ async function fetchMemberViewWithRetry(apiUrl, body) {
 }
 
 /**
+ * [배포 전환기 전용] 구버전 GAS(getAll 공개 응답)로 회원 화면 표시
+ * - 데이터는 메모리에서만 사용하고 브라우저에 저장하지 않음
+ * - 휴대폰 뒷 4자리는 등록된 번호와 정확히 일치할 때만 통과 (비상 비밀번호 없음)
+ */
+async function loadLegacyMemberView(gasUrl, targetId, hasRenderedFromCache) {
+  let data = null;
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 38000);
+    const res = await fetch(`${gasUrl}${gasUrl.includes('?') ? '&' : '?'}action=getAll&t=${Date.now()}`, { signal: controller.signal });
+    clearTimeout(timeoutId);
+    const json = await res.json();
+    if (json && json.status === 'success' && json.data) data = json.data;
+  } catch (e) {
+    console.warn('[회원 뷰어] 구버전 GAS 조회 실패:', e.message || e);
+  }
+
+  if (!data) {
+    if (!hasRenderedFromCache) {
+      showInvalidAccessScreen('', '구글 시트 서버 응답 지연', '잠시 후 아래 [다시 시도]를 누르시거나 다시 접속해 주세요.');
+    }
+    return;
+  }
+
+  const members = Array.isArray(data.members) ? data.members : [];
+  const matched = findMemberInList(members, targetId);
+  if (!matched) {
+    showInvalidAccessScreen(`
+      <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
+      <div class="text-secondary small mt-1">
+        등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
+      </div>
+    `);
+    return;
+  }
+
+  applyMemberData(matched, Array.isArray(data.feedbacks) ? data.feedbacks : [], false);
+  CurrentMemberState.isLegacyBackend = true;
+  if (hasRenderedFromCache) return;
+
+  try {
+    if (sessionStorage.getItem('legacy_member_auth_' + targetId) === 'true') {
+      unlockAndRenderMemberPage();
+      return;
+    }
+  } catch (e) {}
+  showMemberAuthModal();
+}
+
+/**
  * 회원 데이터 로드 (본인 캐시 우선 렌더링 + 서버 인증 기반 최신 동기화)
  */
 async function loadMemberPageData(targetId) {
@@ -771,6 +821,13 @@ async function loadMemberPageData(targetId) {
     applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0 });
     unlockAndRenderMemberPage();
     console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(res.data.member)} (ID: ${targetId})`);
+    return;
+  }
+
+  // [배포 전환기 호환] GAS가 아직 구버전(getMemberView 미지원)이면 기존 방식으로 동작하여 접속 장애 방지
+  if (res && res.status === 'error' && !res.code && /지원하지 않는 action/.test(String(res.message || ''))) {
+    console.warn('[회원 뷰어] GAS 구버전 감지 -> 기존 방식(getAll)으로 임시 동작합니다. GAS 재배포가 필요합니다.');
+    await loadLegacyMemberView(gasUrl, targetId, hasRenderedFromCache);
     return;
   }
 
@@ -1088,10 +1145,13 @@ async function handleMemberAuthLogin() {
     unlockAndRenderMemberPage();
   };
 
-  // [오프라인 Mock 모드] 샘플 회원 로컬 검증
-  if (CurrentMemberState.isUsingMock) {
+  // [오프라인 Mock 모드 / 구버전 GAS 전환기] 로컬 검증 (등록 번호와 정확히 일치할 때만 통과)
+  if (CurrentMemberState.isUsingMock || CurrentMemberState.isLegacyBackend) {
     const correctPin = getMemberPhoneLast4(CurrentMemberState.member);
     if (correctPin && enteredPin === correctPin) {
+      if (CurrentMemberState.isLegacyBackend) {
+        try { sessionStorage.setItem('legacy_member_auth_' + CurrentMemberState.targetId, 'true'); } catch (e) {}
+      }
       closeModalAndRender();
     } else {
       failAuth('비밀번호가 일치하지 않습니다. 등록하신 휴대폰 번호 뒤 4자리를 입력해 주세요.');

@@ -236,6 +236,7 @@ const MOCK_DB = {
 const AppState = {
   gasUrl: (localStorage.getItem(STORAGE_GAS_URL_KEY) || DEFAULT_GAS_API_URL || '').trim(),
   geminiApiKey: localStorage.getItem(STORAGE_GEMINI_KEY) || '',
+  serverGeminiApiKey: '', // 코치 로그인 후 GAS에서 받아온 AI 키 (메모리에만 보관, 저장하지 않음)
   modelPref: localStorage.getItem(STORAGE_MODEL_PREF_KEY) || 'auto',
   isOnline: false,
   currentView: 'members', // 'members' | 'guidelines'
@@ -286,6 +287,8 @@ function isCoachAuthenticated() {
 function handleCoachSessionExpired() {
   localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
   localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
+  AppState.serverGeminiApiKey = '';
+  backendSessionInfoSynced = false;
   hideLoadingOverlay();
   showCoachAuthModal(true);
   showToast('보안을 위해 코치 인증이 다시 필요합니다. 비밀번호를 입력해 주세요.', 'warning');
@@ -555,6 +558,8 @@ function showCoachAuthModal(force = false) {
 function coachLogout() {
   localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
   localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
+  AppState.serverGeminiApiKey = '';
+  backendSessionInfoSynced = false;
   showCoachAuthModal(true);
   showToast('코치 세션이 안전하게 잠겼습니다.', 'info');
 }
@@ -639,6 +644,47 @@ document.addEventListener('DOMContentLoaded', async () => {
  * [1. 데이터 통신 및 로드 엔진 (GAS / Mock)]
  * ==============================================================================
  */
+
+// 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
+const EXPECTED_BACKEND_VERSION = '2026-10-23.2';
+
+/**
+ * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
+ * 1) 서버 코드가 구버전이면 코치에게 재배포 필요 안내 (깃 푸시와 GAS 재배포 불일치 조기 감지)
+ * 2) [API 설정]에 키가 없으면 GAS 스크립트 속성의 키를 받아 브라우저 스트리밍 직통 호출에 사용
+ *    (GAS UrlFetchApp은 타임아웃 지정이 불가해 정체 모델에서 수 분씩 대기하므로 브라우저 경로를 우선 사용)
+ */
+let backendSessionInfoSynced = false;
+async function syncBackendSessionInfo(gasUrl) {
+  if (backendSessionInfoSynced || !gasUrl) return;
+  backendSessionInfoSynced = true;
+
+  try {
+    const pingRes = await fetch(`${gasUrl}?action=ping`).then(r => r.json());
+    if (!pingRes || pingRes.version !== EXPECTED_BACKEND_VERSION) {
+      console.warn('[GAS 버전 불일치]', { expected: EXPECTED_BACKEND_VERSION, actual: pingRes && pingRes.version });
+      showToast('⚠️ 구글 Apps Script 서버 코드가 최신 버전이 아닙니다. Apps Script에 gas_backend.js를 붙여넣고 [배포 관리 → 수정 → 새 버전]으로 재배포해 주세요.', 'warning');
+    }
+  } catch (e) {
+    console.warn('[GAS 버전 점검 실패]', e);
+  }
+
+  if (!AppState.geminiApiKey && getCoachToken()) {
+    try {
+      const res = await fetch(gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'getAiConfig', token: getCoachToken() })
+      }).then(r => r.json());
+      if (res && res.status === 'success' && res.geminiApiKey) {
+        AppState.serverGeminiApiKey = String(res.geminiApiKey).trim();
+      }
+    } catch (e) {
+      console.warn('[AI 키 동기화 실패 - GAS 경유 모드로 동작]', e);
+    }
+  }
+}
+
 async function loadAllData() {
   const gasUrl = (AppState.gasUrl || DEFAULT_GAS_API_URL || '').trim();
 
@@ -699,6 +745,7 @@ async function loadAllData() {
             AppState.guidelines = { ...AppState.guidelines, ...g };
           }
           AppState.isOnline = true;
+          syncBackendSessionInfo(gasUrl);
           updateApiStatusUI();
           const syncText = document.getElementById('guidelinesSyncStatusText');
           if (syncText) {
@@ -940,8 +987,73 @@ async function getBrowserSupportedGeminiModels(apiKey) {
   return ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
 }
 
+// [스트리밍 타임아웃 정책]
+// - 첫 응답 토큰 대기: 20초 (응답 없는 고수요/정체 모델은 즉시 다음 모델로 전환)
+// - 토큰 수신 중 무응답 간격: 25초 / 모델당 전체 상한: 120초
+// ※ 기존 '전체 7초 제한'은 긴 운동 루틴/식단 생성 시 모든 모델을 강제 중단시켜 GAS 경유(수 분 소요)로 넘어가던 원인
+const GEMINI_STREAM_FIRST_TOKEN_MS = 20000;
+const GEMINI_STREAM_IDLE_MS = 25000;
+const GEMINI_STREAM_TOTAL_MS = 120000;
+const STORAGE_GEMINI_LAST_GOOD_MODEL_KEY = 'coach_dash_gemini_last_good_model_v1';
+
+/**
+ * 브라우저 직통 호출에 사용할 Gemini API Key
+ * 1순위: 코치가 [API 설정]에 직접 입력한 키 / 2순위: 로그인 후 GAS 스크립트 속성에서 받아온 키 (메모리에만 보관)
+ */
+function getBrowserGeminiKey() {
+  return String(AppState.geminiApiKey || AppState.serverGeminiApiKey || '').trim();
+}
+
+function hasBrowserGeminiKey() {
+  return !!getBrowserGeminiKey();
+}
+
+/**
+ * Gemini SSE 스트림(streamGenerateContent?alt=sse) 응답을 읽어 텍스트를 누적
+ * - onChunk: 데이터 수신 시마다 호출 (무응답 타이머 갱신용)
+ */
+async function readGeminiSseStream(res, onChunk) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder('utf-8');
+  let buffer = '';
+  let text = '';
+  let finishReason = '';
+  let usage = {};
+
+  const handleLine = (line) => {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('data:')) return;
+    const jsonStr = trimmed.slice(5).trim();
+    if (!jsonStr || jsonStr === '[DONE]') return;
+    let evt = null;
+    try { evt = JSON.parse(jsonStr); } catch (e) { return; }
+    const cand = evt && evt.candidates && evt.candidates[0];
+    if (cand && cand.content && Array.isArray(cand.content.parts)) {
+      cand.content.parts.forEach(p => {
+        if (p && typeof p.text === 'string' && !p.thought) text += p.text;
+      });
+    }
+    if (cand && cand.finishReason) finishReason = cand.finishReason;
+    if (evt && evt.usageMetadata) usage = evt.usageMetadata;
+  };
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    lines.forEach(handleLine);
+    if (onChunk) onChunk(text.length);
+  }
+  buffer += decoder.decode();
+  if (buffer) handleLine(buffer);
+
+  return { text, finishReason: finishReason || 'STOP', usage };
+}
+
 async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
-  const apiKey = (AppState.geminiApiKey || '').trim();
+  const apiKey = getBrowserGeminiKey();
   if (!apiKey) return { text: null, error: 'API 키 미등록' };
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
@@ -959,12 +1071,20 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     : ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
 
   // [철통 방어 1] 2.5 이하 모델 및 Pro 모델 목록 필터링
-  candidateModels = candidateModels.filter(m => {
+  const isBlockedModel = (m) => {
     const lower = String(m || '').toLowerCase();
-    return !lower.includes('pro') && !lower.includes('2.5') && !lower.includes('2.0') && !lower.includes('1.5') && !lower.includes('1.0');
-  });
+    return lower.includes('pro') || lower.includes('2.5') || lower.includes('2.0') || lower.includes('1.5') || lower.includes('1.0');
+  };
+  candidateModels = candidateModels.filter(m => !isBlockedModel(m));
   if (candidateModels.length === 0) {
     candidateModels = ['gemini-flash-lite-latest', 'gemini-flash-latest', 'gemini-3.7-flash', 'gemini-3.8-flash'];
+  }
+
+  // [학습형 우선순위] 직전에 빠르게 성공한 모델을 맨 앞으로 (정체 모델 재시도 낭비 제거)
+  let lastGoodModel = '';
+  try { lastGoodModel = localStorage.getItem(STORAGE_GEMINI_LAST_GOOD_MODEL_KEY) || ''; } catch (e) {}
+  if (lastGoodModel && !isBlockedModel(lastGoodModel)) {
+    candidateModels = [lastGoodModel, ...candidateModels.filter(m => m !== lastGoodModel)];
   }
 
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
@@ -972,23 +1092,26 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   }
 
   let lastErrorDetail = '';
+  const attempts = [];
 
   for (let i = 0; i < candidateModels.length; i++) {
     if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
       return { text: null, error: 'ABORTED', isAborted: true };
     }
 
-    let model = String(candidateModels[i] || '').trim();
-    // [철통 방어 2] 혹시라도 Pro 또는 2.5 이하 모델이면 안전한 Flash 모델로 자동 치환
-    const lowerTarget = model.toLowerCase();
-    if (lowerTarget.includes('pro') || lowerTarget.includes('2.5') || lowerTarget.includes('2.0') || lowerTarget.includes('1.5') || lowerTarget.includes('1.0')) {
-      model = (i === 0) ? 'gemini-flash-lite-latest' : 'gemini-flash-latest';
-    }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const model = String(candidateModels[i] || '').trim();
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    const attemptStart = performance.now();
 
-    // 7초 제한 스마트 타임아웃 (고수요 모델 대기 지연 30초~1분 발생 원천 차단, 즉시 다음 모델로 패스)
     const timeoutController = new AbortController();
-    const timeoutId = setTimeout(() => timeoutController.abort(), 7000);
+    let timeoutReason = '';
+    let stageTimer = setTimeout(() => { timeoutReason = `첫 응답 ${GEMINI_STREAM_FIRST_TOKEN_MS / 1000}초 초과`; timeoutController.abort(); }, GEMINI_STREAM_FIRST_TOKEN_MS);
+    const totalTimer = setTimeout(() => { timeoutReason = `전체 ${GEMINI_STREAM_TOTAL_MS / 1000}초 초과`; timeoutController.abort(); }, GEMINI_STREAM_TOTAL_MS);
+    const resetIdleTimer = (receivedLen) => {
+      clearTimeout(stageTimer);
+      const limitMs = receivedLen > 0 ? GEMINI_STREAM_IDLE_MS : GEMINI_STREAM_FIRST_TOKEN_MS;
+      stageTimer = setTimeout(() => { timeoutReason = receivedLen > 0 ? `응답 중단 ${GEMINI_STREAM_IDLE_MS / 1000}초` : `첫 응답 ${GEMINI_STREAM_FIRST_TOKEN_MS / 1000}초 초과`; timeoutController.abort(); }, limitMs);
+    };
 
     const onUserAbort = () => timeoutController.abort();
     if (currentTaskAbortController) {
@@ -1013,56 +1136,62 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
         signal: timeoutController.signal,
         body: JSON.stringify(bodyObj)
       });
-      clearTimeout(timeoutId);
 
       if (res.ok) {
-        const json = await res.json();
-        if (json.candidates && json.candidates[0] && json.candidates[0].content && json.candidates[0].content.parts) {
-          const candidate = json.candidates[0];
-          const text = candidate.content.parts[0].text;
-          const finishReason = candidate.finishReason || 'STOP';
-          const usage = json.usageMetadata || {};
-          const elapsedSec = ((performance.now() - startTime) / 1000).toFixed(1);
+        const streamed = await readGeminiSseStream(res, resetIdleTimer);
+        clearTimeout(stageTimer);
+        clearTimeout(totalTimer);
+        const attemptMs = Math.round(performance.now() - attemptStart);
 
-          console.group('%c⚡ [Gemini AI 브라우저 직통 초고속 성공]', 'color: #10b981; font-weight: bold; font-size: 13px;');
+        if (streamed.text && streamed.text.trim()) {
+          attempts.push({ model, status: 200, ms: attemptMs });
+          const elapsedSec = ((performance.now() - startTime) / 1000).toFixed(1);
+          try { localStorage.setItem(STORAGE_GEMINI_LAST_GOOD_MODEL_KEY, model); } catch (e) {}
+
+          console.group('%c⚡ [Gemini AI 브라우저 직통 스트리밍 성공]', 'color: #10b981; font-weight: bold; font-size: 13px;');
           console.log(`📌 모델: ${model} | 소요시간: ${elapsedSec}초`);
-          console.log(`🏁 상태: ${finishReason} | 텍스트 길이: ${text.length}자`);
+          console.log(`🏁 상태: ${streamed.finishReason} | 텍스트 길이: ${streamed.text.length}자`);
+          console.log('시도 내역:', attempts);
           console.groupEnd();
 
           return {
-            text: text,
+            text: streamed.text,
             isAiGenerated: true,
             model: model,
             elapsedSec: elapsedSec,
-            finishReason: finishReason,
-            usage: usage,
-            isTruncated: (finishReason === 'MAX_TOKENS')
+            finishReason: streamed.finishReason,
+            usage: streamed.usage,
+            isTruncated: (streamed.finishReason === 'MAX_TOKENS'),
+            attempts: attempts
           };
         }
+        lastErrorDetail = `[빈 응답] ${model}`;
+        attempts.push({ model, status: 200, ms: attemptMs, error: 'empty' });
       } else {
+        clearTimeout(stageTimer);
+        clearTimeout(totalTimer);
         const errText = await res.text().catch(() => '');
         lastErrorDetail = `[HTTP ${res.status}] ${errText.slice(0, 150)}`;
+        attempts.push({ model, status: res.status, ms: Math.round(performance.now() - attemptStart) });
         console.warn(`[브라우저 직통 ${model} 응답 오류 HTTP ${res.status}]`, errText);
-
-        // 503(고수요 병목) 또는 429인 경우 지체 없이 다음 모델로 즉각 전환
-        if (res.status === 503 || res.status === 429) {
-          if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
-            return { text: null, error: 'ABORTED', isAborted: true };
-          }
-          console.log(`[HTTP ${res.status} 감지: ${model}] 즉시 다음 Flash 대체 모델로 무지연 Failover`);
+        if (lastGoodModel === model) {
+          try { localStorage.removeItem(STORAGE_GEMINI_LAST_GOOD_MODEL_KEY); } catch (e) {}
         }
       }
     } catch (e) {
-      clearTimeout(timeoutId);
+      clearTimeout(stageTimer);
+      clearTimeout(totalTimer);
       if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
         return { text: null, error: 'ABORTED', isAborted: true };
       }
-      if (e.name === 'AbortError') {
-        lastErrorDetail = `[타임아웃 7초 초과] ${model}`;
-      } else {
-        lastErrorDetail = `[네트워크 예외] ${e.message}`;
+      lastErrorDetail = (e.name === 'AbortError')
+        ? `[${timeoutReason || '타임아웃'}] ${model}`
+        : `[네트워크 예외] ${e.message}`;
+      attempts.push({ model, status: 0, ms: Math.round(performance.now() - attemptStart), error: lastErrorDetail });
+      console.warn(`[브라우저 직통 ${model} 예외]`, lastErrorDetail);
+      if (lastGoodModel === model) {
+        try { localStorage.removeItem(STORAGE_GEMINI_LAST_GOOD_MODEL_KEY); } catch (e2) {}
       }
-      console.warn(`[브라우저 직통 ${model} 예외]`, e);
     } finally {
       if (currentTaskAbortController) {
         currentTaskAbortController.signal.removeEventListener('abort', onUserAbort);
@@ -1070,7 +1199,8 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
     }
   }
 
-  return { text: null, error: lastErrorDetail };
+  console.warn('[브라우저 직통 전체 실패] 시도 내역:', attempts);
+  return { text: null, error: lastErrorDetail, attempts: attempts };
 }
 
 function simulateMockAction(payload) {
@@ -2805,7 +2935,7 @@ function initGuidelineRoutineActions() {
       showLoadingOverlay('AI가 운동 지침서와 수정 지침을 분석하여 루틴을 생성 중입니다...');
 
       // [1] 브라우저 직통 모드 시도 (API Key가 설정된 경우 0.8~1.5초 컷)
-      if (AppState.geminiApiKey) {
+      if (hasBrowserGeminiKey()) {
         const baseGuideline = AppState.guidelines.exercise || '점진적 과부하와 관절 부상 방지(스트레칭 10분 필수), 주 3~4회 루틴';
         // [요구사항 1] 하드코딩 제거: Members 시트의 모든 질문과 답변을 동적으로 매핑
         const memberFullProfile = formatObjectAsFullProfile(mem);
@@ -2951,7 +3081,7 @@ DAY7 (휴식) - 완전 휴식 및 컨디션 회복
       showLoadingOverlay('AI가 식단 지침서와 수정 지침을 분석하여 식단을 생성 중입니다...');
 
       // [1] 브라우저 직통 모드 시도 (API Key가 설정된 경우 0.8~1.5초 컷)
-      if (AppState.geminiApiKey) {
+      if (hasBrowserGeminiKey()) {
         const baseGuideline = AppState.guidelines.diet || '극단적 탄수화물 제한 지양, 매끼니 양질의 단백질 20~30g과 식이섬유 포함';
         // [요구사항 1] 하드코딩 제거: Members 시트의 모든 질문과 답변을 동적으로 매핑
         const memberFullProfile = formatObjectAsFullProfile(mem);
@@ -3844,7 +3974,7 @@ ${weightHistorySummary}
 `;
 
     // 1. 브라우저 직통 모드 시도
-    if (AppState.geminiApiKey) {
+    if (hasBrowserGeminiKey()) {
       try {
         directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.');
         if (directRes && directRes.isAborted) {
