@@ -421,11 +421,19 @@ function extractFeedbackDate(fb) {
   }
 
   const str = String(val).trim();
-  const dateMatch = str.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
-  if (dateMatch) {
-    const y = dateMatch[1];
-    const m = dateMatch[2].padStart(2, '0');
-    const d = dateMatch[3].padStart(2, '0');
+  const dateMatch4 = str.match(/(20\d{2})[-./\s]+(\d{1,2})[-./\s]+(\d{1,2})/);
+  if (dateMatch4) {
+    const y = dateMatch4[1];
+    const m = dateMatch4[2].padStart(2, '0');
+    const d = dateMatch4[3].padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  const dateMatch2 = str.match(/(\d{2})[-./\s]+(\d{1,2})[-./\s]+(\d{1,2})/);
+  if (dateMatch2) {
+    const y = '20' + dateMatch2[1];
+    const m = dateMatch2[2].padStart(2, '0');
+    const d = dateMatch2[3].padStart(2, '0');
     return `${y}-${m}-${d}`;
   }
 

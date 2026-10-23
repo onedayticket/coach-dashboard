@@ -318,10 +318,21 @@ function findColIndex(colMap, candidateNames) {
   for (let i = 0; i < candidateNames.length; i++) {
     const targetClean = String(candidateNames[i]).replace(/\s+/g, '').toLowerCase();
     if (!targetClean || targetClean.length < 2) continue;
+    const isDateCand = targetClean.includes('날짜') || targetClean.includes('일자') || targetClean.includes('date');
+    const isIdCand = targetClean.includes('번호') || targetClean.includes('id');
+    const isDiaryCand = targetClean.includes('일기');
+
     for (let j = 0; j < colKeys.length; j++) {
       const keyClean = String(colKeys[j]).replace(/\s+/g, '').toLowerCase();
-      // [오매칭 원천 차단] 고유 식별(번호, 날짜, 일자, 시간, 타임스탬프) 및 회원 일기 컬럼은 부분 일치에서 제외
-      if (keyClean.includes('번호') || keyClean.includes('날짜') || keyClean.includes('일자') || keyClean.includes('시간') || keyClean.includes('타임스탬프') || keyClean.includes('일기')) {
+
+      // [오매칭 원천 차단] 대상 후보 단어와 무관한 식별 열(시간, 타임스탬프, 일기) 등 오매칭 방지
+      if (!isDateCand && (keyClean.includes('날짜') || keyClean.includes('일자') || keyClean.includes('시간') || keyClean.includes('타임스탬프'))) {
+        continue;
+      }
+      if (!isIdCand && keyClean.includes('번호')) {
+        continue;
+      }
+      if (!isDiaryCand && keyClean.includes('일기')) {
         continue;
       }
       if (keyClean.includes(targetClean) || targetClean.includes(keyClean)) {
@@ -364,17 +375,19 @@ function getSheetDataWithHeaders(sheet) {
 
   const headers = values[0].map(h => String(h).trim());
   const results = [];
+  const ss = sheet.getParent ? sheet.getParent() : null;
+  const tz = (ss && typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : 'Asia/Seoul';
 
   for (let i = 1; i < values.length; i++) {
     const row = values[i];
     const isAllEmpty = row.every(val => val === '' || val === null || val === undefined);
     if (isAllEmpty) continue;
 
-    const obj = { _rowNumber: i + 1 };
+    const obj = { _rowNumber: i + 1, rowNumber: i + 1 };
     for (let j = 0; j < headers.length; j++) {
       let val = row[j];
       if (val instanceof Date) {
-        val = Utilities.formatDate(val, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
+        val = Utilities.formatDate(val, tz || 'Asia/Seoul', 'yyyy-MM-dd');
       }
       const rawHeader = headers[j];
       obj[rawHeader] = val; // 원본 헤더 유지
@@ -751,7 +764,7 @@ function handleUpdateGuidelines(ss, payload) {
   const lastRow = sheet.getLastRow();
   const lastCol = Math.max(sheet.getLastColumn(), 2);
   const values = lastRow > 0 ? sheet.getRange(1, 1, lastRow, lastCol).getValues() : [];
-  const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
 
   // 저장 대상 5대 지침 공식 정의
   const targets = [
@@ -831,111 +844,184 @@ function handleUpdateFeedbackComment(ss, payload) {
   const memberPhone = String(payload.phone || '').replace(/[^0-9]/g, '');
   const dateStr = String(payload.date || '').trim();
   const comment = payload.comment || '';
+  const reqRow = parseInt(payload.rowNumber || payload._rowNumber, 10);
 
   const colMap = getHeaderColumnMap(sheet);
-  const nameCol = findColIndex(colMap, [
-    '이름', 'name', '성명', '참여자이름', '참여자 이름', '회원명', '참여자', '참여자성명'
-  ]) || 3;
-  const idCol = findColIndex(colMap, [
-    '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호'
-  ]);
-  const phoneCol = findColIndex(colMap, [
-    '전화번호', '연락처', '휴대폰', 'phone', '핸드폰'
-  ]);
-  // [핵심] 사용자가 폼에서 입력한 '오늘 날짜' 열을 1순위로 지정 (제출 시점인 타임스탬프와 분리)
-  const todayDateCol = findColIndex(colMap, [
-    '오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자'
-  ]);
-  const timestampCol = findColIndex(colMap, [
-    '타임스탬프', '제출일시', '작성일자', '생성일시'
-  ]);
-  const dateCol = todayDateCol || timestampCol || 2;
-  
-  let commentCol = findColIndex(colMap, [
-    '피드백 코멘트', '피드백코멘트',
-    '피드백 내용', '피드백내용',
-    '코치 피드백', '코치피드백',
-    '코칭 코멘트', '코칭코멘트',
-    '코치 코멘트', '코치코멘트',
-    '코칭 내용', '코칭내용',
-    '코치답변', '코치 답변', '답변',
-    'feedbackComment', 'coachComment'
-  ]);
-
-  // 시트에 [피드백 코멘트] 열이 없으면 헤더 마지막에 자동 생성하여 실패 방지
-  if (!commentCol) {
-    commentCol = sheet.getLastColumn() + 1;
-    sheet.getRange(1, commentCol).setValue('피드백 코멘트');
-    colMap['피드백코멘트'] = commentCol;
-    colMap['피드백 코멘트'] = commentCol;
-  }
-
-  const values = sheet.getDataRange().getValues();
+  const lastRow = sheet.getLastRow();
+  const lastCol = sheet.getLastColumn();
   let targetRow = -1;
 
   const cleanTargetName = memberName.replace(/\s+/g, '').toLowerCase();
   const cleanTargetKey = memberKey.replace(/\s+/g, '').toLowerCase();
   const cleanTargetId = memberId.replace(/\s+/g, '').toLowerCase();
-  const cleanTargetDate = dateStr.replace(/[^0-9]/g, '');
 
-  for (let i = 1; i < values.length; i++) {
-    const rowName = String(values[i][nameCol - 1] || '').trim();
-    const cleanRowName = rowName.replace(/\s+/g, '').toLowerCase();
+  // ==============================================================================
+  // [1순위 고속 직행] 프론트엔드에서 rowNumber가 전달되었고 해당 행이 유효한 경우
+  // ==============================================================================
+  if (reqRow && reqRow >= 2 && reqRow <= lastRow) {
+    const rowValues = sheet.getRange(reqRow, 1, 1, lastCol).getValues()[0];
+    let isRowMemberMatch = false;
 
-    const rowId = idCol ? String(values[i][idCol - 1] || '').trim().toLowerCase() : '';
-    const rowPhone = phoneCol ? String(values[i][phoneCol - 1] || '').replace(/[^0-9]/g, '') : '';
+    for (let c = 0; c < rowValues.length; c++) {
+      const cellVal = String(rowValues[c] || '').trim();
+      const cellClean = cellVal.replace(/\s+/g, '').toLowerCase();
+      const cellDigits = cellVal.replace(/[^0-9]/g, '');
 
-    // 1. 이름/식별자 매칭 (이름, 회원번호, 연락처 중 하나라도 일치하면 인정)
-    let isNameMatch = false;
-    if (cleanTargetName && cleanRowName === cleanTargetName) isNameMatch = true;
-    else if (cleanTargetKey && cleanRowName === cleanTargetKey) isNameMatch = true;
-    else if (cleanTargetId && rowId && cleanTargetId === rowId) isNameMatch = true;
-    else if (cleanTargetKey && rowId && cleanTargetKey === rowId) isNameMatch = true;
-    else if (memberPhone && rowPhone && (memberPhone.endsWith(rowPhone) || rowPhone.endsWith(memberPhone))) isNameMatch = true;
-    else if (cleanTargetName && cleanRowName && (cleanRowName.includes(cleanTargetName) || cleanTargetName.includes(cleanRowName))) isNameMatch = true;
-
-    // 2. 날짜 매칭: 피드백 작성 시점(타임스탬프)과 무관하게 회원이 입력한 '오늘 날짜' 기준 1순위 매칭
-    let isDateMatch = false;
-
-    // (A) 회원이 입력한 '오늘 날짜' 열 1순위 매칭
-    if (todayDateCol) {
-      const rawVal = values[i][todayDateCol - 1];
-      const strVal = (rawVal instanceof Date)
-        ? Utilities.formatDate(rawVal, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd')
-        : String(rawVal || '').trim();
-      const cleanVal = strVal.replace(/[^0-9]/g, '');
-      if (strVal && dateStr && (strVal.includes(dateStr) || dateStr.includes(strVal))) isDateMatch = true;
-      else if (cleanVal && cleanTargetDate && (cleanVal.includes(cleanTargetDate) || cleanTargetDate.includes(cleanVal))) isDateMatch = true;
+      if (cleanTargetName && (cellClean === cleanTargetName || cellClean.includes(cleanTargetName))) {
+        isRowMemberMatch = true;
+        break;
+      }
+      if (cleanTargetKey && (cellClean === cleanTargetKey || cellClean.includes(cleanTargetKey))) {
+        isRowMemberMatch = true;
+        break;
+      }
+      if (cleanTargetId && (cellClean === cleanTargetId || cellClean.includes(cleanTargetId))) {
+        isRowMemberMatch = true;
+        break;
+      }
+      if (memberPhone && cellDigits && cellDigits.length >= 7 && (memberPhone.endsWith(cellDigits) || cellDigits.endsWith(memberPhone))) {
+        isRowMemberMatch = true;
+        break;
+      }
     }
 
-    // (B) 1순위 열이 없거나 매칭되지 않은 경우 타임스탬프 열 매칭
-    if (!isDateMatch && timestampCol) {
-      const rawVal = values[i][timestampCol - 1];
-      const strVal = (rawVal instanceof Date)
-        ? Utilities.formatDate(rawVal, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd')
-        : String(rawVal || '').trim();
-      const cleanVal = strVal.replace(/[^0-9]/g, '');
-      if (strVal && dateStr && (strVal.includes(dateStr) || dateStr.includes(strVal))) isDateMatch = true;
-      else if (cleanVal && cleanTargetDate && (cleanVal.includes(cleanTargetDate) || cleanTargetDate.includes(cleanVal))) isDateMatch = true;
+    if (isRowMemberMatch) {
+      targetRow = reqRow;
+      Logger.log(`[handleUpdateFeedbackComment] rowNumber 직행 성공: Row ${targetRow} (${memberName || memberKey})`);
+    } else {
+      Logger.log(`[handleUpdateFeedbackComment] rowNumber(${reqRow}) 회원 불일치, 스마트 전체 스캔으로 전환`);
+    }
+  }
+
+  // ==============================================================================
+  // [2순위 스마트 스캔] rowNumber가 없거나 행 이동으로 불일치한 경우의 무결점 탐색
+  // ==============================================================================
+  if (targetRow === -1) {
+    const values = sheet.getDataRange().getValues();
+    const tz = (ss && typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : 'Asia/Seoul';
+
+    // 1. 이름 열 검색
+    let nameCol = null;
+    const colKeys = Object.keys(colMap);
+    for (let j = 0; j < colKeys.length; j++) {
+      const ck = colKeys[j].replace(/\s+/g, '').toLowerCase();
+      if (ck.includes('이름') || ck.includes('성명') || ck.includes('참여자') || ck.includes('회원명')) {
+        nameCol = colMap[colKeys[j]];
+        break;
+      }
+    }
+    if (!nameCol) nameCol = findColIndex(colMap, ['이름', 'name', '성명', '회원명']) || 3;
+
+    const idCol = findColIndex(colMap, ['회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호']);
+    const phoneCol = findColIndex(colMap, ['전화번호', '연락처', '휴대폰', 'phone', '핸드폰']);
+
+    // 2. [핵심] 회원이 입력한 '오늘 날짜' 열 스마트 검색
+    let todayDateCol = null;
+    for (let j = 0; j < colKeys.length; j++) {
+      const ck = colKeys[j].replace(/\s+/g, '').toLowerCase();
+      if (ck.includes('오늘') && (ck.includes('날짜') || ck.includes('일자'))) {
+        todayDateCol = colMap[colKeys[j]];
+        break;
+      }
+    }
+    if (!todayDateCol) {
+      for (let j = 0; j < colKeys.length; j++) {
+        const ck = colKeys[j].replace(/\s+/g, '').toLowerCase();
+        if (ck.includes('피드백날짜') || ck.includes('설문날짜') || ck.includes('작성일자') || ck.includes('피드백일자')) {
+          todayDateCol = colMap[colKeys[j]];
+          break;
+        }
+      }
+    }
+    if (!todayDateCol) {
+      todayDateCol = findColIndex(colMap, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자']);
     }
 
-    // (C) 행 내 셀 전체에서 날짜 텍스트 보조 매칭
-    if (!isDateMatch && cleanTargetDate && cleanTargetDate.length >= 8) {
+    const timestampCol = findColIndex(colMap, ['타임스탬프', '제출일시', '작성일자', '생성일시']) || 1;
+
+    // 날짜 매칭 판별 헬퍼 (다중 타임존 및 정규화 대응)
+    const cleanTargetDate = dateStr.replace(/[^0-9]/g, '');
+    const shortTargetDate = cleanTargetDate.length >= 4 ? cleanTargetDate.slice(-4) : cleanTargetDate;
+
+    function checkDateCell(rawVal) {
+      if (!rawVal) return false;
+      if (rawVal instanceof Date) {
+        const dSeoul = Utilities.formatDate(rawVal, 'Asia/Seoul', 'yyyy-MM-dd');
+        const dTz = Utilities.formatDate(rawVal, tz || 'Asia/Seoul', 'yyyy-MM-dd');
+        const dUtc = Utilities.formatDate(rawVal, 'Etc/GMT', 'yyyy-MM-dd');
+        if (dateStr && (dSeoul === dateStr || dTz === dateStr || dUtc === dateStr)) return true;
+        const cSeoul = dSeoul.replace(/[^0-9]/g, '');
+        const cTz = dTz.replace(/[^0-9]/g, '');
+        if (cleanTargetDate && (cSeoul === cleanTargetDate || cTz === cleanTargetDate)) return true;
+        if (shortTargetDate && shortTargetDate.length === 4 && (cSeoul.endsWith(shortTargetDate) || cTz.endsWith(shortTargetDate))) return true;
+      }
+      const s = String(rawVal).trim();
+      const sClean = s.replace(/[^0-9]/g, '');
+      if (dateStr && (s.includes(dateStr) || dateStr.includes(s))) return true;
+      if (cleanTargetDate && cleanTargetDate.length >= 6 && (sClean.includes(cleanTargetDate) || cleanTargetDate.includes(sClean))) return true;
+      if (shortTargetDate && shortTargetDate.length === 4 && sClean.length >= 4 && (sClean.endsWith(shortTargetDate) || sClean.includes(shortTargetDate))) return true;
+      return false;
+    }
+
+    // [1차 패스] 이름 일치 + 회원이 입력한 '오늘 날짜' 열 일치 (최신 제출부터 역순 탐색)
+    for (let i = values.length - 1; i >= 1; i--) {
+      const rowName = String(values[i][nameCol - 1] || '').trim();
+      const cleanRowName = rowName.replace(/\s+/g, '').toLowerCase();
+      const rowId = idCol ? String(values[i][idCol - 1] || '').trim().toLowerCase() : '';
+      const rowPhone = phoneCol ? String(values[i][phoneCol - 1] || '').replace(/[^0-9]/g, '') : '';
+
+      let isNameMatch = false;
+      if (cleanTargetName && (cleanRowName === cleanTargetName || cleanRowName.includes(cleanTargetName) || cleanTargetName.includes(cleanRowName))) isNameMatch = true;
+      else if (cleanTargetKey && (cleanRowName === cleanTargetKey || cleanRowName.includes(cleanTargetKey))) isNameMatch = true;
+      else if (cleanTargetId && rowId && cleanTargetId === rowId) isNameMatch = true;
+      else if (memberPhone && rowPhone && rowPhone.length >= 7 && (memberPhone.endsWith(rowPhone) || rowPhone.endsWith(memberPhone))) isNameMatch = true;
+
+      if (!isNameMatch) continue;
+
+      // (A) 오늘 날짜 열 검사
+      if (todayDateCol && checkDateCell(values[i][todayDateCol - 1])) {
+        targetRow = i + 1;
+        break;
+      }
+
+      // (B) 행 내 타임스탬프 제외 전체 셀 검사
       for (let c = 0; c < values[i].length; c++) {
-        const cell = values[i][c];
-        const cellStr = (cell instanceof Date)
-          ? Utilities.formatDate(cell, Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd')
-          : String(cell || '');
-        if (cellStr.replace(/[^0-9]/g, '').includes(cleanTargetDate)) {
-          isDateMatch = true;
+        if (timestampCol && c === timestampCol - 1) continue;
+        if (checkDateCell(values[i][c])) {
+          targetRow = i + 1;
+          break;
+        }
+      }
+      if (targetRow !== -1) break;
+    }
+
+    // [2차 패스] 오늘 날짜 열이 미입력된 경우 타임스탬프 열까지 포함하여 매칭
+    if (targetRow === -1 && timestampCol) {
+      for (let i = values.length - 1; i >= 1; i--) {
+        const rowName = String(values[i][nameCol - 1] || '').trim();
+        const cleanRowName = rowName.replace(/\s+/g, '').toLowerCase();
+        let isNameMatch = false;
+        if (cleanTargetName && (cleanRowName === cleanTargetName || cleanRowName.includes(cleanTargetName))) isNameMatch = true;
+        else if (cleanTargetKey && (cleanRowName === cleanTargetKey || cleanRowName.includes(cleanTargetKey))) isNameMatch = true;
+
+        if (isNameMatch && checkDateCell(values[i][timestampCol - 1])) {
+          targetRow = i + 1;
           break;
         }
       }
     }
 
-    if (isNameMatch && isDateMatch) {
-      targetRow = i + 1;
-      break;
+    // [3차 패스] 날짜 표기 오차 등으로 미매칭 시 해당 회원의 가장 최신 제출 행으로 보호 매칭
+    if (targetRow === -1) {
+      for (let i = values.length - 1; i >= 1; i--) {
+        const rowName = String(values[i][nameCol - 1] || '').trim();
+        const cleanRowName = rowName.replace(/\s+/g, '').toLowerCase();
+        if (cleanTargetName && (cleanRowName === cleanTargetName || cleanRowName.includes(cleanTargetName))) {
+          targetRow = i + 1;
+          Logger.log(`[handleUpdateFeedbackComment] 날짜 불일치로 회원의 최신 행(Row ${targetRow})에 세이프가드 매칭`);
+          break;
+        }
+      }
     }
   }
 
@@ -943,7 +1029,7 @@ function handleUpdateFeedbackComment(ss, payload) {
     const searchTarget = memberName || memberKey;
     return createJsonResponse({
       status: 'error',
-      message: `'${searchTarget}' 회원의 ${dateStr} 일자 피드백 행을 시트에서 찾을 수 없습니다. (시트 전체 ${values.length - 1}개 행 스캔 완료)`
+      message: `'${searchTarget}' 회원의 ${dateStr} 일자 피드백 행을 시트에서 찾을 수 없습니다. (시트 전체 ${sheet.getLastRow() - 1}개 행 스캔 완료)`
     });
   }
 
@@ -1966,7 +2052,7 @@ function setupInitialSheets() {
   let gdSheet = ss.getSheetByName('Guidelines');
   if (!gdSheet) gdSheet = ss.insertSheet('Guidelines');
   if (gdSheet.getLastRow() === 0) {
-    const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
     gdSheet.appendRow(['지침', '내용', '수정일']);
     gdSheet.appendRow(['코칭 철학', '완벽함보다는 지속 가능성에 집중합니다. 단기간 극단적 절식 대신 평생 유지할 수 있는 작은 습관의 복리 효과를 지향합니다. 실패한 날도 과정의 일부입니다.', nowStr]);
     gdSheet.appendRow(['운동 제안 지침', '초보자는 주 3~4회, 하루 20~30분 저강도~중강도 루틴으로 성공 경험을 축적합니다. 점진적 과부하와 관절 부상 방지(스트레칭 10분 필수)를 최우선 원칙으로 합니다.', nowStr]);
@@ -2266,7 +2352,7 @@ function onFormSubmitHandler(e) {
     feedbackSheet.getRange(targetRow, statusCol).setValue('AI초안');
 
     // (10) AI초안_생성일시 컬럼 기록
-    const nowStr = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
     const aiCreatedCol = getOrAddColumn(feedbackSheet, colMap, 'AI초안_생성일시', [
       'AI초안_생성일시', 'AI초안 생성일시', 'AI초안생성일시', 'AI생성일시', '초안생성일시'
     ]);

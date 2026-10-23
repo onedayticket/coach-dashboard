@@ -3417,21 +3417,21 @@ function renderFeedbackTable(feedbacks) {
             <!-- [4단계] 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
             <button type="button" class="btn btn-sm btn-success fw-semibold px-2 py-1 shadow-sm text-white"
                     title="피드백 내용 수정하기"
-                    onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
+                    onclick="openDailyFeedbackModal('${escapeHtml(date)}', ${fb._rowNumber || fb.rowNumber || 'null'})">
               <i class="bi bi-check-circle-fill me-1"></i>✅ 피드백 완료
             </button>
           ` : (isDraft ? `
             <!-- [4단계] AI 초안 상태일 때 파란색 계열 피드백 하기 (초안대기) 버튼 표시 -->
             <button type="button" class="btn btn-sm btn-info text-white fw-semibold px-2 py-1 shadow-sm"
                     title="AI 초안 검토 및 피드백 작성하기"
-                    onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
+                    onclick="openDailyFeedbackModal('${escapeHtml(date)}', ${fb._rowNumber || fb.rowNumber || 'null'})">
               <i class="bi bi-file-earmark-text-fill me-1"></i>📝 피드백 하기 (초안대기)
             </button>
           ` : `
             <!-- 미작성 시 파란색 피드백 하기 버튼 표시 -->
             <button type="button" class="btn btn-sm btn-primary fw-semibold px-2 py-1 shadow-sm"
                     title="피드백 작성하기"
-                    onclick="openDailyFeedbackModal('${escapeHtml(date)}')">
+                    onclick="openDailyFeedbackModal('${escapeHtml(date)}', ${fb._rowNumber || fb.rowNumber || 'null'})">
               <i class="bi bi-pencil-square me-1"></i>피드백 하기
             </button>
           `)}
@@ -3456,33 +3456,39 @@ function getScoreBadgeClass(score) {
  * [6. 피드백 하기 모달 플로우 (체중 추이 분석, 근거 제시, 선택적 복사 반영)]
  * ==============================================================================
  */
-/**
- * ==============================================================================
- * [6. 피드백 하기 모달 플로우 (체중 추이 분석, 근거 제시, 선택적 복사 반영)]
- * ==============================================================================
- */
 
 /**
  * [2단계] 모달 창 즉시 열기 (0.1초 즉시 오픈, 자동 AI 호출 제거)
  * - 클릭 시 로딩 오버레이 없이 즉시 모달을 띄우고,
  *   기존 저장 데이터 또는 백그라운드에서 작성된 'AI초안' 데이터를 그대로 표시
- * - 상단에 회원의 오늘 제출 원본 설문 답변을 접기/펼치기 박스로 제공
+ * - targetRowNumber가 전달되면 해당 시트 행을 1순위로 정확히 타겟팅
  */
-function openDailyFeedbackModal(targetDate) {
+function openDailyFeedbackModal(targetDate, targetRowNumber) {
   if (!AppState.selectedMember) return;
   const mem = AppState.selectedMember;
   const memberName = getMemberName(mem);
+  const memberKey = getMemberKey(mem);
 
-  const targetFb = AppState.feedbacks.find(f => {
-    if (getMemberName(f) !== memberName) return false;
-    const fbDate = getFeedbackDate(f);
-    return fbDate === targetDate || fbDate.includes(targetDate) || targetDate.includes(fbDate);
-  });
+  let targetFb = null;
+  // 1순위: rowNumber 직접 매칭
+  if (targetRowNumber) {
+    targetFb = AppState.feedbacks.find(f => (f._rowNumber === targetRowNumber || f.rowNumber === targetRowNumber));
+  }
+  // 2순위: 회원 및 날짜 일치 탐색
+  if (!targetFb) {
+    targetFb = AppState.feedbacks.find(f => {
+      const fName = getMemberName(f);
+      if (fName !== memberName && (!memberKey || fName !== memberKey)) return false;
+      const fbDate = getFeedbackDate(f);
+      return fbDate === targetDate || fbDate.includes(targetDate) || targetDate.includes(fbDate) || (cleanDateStr(fbDate) === cleanDateStr(targetDate));
+    });
+  }
   if (!targetFb) return;
 
   AppState.currentFeedbackContext = {
     date: targetDate,
-    feedback: targetFb
+    feedback: targetFb,
+    rowNumber: targetFb._rowNumber || targetFb.rowNumber || targetRowNumber
   };
 
   // 1. 기본 대상 정보 헤더 세팅
@@ -4028,13 +4034,23 @@ function initDailyFeedbackModalActions() {
       showToast('피드백 코멘트를 구글 시트(Feedbacks)에 저장 중...', 'info');
 
       // 로컬 Feedbacks 배열 즉시 스마트 동기화
-      const targetFb = AppState.feedbacks.find(f => {
-        const fName = getMemberName(f);
-        const fDate = getFeedbackDate(f);
-        const isNameMatch = fName === memberName || (memberKey && fName === memberKey);
-        const isDateMatch = String(fDate).includes(dateStr) || String(dateStr).includes(String(fDate)) || (cleanDateStr(fDate) === cleanDateStr(dateStr));
-        return isNameMatch && isDateMatch;
-      });
+      let targetFb = null;
+      const currentCtxRow = AppState.currentFeedbackContext ? (AppState.currentFeedbackContext.rowNumber || AppState.currentFeedbackContext.feedback?._rowNumber) : null;
+      if (currentCtxRow) {
+        targetFb = AppState.feedbacks.find(f => f._rowNumber === currentCtxRow || f.rowNumber === currentCtxRow);
+      }
+      if (!targetFb) {
+        targetFb = AppState.feedbacks.find(f => {
+          const fName = getMemberName(f);
+          const fDate = getFeedbackDate(f);
+          const isNameMatch = fName === memberName || (memberKey && fName === memberKey);
+          const isDateMatch = String(fDate).includes(dateStr) || String(dateStr).includes(String(fDate)) || (cleanDateStr(fDate) === cleanDateStr(dateStr));
+          return isNameMatch && isDateMatch;
+        });
+      }
+      if (!targetFb && AppState.currentFeedbackContext && AppState.currentFeedbackContext.feedback) {
+        targetFb = AppState.currentFeedbackContext.feedback;
+      }
 
       if (targetFb) {
         targetFb['운동_실행률_점수'] = exScoreToSave;
@@ -4074,9 +4090,15 @@ function initDailyFeedbackModalActions() {
         targetFb['피드백 완료'] = '완료';
       }
 
-      // [핵심] 백엔드에 필수 데이터 전송
+      const rowNumberToSave = (targetFb && (targetFb._rowNumber || targetFb.rowNumber))
+        || (AppState.currentFeedbackContext && (AppState.currentFeedbackContext.rowNumber || AppState.currentFeedbackContext.feedback?._rowNumber))
+        || null;
+
+      // [핵심] 백엔드에 필수 데이터 전송 (rowNumber 동봉하여 100% 즉시 직행 매칭)
       const res = await postToGasBackend({
         action: 'updateFeedbackComment',
+        rowNumber: rowNumberToSave,
+        _rowNumber: rowNumberToSave,
         memberKey: memberKey,
         name: memberName,
         memberName: memberName,
@@ -4094,6 +4116,10 @@ function initDailyFeedbackModalActions() {
         운동_수정_제안: exProposalToSave,
         식단_수정_제안: dietProposalToSave
       });
+
+      if (res && res.targetRow && targetFb && !targetFb._rowNumber) {
+        targetFb._rowNumber = res.targetRow;
+      }
 
       const targetNotiKey = `${memberName}_${dateStr}`;
       markAiDraftAsRead(targetNotiKey);
@@ -4783,25 +4809,48 @@ function getMemberPhone(m) {
 }
 
 /**
+ * [핵심] 표준 날짜 문자열(YYYY-MM-DD) 변환 헬퍼
+ * - Date 객체, '2026. 10. 22.', '2026-10-22', '2026/10/22', '26. 10. 22' 등 완벽 지원
+ */
+function formatToStandardDate(raw) {
+  if (!raw) return '';
+  if (raw instanceof Date) {
+    const y = raw.getFullYear();
+    const m = String(raw.getMonth() + 1).padStart(2, '0');
+    const d = String(raw.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  const str = String(raw).trim();
+  // 4자리 연도 매칭: 2026-10-22, 2026. 10. 22., 2026/10/22 등
+  const m4 = str.match(/(20\d{2})[-./\s]+(\d{1,2})[-./\s]+(\d{1,2})/);
+  if (m4) {
+    return `${m4[1]}-${m4[2].padStart(2, '0')}-${m4[3].padStart(2, '0')}`;
+  }
+  // 2자리 연도 매칭: 26. 10. 22
+  const m2 = str.match(/(\d{2})[-./\s]+(\d{1,2})[-./\s]+(\d{1,2})/);
+  if (m2) {
+    return `20${m2[1]}-${m2[2].padStart(2, '0')}-${m2[3].padStart(2, '0')}`;
+  }
+  if (str.includes('T')) return str.split('T')[0].trim();
+  return str.split(' ')[0].trim();
+}
+
+/**
  * [핵심] 피드백 날짜 안전 추출 (제출 시점과 무관하게 회원이 폼에서 직접 입력한 '오늘 날짜' 1순위)
  */
 function getFeedbackDate(f) {
   if (!f) return '';
   // 1순위: 설문지 응답에서 참여자가 직접 입력한 '오늘 날짜'
-  const explicitDate = getField(f, '오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자');
+  const explicitDate = getField(f, '오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '설문날짜', '날짜', 'date', '일자', '피드백일자');
   if (explicitDate) {
-    let str = String(explicitDate).trim();
-    if (str.includes('T')) str = str.split('T')[0];
-    if (str.includes(' ')) str = str.split(' ')[0];
-    return str;
+    const formatted = formatToStandardDate(explicitDate);
+    if (formatted) return formatted;
   }
   // 2순위: 제출 타임스탬프 (작성일시)
-  const ts = getField(f, '타임스탬프', '제출일시', '작성일자', 'timestamp');
+  const ts = getField(f, '타임스탬프', '제출일시', '작성일자', '생성일시', 'timestamp');
   if (ts) {
-    let str = String(ts).trim();
-    if (str.includes('T')) str = str.split('T')[0];
-    if (str.includes(' ')) str = str.split(' ')[0];
-    return str;
+    const formatted = formatToStandardDate(ts);
+    if (formatted) return formatted;
   }
   return '';
 }
