@@ -672,7 +672,8 @@ async function fetchMemberViewWithRetry(apiUrl, body) {
   if (!apiUrl) return null;
   const attempts = [
     { timeoutMs: 38000, delayMs: 0 },
-    { timeoutMs: 20000, delayMs: 1200 }
+    { timeoutMs: 20000, delayMs: 1200 },
+    { timeoutMs: 20000, delayMs: 800 }
   ];
 
   for (let i = 0; i < attempts.length; i++) {
@@ -695,6 +696,12 @@ async function fetchMemberViewWithRetry(apiUrl, body) {
 
       if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
       const json = await res.json();
+      // [구글 리다이렉트 오류 방어] getMemberView는 'unauthorized'를 반환하지 않음
+      // -> 이 응답은 POST가 리다이렉트 중 GET으로 바뀌어 doPost가 실행되지 않은 경우이므로 재시도
+      if (json && json.code === 'unauthorized') {
+        console.warn(`[회원 뷰어] GAS 리다이렉트 오류 감지 (${i + 1}차) -> 재시도`);
+        continue;
+      }
       if (json && json.status) return json;
     } catch (err) {
       console.warn(`[회원 뷰어] GAS 통신 ${i + 1}차 시도 실패:`, err.message || err);

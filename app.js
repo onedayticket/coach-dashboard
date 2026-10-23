@@ -670,17 +670,22 @@ async function syncBackendSessionInfo(gasUrl) {
   }
 
   if (!AppState.geminiApiKey && getCoachToken()) {
-    try {
-      const res = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify({ action: 'getAiConfig', token: getCoachToken() })
-      }).then(r => r.json());
-      if (res && res.status === 'success' && res.geminiApiKey) {
-        AppState.serverGeminiApiKey = String(res.geminiApiKey).trim();
+    // 간헐적 리다이렉트 오류(unauthorized)·통신 실패 대비 최대 3회 시도
+    for (let attempt = 1; attempt <= GAS_UNAUTHORIZED_MAX_ATTEMPTS; attempt++) {
+      try {
+        const res = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify({ action: 'getAiConfig', token: getCoachToken() })
+        }).then(r => r.json());
+        if (res && res.status === 'success') {
+          if (res.geminiApiKey) AppState.serverGeminiApiKey = String(res.geminiApiKey).trim();
+          break;
+        }
+      } catch (e) {
+        console.warn(`[AI 키 동기화 실패 ${attempt}/${GAS_UNAUTHORIZED_MAX_ATTEMPTS}]`, e);
       }
-    } catch (e) {
-      console.warn('[AI 키 동기화 실패 - GAS 경유 모드로 동작]', e);
+      await new Promise(r => setTimeout(r, 400));
     }
   }
 }
@@ -836,6 +841,8 @@ function formatObjectAsFullProfile(obj, excludeKeys) {
   return lines.length > 0 ? lines.join('\n') : '등록된 정보 없음';
 }
 
+const GAS_UNAUTHORIZED_MAX_ATTEMPTS = 3;
+
 async function postToGasBackend(payload) {
   const gasUrl = AppState.gasUrl.trim();
 
@@ -849,13 +856,23 @@ async function postToGasBackend(payload) {
 
   if (gasUrl) {
     try {
-      const response = await fetch(gasUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(payload),
-        signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
-      });
-      const json = await response.json();
+      // [구글 리다이렉트 오류 방어] GAS 웹앱은 간헐적으로 추가 리다이렉트를 거치며 POST가 본문 없는 GET으로 바뀌어
+      // doPost가 실행되지 않은 채 'unauthorized'가 돌아오는 경우가 있음 -> 최대 3회까지 재전송 후에만 세션 만료로 판단
+      let json = null;
+      for (let attempt = 1; attempt <= GAS_UNAUTHORIZED_MAX_ATTEMPTS; attempt++) {
+        const response = await fetch(gasUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+          body: JSON.stringify(payload),
+          signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
+        });
+        json = await response.json();
+        if (!(json && json.code === 'unauthorized') || payload.action === 'verifyCoachPassword') break;
+        if (attempt < GAS_UNAUTHORIZED_MAX_ATTEMPTS) {
+          console.warn(`[GAS 리다이렉트 오류 의심] unauthorized 응답 재시도 ${attempt}/${GAS_UNAUTHORIZED_MAX_ATTEMPTS - 1}`);
+          await new Promise(r => setTimeout(r, 400));
+        }
+      }
       if (json && json.code === 'unauthorized' && payload.action !== 'verifyCoachPassword') {
         handleCoachSessionExpired();
       }
