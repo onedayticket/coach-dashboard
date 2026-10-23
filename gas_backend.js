@@ -47,7 +47,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-23.2';
+const BACKEND_VERSION = '2026-10-23.3';
 
 /**
  * CORS 대응 (doOptions)
@@ -2215,6 +2215,27 @@ function installFormSubmitTrigger() {
 }
 
 /**
+ * [서버 웜업] 5분마다 가벼운 실행으로 Apps Script 실행 환경을 깨어 있는 상태로 유지
+ * - 오래 사용하지 않은 웹앱은 첫 요청 시 수십 초 지연(콜드스타트)이 발생하므로 이를 완화
+ * - 시트/외부 API를 호출하지 않아 할당량 영향이 거의 없음
+ */
+function keepWarm() {
+  CacheService.getScriptCache().get('KEEP_WARM_PING');
+  PropertiesService.getScriptProperties().getProperty('COACH_TOKEN_SECRET');
+}
+
+function installKeepWarmTrigger() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === 'keepWarm') ScriptApp.deleteTrigger(t);
+  });
+  ScriptApp.newTrigger('keepWarm').timeBased().everyMinutes(5).create();
+  Logger.log('[웜업 트리거 설치 완료] 5분마다 keepWarm 실행');
+  try {
+    SpreadsheetApp.getUi().alert('✓ 설치 완료', '5분마다 서버를 깨워 두는 웜업 트리거가 설치되었습니다.', SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {}
+}
+
+/**
  * 구글 폼 제출 시 백그라운드 자동 실행되는 핸들러 함수
  * - 회원 제출 즉시 AI 초안을 생성하여 Feedbacks 시트에 'AI초안' 상태로 안전하게 기록
  * - 외부 발송 기능은 배제하고 시트 초안 기록에만 집중
@@ -2491,6 +2512,7 @@ function onOpen() {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('🤖 코칭 자동화')
       .addItem('⚡ 폼 제출 트리거 설치/점검', 'installFormSubmitTrigger')
+      .addItem('🔥 서버 응답 지연 방지(웜업) 트리거 설치', 'installKeepWarmTrigger')
       .addSeparator()
       .addItem('🧪 마지막 추가된 행 AI 초안 생성 테스트', 'testGenerateDraftForLatestRow')
       .addItem('📝 미처리 피드백 전체 AI 초안 일괄 생성', 'processPendingAiDrafts')

@@ -668,8 +668,91 @@ function clearMemberSession(targetId) {
  * 2차: 20초 (1차 실패 시 1.2초 대기 후 활성화된 컨테이너로 초고속 재시도)
  * - 네트워크 실패 시에만 재시도하며, 서버가 응답한 오류(인증 필요 등)는 그대로 반환
  */
+/**
+ * [읽기 전용 GAS 요청 병렬 재요청(헤징) 헬퍼]
+ * - 첫 요청을 끊지 않고 hedgeDelaysMs 시점마다 예비 요청을 추가 발사, 가장 먼저 도착한 정상 JSON 응답 채택
+ * - 구글 오류 HTML/JSON 아님/리다이렉트 오류(unauthorized 등 isTransient)는 즉시 다음 요청으로 전환
+ * - 데이터 변경(저장) 요청에는 사용 금지 (중복 실행 방지)
+ */
+async function fetchJsonHedged(url, init, opts = {}) {
+  const hedgeDelaysMs = opts.hedgeDelaysMs || [0, 8000, 20000];
+  const totalTimeoutMs = opts.totalTimeoutMs || 90000;
+  const isTransient = opts.isTransient || (() => false);
+
+  return new Promise((resolve, reject) => {
+    const controllers = [];
+    const timers = [];
+    let settled = false;
+    let started = 0;
+    let failed = 0;
+    let lastError = null;
+
+    const finish = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      timers.forEach(t => clearTimeout(t));
+      controllers.forEach(c => { try { c.abort(); } catch (e) {} });
+      if (opts.signal) opts.signal.removeEventListener('abort', onExternalAbort);
+      fn(val);
+    };
+    const onExternalAbort = () => {
+      const err = new Error('사용자 취소');
+      err.name = 'AbortError';
+      finish(reject, err);
+    };
+
+    const launch = () => {
+      if (settled || started >= hedgeDelaysMs.length) return;
+      started++;
+      const controller = new AbortController();
+      controllers.push(controller);
+      fetch(url, { ...init, signal: controller.signal })
+        .then(r => r.text())
+        .then(raw => {
+          let json = null;
+          try { json = JSON.parse(raw); } catch (e) { throw new Error('JSON 아님 (구글 일시 오류 페이지)'); }
+          if (isTransient(json)) throw new Error('일시적 리다이렉트 오류 응답');
+          finish(resolve, json);
+        })
+        .catch(err => {
+          if (settled) return;
+          failed++;
+          lastError = err;
+          if (started < hedgeDelaysMs.length) {
+            launch(); // 빠르게 실패한 경우 다음 예비 요청을 즉시 발사
+          } else if (failed >= started) {
+            finish(reject, lastError);
+          }
+        });
+    };
+
+    if (opts.signal) {
+      if (opts.signal.aborted) return onExternalAbort();
+      opts.signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    hedgeDelaysMs.slice(1).forEach(d => timers.push(setTimeout(launch, d)));
+    timers.push(setTimeout(() => finish(reject, lastError || new Error(`전체 ${totalTimeoutMs / 1000}초 초과`)), totalTimeoutMs));
+    launch();
+  });
+}
+
 async function fetchMemberViewWithRetry(apiUrl, body) {
   if (!apiUrl) return null;
+
+  // [읽기 요청(토큰 재방문/회원 확인)] 병렬 재요청(헤징)으로 콜드스타트·구글 일시 오류 대기 최소화
+  // ※ PIN 제출은 오류 횟수가 중복 집계되지 않도록 아래 순차 재시도 사용
+  if (!body.pin) {
+    try {
+      return await fetchJsonHedged(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body)
+      }, { isTransient: json => !json || !json.status || json.code === 'unauthorized' });
+    } catch (err) {
+      console.warn('[회원 뷰어] GAS 조회 실패:', err.message || err);
+      return null;
+    }
+  }
   const attempts = [
     { timeoutMs: 38000, delayMs: 0 },
     { timeoutMs: 20000, delayMs: 1200 },

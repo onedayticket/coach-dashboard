@@ -646,7 +646,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-23.2';
+const EXPECTED_BACKEND_VERSION = '2026-10-23.3';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -690,105 +690,138 @@ async function syncBackendSessionInfo(gasUrl) {
   }
 }
 
+/**
+ * [읽기 전용 GAS 요청 병렬 재요청(헤징) 헬퍼]
+ * - 첫 요청을 끊지 않고 hedgeDelaysMs 시점마다 예비 요청을 추가 발사, 가장 먼저 도착한 정상 JSON 응답 채택
+ * - 구글 오류 HTML/JSON 아님/리다이렉트 오류(unauthorized 등 isTransient)는 즉시 다음 요청으로 전환
+ * - 데이터 변경(저장) 요청에는 사용 금지 (중복 실행 방지)
+ */
+async function fetchJsonHedged(url, init, opts = {}) {
+  const hedgeDelaysMs = opts.hedgeDelaysMs || [0, 8000, 20000];
+  const totalTimeoutMs = opts.totalTimeoutMs || 90000;
+  const isTransient = opts.isTransient || (() => false);
+
+  return new Promise((resolve, reject) => {
+    const controllers = [];
+    const timers = [];
+    let settled = false;
+    let started = 0;
+    let failed = 0;
+    let lastError = null;
+
+    const finish = (fn, val) => {
+      if (settled) return;
+      settled = true;
+      timers.forEach(t => clearTimeout(t));
+      controllers.forEach(c => { try { c.abort(); } catch (e) {} });
+      if (opts.signal) opts.signal.removeEventListener('abort', onExternalAbort);
+      fn(val);
+    };
+    const onExternalAbort = () => {
+      const err = new Error('사용자 취소');
+      err.name = 'AbortError';
+      finish(reject, err);
+    };
+
+    const launch = () => {
+      if (settled || started >= hedgeDelaysMs.length) return;
+      started++;
+      const controller = new AbortController();
+      controllers.push(controller);
+      fetch(url, { ...init, signal: controller.signal })
+        .then(r => r.text())
+        .then(raw => {
+          let json = null;
+          try { json = JSON.parse(raw); } catch (e) { throw new Error('JSON 아님 (구글 일시 오류 페이지)'); }
+          if (isTransient(json)) throw new Error('일시적 리다이렉트 오류 응답');
+          finish(resolve, json);
+        })
+        .catch(err => {
+          if (settled) return;
+          failed++;
+          lastError = err;
+          if (started < hedgeDelaysMs.length) {
+            launch(); // 빠르게 실패한 경우 다음 예비 요청을 즉시 발사
+          } else if (failed >= started) {
+            finish(reject, lastError);
+          }
+        });
+    };
+
+    if (opts.signal) {
+      if (opts.signal.aborted) return onExternalAbort();
+      opts.signal.addEventListener('abort', onExternalAbort, { once: true });
+    }
+    hedgeDelaysMs.slice(1).forEach(d => timers.push(setTimeout(launch, d)));
+    timers.push(setTimeout(() => finish(reject, lastError || new Error(`전체 ${totalTimeoutMs / 1000}초 초과`)), totalTimeoutMs));
+    launch();
+  });
+}
+
 async function loadAllData() {
   const gasUrl = (AppState.gasUrl || DEFAULT_GAS_API_URL || '').trim();
 
   if (gasUrl) {
-    // [콜드스타트 대응 2단계 지능형 로드]
-    // 첫 기동 시 구글 서버가 깨어나는 중(Cold Start)일 수 있으므로 2회 자동 재시도
-    const maxAttempts = 2;
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      let controller = null;
-      let timeoutTimer = null;
-      let coldStartNoticeTimer = null;
-      const attemptTimeout = (attempt === 1) ? 35000 : 25000;
+    // [콜드스타트/구글 리다이렉트 지연 대응: 병렬 재요청(헤징)]
+    // 기존: 35초에서 요청을 끊고 처음부터 재요청 -> 36초면 끝났을 응답을 버리고 다시 대기해 분 단위 지연 발생
+    // 개선: 첫 요청은 유지한 채 8초/20초 시점에 예비 요청을 병렬로 추가하고, 가장 먼저 온 정상 응답 사용 (최대 90초)
+    let coldStartNoticeTimer = null;
+    const loadStart = Date.now();
+    try {
+      showLoadingOverlay('구글 시트에서 최신 데이터를 가져오는 중...');
+      coldStartNoticeTimer = setTimeout(() => {
+        const el = document.getElementById('loadingOverlayText');
+        if (el) el.textContent = '구글 클라우드 서버 준비 중입니다 (첫 기동 시 10~25초 소요될 수 있습니다)...';
+      }, 7000);
 
-      try {
-        if (attempt === 1) {
-          showLoadingOverlay('구글 시트에서 최신 데이터를 가져오는 중...', attemptTimeout);
-          // 7초 이상 응답이 없으면 콜드스타트 안내로 동적 갱신
-          coldStartNoticeTimer = setTimeout(() => {
-            const el = document.getElementById('loadingOverlayText');
-            if (el) el.textContent = '구글 클라우드 서버 준비 중입니다 (첫 기동 시 10~25초 소요될 수 있습니다)...';
-          }, 7000);
-        } else {
-          showLoadingOverlay('구글 서버 준비 완료 중, 즉시 재시도 중입니다...', attemptTimeout);
-        }
+      const resJson = await fetchJsonHedged(
+        `${gasUrl}?action=getAll&token=${encodeURIComponent(getCoachToken())}`,
+        { method: 'GET' },
+        { signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined }
+      );
+      clearTimeout(coldStartNoticeTimer);
+      console.log(`[GAS getAll] ${((Date.now() - loadStart) / 1000).toFixed(1)}초`);
 
-        controller = new AbortController();
-        timeoutTimer = setTimeout(() => {
-          controller.abort();
-        }, attemptTimeout);
-
-        const response = await fetch(`${gasUrl}?action=getAll&token=${encodeURIComponent(getCoachToken())}`, {
-          method: 'GET',
-          headers: { 'Accept': 'application/json' },
-          signal: controller.signal
-        });
-
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        if (coldStartNoticeTimer) clearTimeout(coldStartNoticeTimer);
-
-        if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-        const resJson = await response.json();
-
-        // [보안] 토큰 만료/무효: Mock으로 대체하지 않고 즉시 재로그인 요청
-        if (resJson && resJson.code === 'unauthorized') {
-          handleCoachSessionExpired();
-          return;
-        }
-
-        if (resJson.status === 'success' && resJson.data) {
-          AppState.members = Array.isArray(resJson.data.members) ? resJson.data.members : [];
-          AppState.feedbacks = Array.isArray(resJson.data.feedbacks) ? resJson.data.feedbacks : [];
-          if (resJson.data.guidelines) {
-            const g = { ...resJson.data.guidelines };
-            const invalidTitles = ['데일리 피드백 지침', '데일리피드백지침', '피드백 지침', '피드백지침', '피드백지침서'];
-            if (g.motivation && invalidTitles.includes(String(g.motivation).trim())) {
-              g.motivation = MOCK_DB.guidelines.motivation;
-            }
-            AppState.guidelines = { ...AppState.guidelines, ...g };
-          }
-          AppState.isOnline = true;
-          syncBackendSessionInfo(gasUrl);
-          updateApiStatusUI();
-          const syncText = document.getElementById('guidelinesSyncStatusText');
-          if (syncText) {
-            const now = new Date();
-            syncText.textContent = `구글 시트(Guidelines) 동기화 완료 (${now.toLocaleTimeString()})`;
-          }
-          try {
-            updateGlobalNotificationBadge();
-          } catch (badgeErr) {
-            console.warn('[알림 뱃지 갱신 예외 무시]', badgeErr);
-          }
-          hideLoadingOverlay();
-          if (attempt > 1) {
-            showToast('✓ 구글 시트 연결이 완료되어 최신 데이터로 동기화되었습니다.', 'success', 3500);
-          }
-          return;
-        } else {
-          const errMsg = (resJson && resJson.message) ? resJson.message : '데이터 형식 불일치';
-          console.warn('[GAS 백엔드 오류 반환]:', errMsg);
-          if (attempt < maxAttempts) {
-            await new Promise(r => setTimeout(r, 1000));
-            continue;
-          }
-        }
-      } catch (e) {
-        if (timeoutTimer) clearTimeout(timeoutTimer);
-        if (coldStartNoticeTimer) clearTimeout(coldStartNoticeTimer);
-        console.warn(`[GAS 연동 시도 ${attempt}/${maxAttempts} 실패]:`, e.name === 'AbortError' ? 'Timeout' : e.message);
-
-        // 첫 시도 실패 시: 구글 서버가 방금 부팅 완료되었을 확률이 높으므로 1.2초 후 즉시 2차 시도
-        if (attempt < maxAttempts) {
-          await new Promise(r => setTimeout(r, 1200));
-          continue;
-        }
-
-        // 2회 모두 실패 시 안내
-        showToast('⚠️ 구글 시트 서버 응답 지연으로 로컬 Mock 모드로 표시합니다.\n상단 상태바를 통해 언제든 다시 연결할 수 있습니다.', 'warning', 6000);
+      // [보안] 토큰 만료/무효: Mock으로 대체하지 않고 즉시 재로그인 요청
+      if (resJson && resJson.code === 'unauthorized') {
+        handleCoachSessionExpired();
+        return;
       }
+
+      if (resJson.status === 'success' && resJson.data) {
+        AppState.members = Array.isArray(resJson.data.members) ? resJson.data.members : [];
+        AppState.feedbacks = Array.isArray(resJson.data.feedbacks) ? resJson.data.feedbacks : [];
+        if (resJson.data.guidelines) {
+          const g = { ...resJson.data.guidelines };
+          const invalidTitles = ['데일리 피드백 지침', '데일리피드백지침', '피드백 지침', '피드백지침', '피드백지침서'];
+          if (g.motivation && invalidTitles.includes(String(g.motivation).trim())) {
+            g.motivation = MOCK_DB.guidelines.motivation;
+          }
+          AppState.guidelines = { ...AppState.guidelines, ...g };
+        }
+        AppState.isOnline = true;
+        syncBackendSessionInfo(gasUrl);
+        updateApiStatusUI();
+        const syncText = document.getElementById('guidelinesSyncStatusText');
+        if (syncText) {
+          const now = new Date();
+          syncText.textContent = `구글 시트(Guidelines) 동기화 완료 (${now.toLocaleTimeString()})`;
+        }
+        try {
+          updateGlobalNotificationBadge();
+        } catch (badgeErr) {
+          console.warn('[알림 뱃지 갱신 예외 무시]', badgeErr);
+        }
+        hideLoadingOverlay();
+        return;
+      }
+
+      console.warn('[GAS 백엔드 오류 반환]:', (resJson && resJson.message) ? resJson.message : '데이터 형식 불일치');
+      showToast('⚠️ 구글 시트 서버 응답 지연으로 로컬 Mock 모드로 표시합니다.\n상단 상태바를 통해 언제든 다시 연결할 수 있습니다.', 'warning', 6000);
+    } catch (e) {
+      clearTimeout(coldStartNoticeTimer);
+      console.warn(`[GAS 연동 실패 ${((Date.now() - loadStart) / 1000).toFixed(1)}초]:`, e.message || e.name);
+      showToast('⚠️ 구글 시트 서버 응답 지연으로 로컬 Mock 모드로 표시합니다.\n상단 상태바를 통해 언제든 다시 연결할 수 있습니다.', 'warning', 6000);
     }
   }
 
