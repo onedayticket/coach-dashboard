@@ -80,6 +80,12 @@ function doGet(e) {
       });
     }
 
+    // [보안] 모든 GET 데이터 조회는 코치 로그인 토큰이 있어야만 허용 (회원 DB 외부 공개 차단)
+    const getToken = (e && e.parameter && e.parameter.token) ? e.parameter.token : '';
+    if (!verifyCoachToken(getToken)) {
+      return createUnauthorizedResponse();
+    }
+
     if (action === 'getAll') {
       const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
       const feedbackSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
@@ -140,6 +146,21 @@ function doPost(e) {
     const action = payload.action;
     const ss = SpreadsheetApp.getActiveSpreadsheet();
 
+    // [보안 인증] 코치 마스터 비밀번호 검증 (로그인 성공 시 코치 토큰 발급)
+    if (action === 'verifyCoachPassword') {
+      return handleVerifyCoachPassword(payload);
+    }
+
+    // [회원 마이페이지] 휴대폰 뒷 4자리(또는 회원 토큰) 서버 검증 후 본인 데이터만 반환
+    if (action === 'getMemberView') {
+      return handleGetMemberView(ss, payload);
+    }
+
+    // [보안] 그 외 모든 조회/저장/AI 생성 요청은 코치 로그인 토큰 필수
+    if (!verifyCoachToken(payload.token)) {
+      return createUnauthorizedResponse();
+    }
+
     // 1. 회원 상태 및 태그 즉시 업데이트
     if (action === 'updateMemberStatusTag') {
       return handleUpdateMemberStatusTag(ss, payload);
@@ -178,11 +199,6 @@ function doPost(e) {
     // 8. [AI] 종합 피드백 생성
     if (action === 'generateComprehensiveFeedback') {
       return handleAiComprehensiveFeedback(ss, payload);
-    }
-
-    // 9. [보안 인증] 코치 마스터 비밀번호 검증 (구글 서버 스크립트 속성 기반)
-    if (action === 'verifyCoachPassword') {
-      return handleVerifyCoachPassword(payload);
     }
 
     return createJsonResponse({ status: 'error', message: '지원하지 않는 action입니다: ' + action });
@@ -1151,14 +1167,8 @@ function getGoogleSupportedTextModels(apiKey) {
   if (!apiKey) return [];
 
   const cache = CacheService.getScriptCache();
-  // 1. [구버전 캐시 강제 청소] 2.5 이하 모델 및 쿼터 0 에러 유발 Pro 모델이 포함된 모든 이전 캐시 키 강제 삭제
-  try {
-    cache.remove('SUPPORTED_MODELS_CACHE_V38');
-    cache.remove('SUPPORTED_MODELS_CACHE_V38_ONLY');
-    cache.remove('SUPPORTED_MODELS_CACHE_V38_AND_PRO');
-    cache.remove('SUPPORTED_MODELS_CACHE_V6');
-    cache.remove('SUPPORTED_MODELS_V38_STABLE_ONLY_2026');
-  } catch (e) { }
+  // 1. 구버전 캐시 키는 더 이상 조회하지 않으며 CacheService 최대 보존기간(6시간) 경과로 자동 만료되므로
+  //    AI 호출마다 반복하던 cache.remove() RPC 호출은 제거 (수동 정리는 testAndAuthorizeUrlFetch에서 수행)
 
   // 2. 신규 전용 캐시 키 (503 고수요 병목 없는 초고속 무정체 Flash-Lite 클러스터)
   const CACHE_KEY = 'SUPPORTED_MODELS_V38_FLASH_LITE_CLUSTER_2026';
@@ -2471,10 +2481,14 @@ function processPendingAiDrafts() {
   const statusCol = colMap['피드백상태'] || colMap['피드백 상태'] || colMap['완료여부'] || colMap['상태'];
   const summaryCol = colMap['피드백요약'] || colMap['피드백_요약'] || colMap['요약'];
 
+  // 상태/요약 열을 행마다 getValue()로 읽지 않고 루프 전에 한 번에 일괄 조회 (시트 RPC 호출 최소화)
+  const statusValues = statusCol ? feedbackSheet.getRange(2, statusCol, lastRow - 1, 1).getValues() : null;
+  const summaryValues = summaryCol ? feedbackSheet.getRange(2, summaryCol, lastRow - 1, 1).getValues() : null;
+
   let processedCount = 0;
   for (let r = 2; r <= lastRow; r++) {
-    const currentStatus = statusCol ? String(feedbackSheet.getRange(r, statusCol).getValue() || '').trim() : '';
-    const currentSummary = summaryCol ? String(feedbackSheet.getRange(r, summaryCol).getValue() || '').trim() : '';
+    const currentStatus = statusValues ? String(statusValues[r - 2][0] || '').trim() : '';
+    const currentSummary = summaryValues ? String(summaryValues[r - 2][0] || '').trim() : '';
 
     // 아직 코치가 완료하지 않았고, AI 초안도 안 채워진 행 탐색
     if (currentStatus !== '완료' && (!currentStatus || currentStatus === '대기' || !currentSummary)) {
@@ -2513,22 +2527,13 @@ function handleVerifyCoachPassword(payload) {
     return createJsonResponse({ status: 'error', message: '비밀번호를 입력해 주세요.' });
   }
 
-  // 1순위: 스크립트 속성의 COACH_PASSWORD
-  let correctPassword = PropertiesService.getScriptProperties().getProperty('COACH_PASSWORD');
-
-  // 미설정 시 기본 마스터 비밀번호로 자동 세팅 (초기 안전값)
-  if (!correctPassword) {
-    correctPassword = 'coach1234!';
-    try {
-      PropertiesService.getScriptProperties().setProperty('COACH_PASSWORD', correctPassword);
-      Logger.log('[보안] 스크립트 속성에 기본 COACH_PASSWORD가 자동 등록되었습니다.');
-    } catch (e) {}
-  }
+  const correctPassword = getCoachPassword();
 
   if (enteredPassword === correctPassword) {
     return createJsonResponse({
       status: 'success',
-      message: '코치 보안 인증에 성공했습니다.'
+      message: '코치 보안 인증에 성공했습니다.',
+      token: issueCoachToken()
     });
   } else {
     return createJsonResponse({
@@ -2566,3 +2571,341 @@ function promptChangeCoachPassword() {
   }
 }
 
+/**
+ * ==============================================================================
+ * [보안 토큰] 코치 세션 토큰 & 회원 마이페이지 토큰 (HMAC-SHA256 서명, 서버 무상태 검증)
+ * - 서명 비밀키는 스크립트 속성 'COACH_TOKEN_SECRET'에 최초 1회 자동 생성되어 외부에 노출되지 않음
+ * - 코치 토큰은 현재 비밀번호를 서명에 포함하므로 비밀번호 변경 시 기존 로그인 세션이 자동 만료됨
+ * ==============================================================================
+ */
+const COACH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;  // 코치 로그인 유지 30일
+const MEMBER_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 회원 인증 유지 90일
+const MEMBER_PIN_MAX_FAILS = 5;                         // 회원 PIN 연속 오류 허용 횟수
+const MEMBER_PIN_LOCK_SECONDS = 600;                    // 초과 시 10분 잠금
+
+function getCoachPassword() {
+  const props = PropertiesService.getScriptProperties();
+  let pw = props.getProperty('COACH_PASSWORD');
+  // 미설정 시 기본 마스터 비밀번호로 자동 세팅 (초기 안전값)
+  if (!pw) {
+    pw = 'coach1234!';
+    try {
+      props.setProperty('COACH_PASSWORD', pw);
+      Logger.log('[보안] 스크립트 속성에 기본 COACH_PASSWORD가 자동 등록되었습니다.');
+    } catch (e) {}
+  }
+  return pw;
+}
+
+function getTokenSecret() {
+  const props = PropertiesService.getScriptProperties();
+  let secret = props.getProperty('COACH_TOKEN_SECRET');
+  if (!secret) {
+    secret = Utilities.getUuid() + Utilities.getUuid();
+    props.setProperty('COACH_TOKEN_SECRET', secret);
+  }
+  return secret;
+}
+
+function signTokenData(data) {
+  const sig = Utilities.computeHmacSha256Signature(data, getTokenSecret(), Utilities.Charset.UTF_8);
+  return Utilities.base64EncodeWebSafe(sig).replace(/=+$/, '');
+}
+
+function safeEqual(a, b) {
+  a = String(a || '');
+  b = String(b || '');
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function issueCoachToken() {
+  const exp = Date.now() + COACH_TOKEN_TTL_MS;
+  return `c.${exp}.${signTokenData(`coach|${exp}|${getCoachPassword()}`)}`;
+}
+
+function verifyCoachToken(token) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3 || parts[0] !== 'c') return false;
+  const exp = parseInt(parts[1], 10);
+  if (!exp || exp < Date.now()) return false;
+  return safeEqual(parts[2], signTokenData(`coach|${exp}|${getCoachPassword()}`));
+}
+
+function issueMemberToken(memberKey, phoneLast4) {
+  const exp = Date.now() + MEMBER_TOKEN_TTL_MS;
+  return `m.${exp}.${signTokenData(`member|${memberKey}|${phoneLast4}|${exp}`)}`;
+}
+
+function verifyMemberToken(token, memberKey, phoneLast4) {
+  const parts = String(token || '').split('.');
+  if (parts.length !== 3 || parts[0] !== 'm') return false;
+  const exp = parseInt(parts[1], 10);
+  if (!exp || exp < Date.now()) return false;
+  return safeEqual(parts[2], signTokenData(`member|${memberKey}|${phoneLast4}|${exp}`));
+}
+
+function createUnauthorizedResponse() {
+  return createJsonResponse({
+    status: 'error',
+    code: 'unauthorized',
+    message: '코치 인증이 필요합니다. 대시보드에서 다시 로그인해 주세요.'
+  });
+}
+
+/**
+ * ==============================================================================
+ * [회원 마이페이지 전용 API] getMemberView
+ * - 회원 식별(view.js와 동일한 매칭 규칙) -> 휴대폰 뒷 4자리 또는 회원 토큰 서버 검증
+ * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처/문제점 분석 열 제외)
+ * - 휴대폰 번호 미등록 회원은 인증 불가 (비상 비밀번호 없음)
+ * ==============================================================================
+ */
+function handleGetMemberView(ss, payload) {
+  const targetId = String((payload && payload.id) || '').trim();
+  if (!targetId) {
+    return createJsonResponse({ status: 'error', code: 'not_found', message: '회원 식별 정보가 없습니다.' });
+  }
+
+  const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+  const member = memberViewFindMember(getSheetDataWithHeaders(memberSheet), targetId);
+  if (!member) {
+    return createJsonResponse({ status: 'error', code: 'not_found', message: '등록된 회원 정보와 일치하지 않습니다.' });
+  }
+
+  const memberKey = memberViewGetNo(member) || memberViewGetName(member);
+  const phoneLast4 = memberViewPhoneLast4(member);
+
+  let isAuthorized = false;
+  if (payload.memberToken && phoneLast4 && verifyMemberToken(payload.memberToken, memberKey, phoneLast4)) {
+    isAuthorized = true;
+  } else if (payload.pin !== undefined && payload.pin !== null && String(payload.pin) !== '') {
+    if (!phoneLast4) {
+      return createJsonResponse({
+        status: 'error',
+        code: 'no_phone',
+        message: '등록된 휴대폰 번호가 없어 인증할 수 없습니다. 담당 코치님께 문의해 주세요.'
+      });
+    }
+
+    const cache = CacheService.getScriptCache();
+    const failKey = 'mvfail_' + Utilities.base64EncodeWebSafe(
+      Utilities.computeDigest(Utilities.DigestAlgorithm.MD5, memberKey, Utilities.Charset.UTF_8)
+    );
+    const failCount = parseInt(cache.get(failKey) || '0', 10);
+    if (failCount >= MEMBER_PIN_MAX_FAILS) {
+      return createJsonResponse({
+        status: 'error',
+        code: 'locked',
+        message: `비밀번호 ${MEMBER_PIN_MAX_FAILS}회 오류로 10분간 인증이 제한됩니다. 잠시 후 다시 시도해 주세요.`
+      });
+    }
+
+    const enteredPin = String(payload.pin).replace(/[^0-9]/g, '');
+    if (safeEqual(enteredPin, phoneLast4)) {
+      cache.remove(failKey);
+      isAuthorized = true;
+    } else {
+      cache.put(failKey, String(failCount + 1), MEMBER_PIN_LOCK_SECONDS);
+      return createJsonResponse({
+        status: 'error',
+        code: 'invalid_pin',
+        message: '비밀번호가 일치하지 않습니다. 등록하신 휴대폰 번호 뒤 4자리를 입력해 주세요.'
+      });
+    }
+  }
+
+  if (!isAuthorized) {
+    return createJsonResponse({ status: 'error', code: 'auth_required', message: '본인 인증이 필요합니다.' });
+  }
+
+  const feedbackSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  const allFeedbacks = getSheetDataWithHeaders(feedbackSheet);
+  const myFeedbacks = memberViewFilterFeedbacks(allFeedbacks, member);
+
+  return createJsonResponse({
+    status: 'success',
+    data: {
+      member: memberViewSanitize(member, ['지침']),
+      feedbacks: myFeedbacks.map(f => memberViewSanitize(f, ['문제점', '수정제안'])),
+      feedbackTotal: allFeedbacks.length
+    },
+    memberToken: issueMemberToken(memberKey, phoneLast4)
+  });
+}
+
+// 회원 화면에 불필요한 코치 전용/개인 연락처 열 제거
+function memberViewSanitize(obj, extraKeywords) {
+  const blocked = ['연락처', '전화', '휴대폰', '핸드폰', 'phone', 'mobile'].concat(extraKeywords || []);
+  const out = {};
+  Object.keys(obj || {}).forEach(k => {
+    const cleanK = String(k).replace(/[\s_]+/g, '').toLowerCase();
+    if (!blocked.some(kw => cleanK.includes(kw))) out[k] = obj[k];
+  });
+  return out;
+}
+
+// --- 아래는 view.js의 회원 매칭 규칙을 서버로 옮긴 헬퍼 (기존 링크 식별 결과와 동일하게 유지) ---
+
+function memberViewFindVal(obj, includeKws, excludeKws) {
+  if (!obj || typeof obj !== 'object') return '';
+  const ex = excludeKws || [];
+  const keys = Object.keys(obj);
+  for (const k of keys) {
+    const cleanK = String(k).replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (ex.length > 0 && ex.some(x => cleanK.includes(x.replace(/[\s\r\n]+/g, '').toLowerCase()))) continue;
+    const matchAll = includeKws.every(kw => cleanK.includes(kw.replace(/[\s\r\n]+/g, '').toLowerCase()));
+    if (matchAll) {
+      const val = obj[k];
+      if (val !== undefined && val !== null && String(val).trim() !== '') return val;
+    }
+  }
+  return '';
+}
+
+function memberViewGetField(obj, candidates) {
+  if (!obj || typeof obj !== 'object') return '';
+  for (let i = 0; i < candidates.length; i++) {
+    const v = obj[candidates[i]];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+  }
+  const keys = Object.keys(obj);
+  for (let i = 0; i < candidates.length; i++) {
+    const cleanCand = String(candidates[i]).replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (!cleanCand) continue;
+    for (let j = 0; j < keys.length; j++) {
+      if (String(keys[j]).replace(/[\s\r\n]+/g, '').toLowerCase() === cleanCand) {
+        const v = obj[keys[j]];
+        if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+      }
+    }
+  }
+  for (let i = 0; i < candidates.length; i++) {
+    const cleanCand = String(candidates[i]).replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (!cleanCand || cleanCand.length < 2) continue;
+    for (let j = 0; j < keys.length; j++) {
+      const cleanK = String(keys[j]).replace(/[\s\r\n]+/g, '').toLowerCase();
+      if (cleanK.includes(cleanCand) || cleanCand.includes(cleanK)) {
+        const v = obj[keys[j]];
+        if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+      }
+    }
+  }
+  return '';
+}
+
+function memberViewGetName(m) {
+  return String(memberViewGetField(m, ['이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름']) || '회원').trim();
+}
+
+function memberViewGetNo(m) {
+  return String(memberViewGetField(m, ['회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호']) || '').trim();
+}
+
+// 휴대폰 뒷 4자리 (미등록 시 빈 문자열 -> 인증 불가)
+function memberViewPhoneLast4(m) {
+  if (!m) return '';
+  const raw = memberViewFindVal(m, ['연락처']) || memberViewFindVal(m, ['전화번호']) ||
+    memberViewFindVal(m, ['휴대폰']) || memberViewFindVal(m, ['핸드폰']) ||
+    memberViewFindVal(m, ['전화']) || memberViewFindVal(m, ['phone']) ||
+    memberViewFindVal(m, ['mobile']) || memberViewFindVal(m, ['tel']) ||
+    memberViewGetField(m, ['연락처', '전화번호', '휴대폰', '핸드폰', 'phone', 'tel', 'mobile', '연락처(휴대폰)']);
+  const digits = String(raw || '').replace(/[^0-9]/g, '');
+  return digits.length >= 4 ? digits.slice(-4) : '';
+}
+
+function memberViewFindMember(members, targetId) {
+  if (!members || !Array.isArray(members) || members.length === 0) return null;
+  const cleanTargetId = String(targetId || '').replace(/[\s\r\n]+/g, '').toLowerCase();
+  if (!cleanTargetId) return null;
+
+  // 0순위: 행의 어떤 셀이라도 식별값과 일치
+  for (let i = 0; i < members.length; i++) {
+    const vals = Object.values(members[i] || {});
+    for (let j = 0; j < vals.length; j++) {
+      const v = vals[j];
+      if (v !== undefined && v !== null && String(v).trim() !== '' &&
+          String(v).replace(/[\s\r\n]+/g, '').toLowerCase() === cleanTargetId) {
+        return members[i];
+      }
+    }
+  }
+
+  // 1순위: 회원번호 일치 (M001 <-> 1 숫자 일치 포함)
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
+    const no = String(memberViewFindVal(m, ['회원번호']) || memberViewFindVal(m, ['고유번호']) ||
+      memberViewGetField(m, ['회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호']) || '')
+      .replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (no && no === cleanTargetId) return m;
+    const targetDigits = cleanTargetId.replace(/[^0-9]/g, '');
+    const noDigits = no.replace(/[^0-9]/g, '');
+    if (targetDigits && noDigits && targetDigits === noDigits && (cleanTargetId.startsWith('m') || no.startsWith('m'))) {
+      return m;
+    }
+  }
+
+  // 2순위: 시트 순번 매칭 (M001 -> 1번째 회원)
+  const seqMatch = cleanTargetId.match(/^m?0*([1-9][0-9]*)$/i);
+  if (seqMatch) {
+    const idx = parseInt(seqMatch[1], 10) - 1;
+    if (idx >= 0 && idx < members.length) return members[idx];
+  }
+
+  // 3순위: 이름 매칭 (괄호 제거 순수 이름 포함)
+  for (let i = 0; i < members.length; i++) {
+    const m = members[i];
+    const rawName = String(memberViewFindVal(m, ['이름'], ['코치']) || memberViewFindVal(m, ['성명']) ||
+      memberViewFindVal(m, ['성함']) ||
+      memberViewGetField(m, ['이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름', '성함']) || '')
+      .replace(/[\s\r\n]+/g, '').toLowerCase();
+    if (!rawName) continue;
+    if (rawName === cleanTargetId) return m;
+    const pureName = rawName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+    const pureTarget = cleanTargetId.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+    if (pureName && pureTarget && (pureName === pureTarget || pureName.includes(pureTarget) || pureTarget.includes(pureName))) {
+      return m;
+    }
+  }
+
+  // 4순위: 전화번호 뒷 4자리 매칭
+  if (cleanTargetId.length >= 4) {
+    const targetLast4 = cleanTargetId.slice(-4);
+    for (let i = 0; i < members.length; i++) {
+      const last4 = memberViewPhoneLast4(members[i]);
+      if (last4 && last4 === targetLast4) return members[i];
+    }
+  }
+
+  return null;
+}
+
+function memberViewFilterFeedbacks(feedbacks, member) {
+  if (!feedbacks || !Array.isArray(feedbacks) || !member) return [];
+  const cleanMemberName = memberViewGetName(member).replace(/\s+/g, '').toLowerCase();
+  const cleanMemberNo = memberViewGetNo(member).replace(/\s+/g, '').toLowerCase();
+  const memberPhone = memberViewPhoneLast4(member);
+
+  return feedbacks.filter(f => {
+    let rawFName = memberViewFindVal(f, ['이름'], ['코치', '지침']) || memberViewFindVal(f, ['성명'], ['코치']) ||
+      memberViewFindVal(f, ['성함'], ['코치']) || memberViewFindVal(f, ['참여자'], ['코치']) ||
+      memberViewFindVal(f, ['작성자'], ['코치']) || '';
+    const rawFNo = memberViewFindVal(f, ['회원번호']) || memberViewFindVal(f, ['회원id']) || memberViewFindVal(f, ['고유번호']) || '';
+    const fName = String(rawFName).trim().replace(/\s+/g, '').toLowerCase();
+    const fNo = String(rawFNo).trim().replace(/\s+/g, '').toLowerCase();
+    const fPhone = String(memberViewGetField(f, ['연락처', '전화번호', '휴대폰', '핸드폰', 'phone']) || '').replace(/[^0-9]/g, '');
+
+    if (cleanMemberNo && fNo && (fNo === cleanMemberNo || fNo.includes(cleanMemberNo))) return true;
+    if (cleanMemberName && fName) {
+      const pureFName = fName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+      const pureMemName = cleanMemberName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
+      if (fName === cleanMemberName || pureFName === pureMemName || fName.includes(pureMemName) || pureMemName.includes(pureFName)) {
+        return true;
+      }
+    }
+    if (memberPhone && fPhone && fPhone.slice(-4) === memberPhone) return true;
+    return false;
+  });
+}

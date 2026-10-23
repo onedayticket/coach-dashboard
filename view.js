@@ -222,6 +222,8 @@ let CurrentMemberState = {
   rawFeedbacksTotal: 0,
   rawMembersTotal: 0,
   isUsingMock: false,
+  targetId: '', // URL 회원 식별값 (서버 인증 요청용)
+  gasUrl: '',
   charts: {
     weight: null,
     exercise: null,
@@ -606,15 +608,67 @@ function extractFeedbackMemberNo(fb) {
   return String(val || '').trim();
 }
 
-// 캐시 키 정의 (Stale-While-Revalidate 초고속 로딩용)
+// 구버전 캐시 키 (전체 회원 데이터가 저장되던 캐시 -> 개인정보 보호를 위해 접속 시 즉시 삭제)
 const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v3';
+// 회원 본인 데이터 전용 캐시 & 서버 발급 회원 인증 토큰 (URL 회원 식별값 기준 저장)
+const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v4_';
+const MEMBER_VIEW_TOKEN_PREFIX = 'member_view_token_';
+
+function storageGet(key) {
+  try {
+    return localStorage.getItem(key) || sessionStorage.getItem(key) || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function storageSet(key, val) {
+  try { localStorage.setItem(key, val); } catch (e) {}
+  try { sessionStorage.setItem(key, val); } catch (e) {}
+}
+
+function storageRemove(key) {
+  try { localStorage.removeItem(key); } catch (e) {}
+  try { sessionStorage.removeItem(key); } catch (e) {}
+}
 
 /**
- * 구글 Apps Script(GAS) 백엔드 데이터 비동기 호출 (지능형 2회 재시도 & 넉넉한 콜드스타트 대기)
+ * 구버전 전체 회원 캐시 및 브라우저 전용 인증 플래그(member_auth_*) 정리
+ */
+function purgeLegacyMemberViewStorage() {
+  storageRemove(CACHE_KEY_VIEW_DATA);
+  [window.localStorage, window.sessionStorage].forEach(store => {
+    try {
+      Object.keys(store).forEach(k => {
+        if (k.indexOf('member_auth_') === 0) store.removeItem(k);
+      });
+    } catch (e) {}
+  });
+}
+
+function saveMemberSession(targetId, memberToken, data) {
+  if (memberToken) storageSet(MEMBER_VIEW_TOKEN_PREFIX + targetId, memberToken);
+  storageSet(MEMBER_VIEW_CACHE_PREFIX + targetId, JSON.stringify({
+    member: data.member,
+    feedbacks: data.feedbacks,
+    feedbackTotal: data.feedbackTotal,
+    timestamp: Date.now()
+  }));
+}
+
+function clearMemberSession(targetId) {
+  storageRemove(MEMBER_VIEW_TOKEN_PREFIX + targetId);
+  storageRemove(MEMBER_VIEW_CACHE_PREFIX + targetId);
+}
+
+/**
+ * 구글 Apps Script(GAS) 회원 전용 API(getMemberView) 호출 (지능형 2회 재시도 & 넉넉한 콜드스타트 대기)
+ * - 서버에서 휴대폰 뒷 4자리/회원 토큰을 검증하고 본인 데이터만 반환
  * 1차: 38초 (구글 클라우드 컨테이너 콜드스타트 및 302 리다이렉트 대기)
  * 2차: 20초 (1차 실패 시 1.2초 대기 후 활성화된 컨테이너로 초고속 재시도)
+ * - 네트워크 실패 시에만 재시도하며, 서버가 응답한 오류(인증 필요 등)는 그대로 반환
  */
-async function fetchSheetDataWithRetry(apiUrl) {
+async function fetchMemberViewWithRetry(apiUrl, body) {
   if (!apiUrl) return null;
   const attempts = [
     { timeoutMs: 38000, delayMs: 0 },
@@ -631,20 +685,17 @@ async function fetchSheetDataWithRetry(apiUrl) {
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-      const fetchUrl = `${apiUrl}${apiUrl.includes('?') ? '&' : '?'}action=getAll&t=${Date.now()}`;
-      
-      const res = await fetch(fetchUrl, {
-        method: 'GET',
-        headers: { 'Accept': 'application/json' },
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body),
         signal: controller.signal
       });
       clearTimeout(timeoutId);
 
       if (!res.ok) throw new Error(`HTTP Error: ${res.status}`);
       const json = await res.json();
-      if (json && json.status === 'success' && json.data) {
-        return json.data;
-      }
+      if (json && json.status) return json;
     } catch (err) {
       console.warn(`[회원 뷰어] GAS 통신 ${i + 1}차 시도 실패:`, err.message || err);
     }
@@ -653,7 +704,7 @@ async function fetchSheetDataWithRetry(apiUrl) {
 }
 
 /**
- * 회원 데이터 로드 (초고속 캐시 우선 렌더링 + 백그라운드 최신 동기화 + 안전 캐시 보호)
+ * 회원 데이터 로드 (본인 캐시 우선 렌더링 + 서버 인증 기반 최신 동기화)
  */
 async function loadMemberPageData(targetId) {
   const loadingScreen = document.getElementById('pageLoadingScreen');
@@ -670,25 +721,23 @@ async function loadMemberPageData(targetId) {
     } catch (e) {}
   }
 
-  // -------------------------------------------------------------------------
-  // [1단계: 초고속 캐시 검사 (0.05초 즉시 렌더링)]
-  // -------------------------------------------------------------------------
-  let hasRenderedFromCache = false;
-  let cachedMembers = [];
-  let cachedFeedbacks = [];
-  try {
-    const rawCache = localStorage.getItem(CACHE_KEY_VIEW_DATA) || sessionStorage.getItem(CACHE_KEY_VIEW_DATA);
-    if (rawCache) {
-      const cached = JSON.parse(rawCache);
-      cachedMembers = Array.isArray(cached.members) ? cached.members : [];
-      cachedFeedbacks = Array.isArray(cached.feedbacks) ? cached.feedbacks : [];
-      const combinedMembers = [...cachedMembers, ...VIEW_MOCK_DB.members];
-      const matched = findMemberInList(combinedMembers, targetId);
-      if (matched) {
-        console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(matched)}`);
-        applyMemberData(matched, cachedFeedbacks, false);
+  CurrentMemberState.targetId = targetId;
+  CurrentMemberState.gasUrl = gasUrl;
+  purgeLegacyMemberViewStorage();
 
-        // 캐시 즉시 렌더링 중 상태 표시
+  // -------------------------------------------------------------------------
+  // [1단계: 인증된 본인 캐시가 있으면 즉시 렌더링]
+  // -------------------------------------------------------------------------
+  const savedToken = storageGet(MEMBER_VIEW_TOKEN_PREFIX + targetId);
+  let hasRenderedFromCache = false;
+  if (savedToken) {
+    try {
+      const rawCache = storageGet(MEMBER_VIEW_CACHE_PREFIX + targetId);
+      const cached = rawCache ? JSON.parse(rawCache) : null;
+      if (cached && cached.member) {
+        console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(cached.member)}`);
+        applyMemberData(cached.member, cached.feedbacks || [], false, { feedbackTotal: cached.feedbackTotal || 0 });
+
         const statusBadge = document.getElementById('dataConnectionStatusBadge');
         if (statusBadge) {
           statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
@@ -697,116 +746,93 @@ async function loadMemberPageData(targetId) {
         }
 
         if (loadingScreen) loadingScreen.classList.add('d-none');
-        checkMemberAuthAndDisplay();
+        unlockAndRenderMemberPage();
         hasRenderedFromCache = true;
       }
+    } catch (e) {
+      console.warn('[회원 뷰어] 캐시 복원 예외 무시:', e);
     }
-  } catch (e) {
-    console.warn('[회원 뷰어] 캐시 복원 예외 무시:', e);
   }
 
   // -------------------------------------------------------------------------
-  // [2단계: 구글 시트 백엔드(GAS) 최신 데이터 비동기 동기화 (38s + 20s 자동 재시도)]
+  // [2단계: 서버 인증 기반 최신 데이터 동기화 (38s + 20s 자동 재시도)]
   // -------------------------------------------------------------------------
-  let allMembers = [...VIEW_MOCK_DB.members];
-  let allFeedbacks = [];
-  let isSheetSuccess = false;
+  const res = await fetchMemberViewWithRetry(gasUrl, {
+    action: 'getMemberView',
+    id: targetId,
+    memberToken: savedToken || undefined
+  });
 
-  const sheetData = await fetchSheetDataWithRetry(gasUrl);
-
-  if (sheetData) {
-    const freshMembers = Array.isArray(sheetData.members) ? sheetData.members : [];
-    const freshFeedbacks = Array.isArray(sheetData.feedbacks) ? sheetData.feedbacks : [];
-
-    allMembers = [...freshMembers, ...VIEW_MOCK_DB.members];
-    allFeedbacks = freshFeedbacks;
-    isSheetSuccess = true;
-
-    console.log(`[회원 뷰어] GAS 최신 동기화 성공! 시트 회원: ${freshMembers.length}명, 실제 시트 피드백: ${allFeedbacks.length}건`);
-
-    // 최신 정상 시트 데이터 로컬 영구 캐시 갱신
-    try {
-      const cachePayload = {
-        members: freshMembers,
-        feedbacks: freshFeedbacks,
-        timestamp: Date.now()
-      };
-      localStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
-      sessionStorage.setItem(CACHE_KEY_VIEW_DATA, JSON.stringify(cachePayload));
-    } catch (e) {}
-  } else {
-    console.warn('[회원 뷰어] GAS 통신 응답 지연 또는 일시적 오류 발생');
-  }
-
-  // -------------------------------------------------------------------------
-  // [3단계: 최종 회원 매칭 및 마이페이지 활성화 (절대 캐시 훼손 금지 원칙)]
-  // -------------------------------------------------------------------------
   if (loadingScreen) loadingScreen.classList.add('d-none');
 
-  if (isSheetSuccess) {
-    // [성공] 구글 시트 최신 데이터로 정확히 갱신
-    const matchedMember = findMemberInList(allMembers, targetId);
+  if (res && res.status === 'success' && res.data) {
+    // [성공] 저장된 회원 토큰이 유효 -> 최신 데이터로 갱신
+    saveMemberSession(targetId, res.memberToken, res.data);
+    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0 });
+    unlockAndRenderMemberPage();
+    console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(res.data.member)} (ID: ${targetId})`);
+    return;
+  }
 
-    if (matchedMember) {
-      applyMemberData(matchedMember, allFeedbacks, false);
-      console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(matchedMember)} (ID: ${targetId})`);
+  if (res && res.code === 'not_found') {
+    clearMemberSession(targetId);
+    console.warn(`[회원 뷰어] 시트 내 회원 매칭 실패: ${targetId}`);
+    showInvalidAccessScreen(`
+      <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
+      <div class="text-secondary small mt-1">
+        등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
+      </div>
+    `);
+    return;
+  }
 
-      if (!hasRenderedFromCache) {
-        checkMemberAuthAndDisplay();
-      } else {
-        const memberId = getMemberNo(matchedMember) || getMemberName(matchedMember);
-        const authKey = `member_auth_${memberId}`;
-        if (localStorage.getItem(authKey) === 'true' || sessionStorage.getItem(authKey) === 'true') {
-          unlockAndRenderMemberPage();
-        }
-      }
-    } else {
-      console.warn(`[회원 뷰어] 시트 내 회원 매칭 실패: ${targetId}`);
-      showInvalidAccessScreen(`
-        <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
-        <div class="text-secondary small mt-1">
-          등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
-        </div>
-      `);
-    }
-  } else {
-    // [실패 / 지연 발생 시 방어 로직]
+  if (res && res.code) {
+    // [인증 필요] 토큰 없음/만료/휴대폰 번호 변경 등 -> 본인 인증 모달 표시
+    clearMemberSession(targetId);
     if (hasRenderedFromCache) {
-      // ★ [핵심 방어] 이미 캐시된 실제 회원 데이터로 화면을 보고 있는 중이라면
-      // 백그라운드 통신 실패 시 절대 Mock으로 덮어쓰거나 에러 화면을 띄우지 않고 기존 데이터 유지!
-      console.log('[회원 뷰어] 🛡️ 통신 지연에도 불구하고 기존 캐시된 실제 회원 화면을 안전하게 보존합니다.');
-      const statusBadge = document.getElementById('dataConnectionStatusBadge');
-      if (statusBadge) {
-        statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
-        statusBadge.textContent = '🟢 저장된 데이터 표시 중 (실시간 재동기화 대기)';
-        statusBadge.title = '구글 서버 응답이 지연되어 최근 저장된 정상 데이터를 안전하게 표시하고 있습니다. 화면은 계속 정상 이용하실 수 있습니다.';
-      }
-    } else {
-      // 캐시도 없고 시트 연결도 안 된 첫 접속의 경우:
-      const mockMatched = findMemberInList(VIEW_MOCK_DB.members, targetId);
-      if (mockMatched) {
-        // Mock DB에 존재하는 테스트 회원인 경우에만 Mock 표시
-        applyMemberData(mockMatched, VIEW_MOCK_DB.feedbacks, true);
-        checkMemberAuthAndDisplay();
-      } else {
-        // 실존 회원이지만 첫 접속 시 구글 서버가 지연된 경우: 에러가 아닌 친절한 재연결 안내 제공
-        showInvalidAccessScreen(`
-          <div class="alert alert-warning border text-start mb-3">
-            <div class="fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>구글 시트 서버 응답 지연</div>
-            <div class="small">
-              회원님의 코칭 데이터를 구글 시트에서 불러오는 도중 통신 지연이 발생했습니다.<br>
-              잠시 후 아래 <strong>[🔄 다시 시도]</strong> 버튼을 눌러주시면 즉시 정상 연결됩니다.
-            </div>
-          </div>
-          <div class="text-muted small mb-2">
-            확인 대상 회원 식별값: <code>${escapeHtml(targetId)}</code>
-          </div>
-        `, '구글 시트 서버 응답 지연', `
-          코치님께서 회원님의 데이터를 정상 등록하셨으나, 구글 서버의 응답이 일시적으로 지연되고 있습니다.<br>
-          <span class="small text-secondary">아래 [다시 시도]를 누르시거나 잠시 후 다시 접속해 주세요.</span>
-        `);
-      }
+      document.getElementById('memberPageContent')?.classList.add('d-none');
     }
+    CurrentMemberState.isUsingMock = false;
+    showMemberAuthModal();
+    return;
+  }
+
+  // [실패 / 지연 발생 시 방어 로직]
+  if (hasRenderedFromCache) {
+    // ★ [핵심 방어] 이미 캐시된 본인 데이터로 화면을 보고 있는 중이라면 기존 화면 유지
+    console.log('[회원 뷰어] 🛡️ 통신 지연에도 불구하고 기존 캐시된 실제 회원 화면을 안전하게 보존합니다.');
+    const statusBadge = document.getElementById('dataConnectionStatusBadge');
+    if (statusBadge) {
+      statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
+      statusBadge.textContent = '🟢 저장된 데이터 표시 중 (실시간 재동기화 대기)';
+      statusBadge.title = '구글 서버 응답이 지연되어 최근 저장된 정상 데이터를 안전하게 표시하고 있습니다. 화면은 계속 정상 이용하실 수 있습니다.';
+    }
+    return;
+  }
+
+  // 캐시도 없고 시트 연결도 안 된 첫 접속의 경우:
+  const mockMatched = findMemberInList(VIEW_MOCK_DB.members, targetId);
+  if (mockMatched) {
+    // Mock DB에 존재하는 테스트 회원인 경우에만 Mock 표시
+    applyMemberData(mockMatched, VIEW_MOCK_DB.feedbacks, true);
+    checkMemberAuthAndDisplay();
+  } else {
+    // 실존 회원이지만 첫 접속 시 구글 서버가 지연된 경우: 에러가 아닌 친절한 재연결 안내 제공
+    showInvalidAccessScreen(`
+      <div class="alert alert-warning border text-start mb-3">
+        <div class="fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>구글 시트 서버 응답 지연</div>
+        <div class="small">
+          회원님의 코칭 데이터를 구글 시트에서 불러오는 도중 통신 지연이 발생했습니다.<br>
+          잠시 후 아래 <strong>[🔄 다시 시도]</strong> 버튼을 눌러주시면 즉시 정상 연결됩니다.
+        </div>
+      </div>
+      <div class="text-muted small mb-2">
+        확인 대상 회원 식별값: <code>${escapeHtml(targetId)}</code>
+      </div>
+    `, '구글 시트 서버 응답 지연', `
+      코치님께서 회원님의 데이터를 정상 등록하셨으나, 구글 서버의 응답이 일시적으로 지연되고 있습니다.<br>
+      <span class="small text-secondary">아래 [다시 시도]를 누르시거나 잠시 후 다시 접속해 주세요.</span>
+    `);
   }
 }
 
@@ -947,12 +973,19 @@ function filterFeedbacksForMember(feedbacks, member) {
 
 /**
  * 상태에 회원 및 피드백 데이터 바인딩
+ * - serverInfo가 전달되면 서버에서 이미 본인 피드백만 필터링된 데이터이므로 그대로 사용
  */
-function applyMemberData(member, allFeedbacks, isMock) {
+function applyMemberData(member, allFeedbacks, isMock, serverInfo) {
   CurrentMemberState.member = member;
-  CurrentMemberState.feedbacks = filterFeedbacksForMember(allFeedbacks, member);
-  CurrentMemberState.rawMembersTotal = isMock ? VIEW_MOCK_DB.members.length : (allFeedbacks ? allFeedbacks.length : 0);
-  CurrentMemberState.rawFeedbacksTotal = allFeedbacks ? allFeedbacks.length : 0;
+  if (serverInfo) {
+    CurrentMemberState.feedbacks = Array.isArray(allFeedbacks) ? allFeedbacks : [];
+    CurrentMemberState.rawMembersTotal = CurrentMemberState.feedbacks.length;
+    CurrentMemberState.rawFeedbacksTotal = serverInfo.feedbackTotal || 0;
+  } else {
+    CurrentMemberState.feedbacks = filterFeedbacksForMember(allFeedbacks, member);
+    CurrentMemberState.rawMembersTotal = isMock ? VIEW_MOCK_DB.members.length : (allFeedbacks ? allFeedbacks.length : 0);
+    CurrentMemberState.rawFeedbacksTotal = allFeedbacks ? allFeedbacks.length : 0;
+  }
   CurrentMemberState.isUsingMock = isMock;
 
   // 하단 연동 상태 뱃지 업데이트
@@ -971,28 +1004,12 @@ function applyMemberData(member, allFeedbacks, isMock) {
 }
 
 /**
- * 휴대폰 뒷 4자리 인증 상태 체크 및 모달 표시
+ * 휴대폰 뒷 4자리 본인 인증 모달 표시
  */
-function checkMemberAuthAndDisplay() {
-  const member = CurrentMemberState.member;
-  if (!member) {
-    showInvalidAccessScreen();
-    return;
-  }
-
-  const memberId = getMemberNo(member) || getMemberName(member);
-  const authKey = `member_auth_${memberId}`;
-
-  // 이미 인증된 경우
-  if (localStorage.getItem(authKey) === 'true' || sessionStorage.getItem(authKey) === 'true') {
-    unlockAndRenderMemberPage();
-    return;
-  }
-
-  // 미인증 시 비밀번호 모달 띄우기
+function showMemberAuthModal() {
   const modalEl = document.getElementById('memberAuthModal');
   if (modalEl && window.bootstrap) {
-    const modal = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+    const modal = bootstrap.Modal.getOrCreateInstance(modalEl, { backdrop: 'static', keyboard: false });
     modal.show();
 
     setTimeout(() => {
@@ -1002,12 +1019,24 @@ function checkMemberAuthAndDisplay() {
 }
 
 /**
+ * [오프라인 Mock 전용] 인증 모달 표시 (실제 회원은 서버 인증 흐름 사용)
+ */
+function checkMemberAuthAndDisplay() {
+  if (!CurrentMemberState.member) {
+    showInvalidAccessScreen();
+    return;
+  }
+  showMemberAuthModal();
+}
+
+/**
  * 휴대폰 번호 뒷 4자리 추출 헬퍼 (구글 폼 긴 질문 헤더 100% 자동 감지)
+ * - 번호 미등록 시 빈 문자열 반환 (비상 비밀번호 없음)
  */
 function getMemberPhoneLast4(member) {
-  if (!member) return '0000';
-  
-  // 1. 스마트 키워드 스캔: '연락처', '전화번호', '휴대폰', '핸드폰', '전화'
+  if (!member) return '';
+
+  // 스마트 키워드 스캔: '연락처', '전화번호', '휴대폰', '핸드폰', '전화'
   let rawPhone = findValByKeywords(member, ['연락처']) ||
                  findValByKeywords(member, ['전화번호']) ||
                  findValByKeywords(member, ['휴대폰']) ||
@@ -1019,28 +1048,19 @@ function getMemberPhoneLast4(member) {
                  getField(member, '연락처', '전화번호', '휴대폰', '핸드폰', 'phone', 'tel', 'mobile', '연락처(휴대폰)');
 
   const digits = String(rawPhone || '').replace(/[^0-9]/g, '');
-  if (digits.length >= 4) {
-    return digits.slice(-4);
-  }
-
-  // 2. Mock 및 테스트 대비 기본 안전 핀코드
-  const no = getMemberNo(member);
-  const name = getMemberName(member);
-  if (no === 'M001' || name === '김민수' || name.includes('김민수')) return '5678';
-  if (no === 'M002' || name === '이지원' || name.includes('이지원')) return '4321';
-
-  return '0000';
+  return digits.length >= 4 ? digits.slice(-4) : '';
 }
 
 /**
  * 회원 로그인 검증 실행
+ * - 실제 회원: GAS 서버에서 휴대폰 뒷 4자리 검증 후 본인 데이터 수신
+ * - 오프라인 Mock 회원: 샘플 데이터의 휴대폰 뒷 4자리로 로컬 검증
  */
-function handleMemberAuthLogin() {
+async function handleMemberAuthLogin() {
   const inputEl = document.getElementById('memberPinInput');
   const errorEl = document.getElementById('memberAuthErrorMsg');
+  const btnEl = document.getElementById('btnMemberAuthSubmit');
   const enteredPin = String(inputEl ? inputEl.value : '').replace(/[^0-9]/g, '').trim();
-
-  const correctPin = getMemberPhoneLast4(CurrentMemberState.member);
 
   if (enteredPin.length < 4) {
     if (errorEl) errorEl.textContent = '휴대폰 번호 뒤 4자리를 모두 입력해 주세요.';
@@ -1048,40 +1068,69 @@ function handleMemberAuthLogin() {
     return;
   }
 
-  // 정답 비교 (등록된 전화번호 뒷 4자리 또는 등록 누락 시 안전 백업 허용)
-  const isMatch = (enteredPin === correctPin) ||
-                  (correctPin === '0000' && ['0000', '1234', '5678'].includes(enteredPin)) ||
-                  (enteredPin === '5678' && (getMemberName(CurrentMemberState.member) === '김민수' || getMemberNo(CurrentMemberState.member) === 'M001'));
-
-  if (isMatch) {
-    // 인증 성공!
-    const member = CurrentMemberState.member;
-    const memberId = getMemberNo(member) || getMemberName(member);
-    const authKey = `member_auth_${memberId}`;
-    try {
-      localStorage.setItem(authKey, 'true');
-      sessionStorage.setItem(authKey, 'true');
-    } catch (e) {}
-
-    // 모달 닫기
-    const modalEl = document.getElementById('memberAuthModal');
-    if (modalEl && window.bootstrap) {
-      const modal = bootstrap.Modal.getInstance(modalEl);
-      if (modal) modal.hide();
-    }
-
-    unlockAndRenderMemberPage();
-  } else {
-    // 인증 실패
+  const failAuth = (message) => {
     if (inputEl) {
       inputEl.value = '';
       inputEl.classList.add('shake-effect');
       setTimeout(() => inputEl.classList.remove('shake-effect'), 500);
     }
-    if (errorEl) {
-      errorEl.textContent = '비밀번호가 일치하지 않습니다. 등록하신 휴대폰 번호 뒤 4자리를 입력해 주세요.';
-    }
+    if (errorEl) errorEl.textContent = message;
     inputEl?.focus();
+  };
+
+  const closeModalAndRender = () => {
+    if (errorEl) errorEl.textContent = '';
+    const modalEl = document.getElementById('memberAuthModal');
+    if (modalEl && window.bootstrap) {
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+    }
+    unlockAndRenderMemberPage();
+  };
+
+  // [오프라인 Mock 모드] 샘플 회원 로컬 검증
+  if (CurrentMemberState.isUsingMock) {
+    const correctPin = getMemberPhoneLast4(CurrentMemberState.member);
+    if (correctPin && enteredPin === correctPin) {
+      closeModalAndRender();
+    } else {
+      failAuth('비밀번호가 일치하지 않습니다. 등록하신 휴대폰 번호 뒤 4자리를 입력해 주세요.');
+    }
+    return;
+  }
+
+  // [실제 회원] 서버 검증
+  const btnOriginalHtml = btnEl ? btnEl.innerHTML : '';
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>확인 중...';
+  }
+
+  let res = null;
+  try {
+    res = await fetchMemberViewWithRetry(CurrentMemberState.gasUrl, {
+      action: 'getMemberView',
+      id: CurrentMemberState.targetId,
+      pin: enteredPin
+    });
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = btnOriginalHtml;
+    }
+  }
+
+  if (res && res.status === 'success' && res.data) {
+    saveMemberSession(CurrentMemberState.targetId, res.memberToken, res.data);
+    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0 });
+    closeModalAndRender();
+    return;
+  }
+
+  if (res && res.message) {
+    failAuth(res.message);
+  } else {
+    failAuth('구글 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
   }
 }
 

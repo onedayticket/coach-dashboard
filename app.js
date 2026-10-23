@@ -31,6 +31,7 @@ const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
 const STORAGE_READ_AI_DRAFTS_KEY = 'coach_dash_read_ai_drafts_v1';
 const STORAGE_READ_PENDING_NOTIS_KEY = 'coach_dash_read_pending_notis_v1';
 const STORAGE_COACH_AUTH_KEY = 'coach_authenticated';
+const STORAGE_COACH_TOKEN_KEY = 'coach_session_token'; // GAS 서버가 발급한 코치 로그인 토큰 (모든 시트 조회/저장에 필수)
 const STORAGE_COACH_FAIL_COUNT_KEY = 'coach_fail_count';
 const STORAGE_COACH_LOCK_UNTIL_KEY = 'coach_lock_until';
 
@@ -268,8 +269,26 @@ const AppState = {
 
 let coachLockInterval = null;
 
+function getCoachToken() {
+  return localStorage.getItem(STORAGE_COACH_TOKEN_KEY) || '';
+}
+
 function isCoachAuthenticated() {
-  return localStorage.getItem(STORAGE_COACH_AUTH_KEY) === 'true';
+  if (localStorage.getItem(STORAGE_COACH_AUTH_KEY) !== 'true') return false;
+  // GAS 연동 시에는 서버 발급 토큰이 있어야 인증 상태로 인정 (구버전 로그인 플래그만 있는 경우 1회 재로그인)
+  const gasUrl = (AppState.gasUrl || '').trim();
+  return !gasUrl || !!getCoachToken();
+}
+
+/**
+ * 서버가 토큰 만료/무효(unauthorized)를 응답한 경우: 세션 정리 후 로그인 모달 재표시
+ */
+function handleCoachSessionExpired() {
+  localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
+  localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
+  hideLoadingOverlay();
+  showCoachAuthModal(true);
+  showToast('보안을 위해 코치 인증이 다시 필요합니다. 비밀번호를 입력해 주세요.', 'warning');
 }
 
 function getCoachFailCount() {
@@ -386,6 +405,7 @@ async function handleCoachLogin() {
   }
 
   let isPasswordValid = false;
+  let issuedToken = '';
 
   try {
     // 1순위: 구글 스프레드시트(GAS) 백엔드가 연결되어 있다면 서버 스크립트 속성에서 안전하게 검증
@@ -398,6 +418,7 @@ async function handleCoachLogin() {
         });
         if (res && res.status === 'success') {
           isPasswordValid = true;
+          issuedToken = res.token || '';
         } else if (res && res.status === 'error' && res.message === '비밀번호가 올바르지 않습니다.') {
           isPasswordValid = false;
         } else {
@@ -426,6 +447,11 @@ async function handleCoachLogin() {
   if (isPasswordValid) {
     // [인증 성공]
     localStorage.setItem(STORAGE_COACH_AUTH_KEY, 'true');
+    if (issuedToken) {
+      localStorage.setItem(STORAGE_COACH_TOKEN_KEY, issuedToken);
+    } else {
+      localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
+    }
     clearCoachAuthSecurityState();
     if (coachLockInterval) {
       clearInterval(coachLockInterval);
@@ -528,6 +554,7 @@ function showCoachAuthModal(force = false) {
  */
 function coachLogout() {
   localStorage.removeItem(STORAGE_COACH_AUTH_KEY);
+  localStorage.removeItem(STORAGE_COACH_TOKEN_KEY);
   showCoachAuthModal(true);
   showToast('코치 세션이 안전하게 잠겼습니다.', 'info');
 }
@@ -563,9 +590,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     initApiSettings();
     initInlineGuidelinesActions();
+    // ※ 피드백 모달/종합 피드백 버튼 바인딩은 initEventListeners() 내부에서 1회만 수행 (중복 바인딩 시 저장/AI 호출 2회 실행)
     initEventListeners();
-    initDailyFeedbackModalActions();
-    initComprehensiveFeedbackActions();
 
     // [요청 1] 사이드바 접힘 상태 복원
     if (localStorage.getItem('coach_dash_sidebar_collapsed') === 'true') {
@@ -643,7 +669,7 @@ async function loadAllData() {
           controller.abort();
         }, attemptTimeout);
 
-        const response = await fetch(`${gasUrl}?action=getAll`, {
+        const response = await fetch(`${gasUrl}?action=getAll&token=${encodeURIComponent(getCoachToken())}`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
           signal: controller.signal
@@ -654,6 +680,12 @@ async function loadAllData() {
 
         if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
         const resJson = await response.json();
+
+        // [보안] 토큰 만료/무효: Mock으로 대체하지 않고 즉시 재로그인 요청
+        if (resJson && resJson.code === 'unauthorized') {
+          handleCoachSessionExpired();
+          return;
+        }
 
         if (resJson.status === 'success' && resJson.data) {
           AppState.members = Array.isArray(resJson.data.members) ? resJson.data.members : [];
@@ -765,6 +797,8 @@ async function postToGasBackend(payload) {
     payload.geminiApiKey = AppState.geminiApiKey;
   }
   payload.modelPref = AppState.modelPref || 'auto';
+  // 코치 로그인 토큰 자동 주입 (GAS 서버에서 검증)
+  payload.token = getCoachToken();
 
   if (gasUrl) {
     try {
@@ -775,6 +809,9 @@ async function postToGasBackend(payload) {
         signal: currentTaskAbortController ? currentTaskAbortController.signal : undefined
       });
       const json = await response.json();
+      if (json && json.code === 'unauthorized' && payload.action !== 'verifyCoachPassword') {
+        handleCoachSessionExpired();
+      }
       return json;
     } catch (e) {
       if (e.name === 'AbortError' || (currentTaskAbortController && currentTaskAbortController.signal.aborted)) {
@@ -799,19 +836,35 @@ async function postToGasBackend(payload) {
  * - 구글 실시간 지원 모델을 조회 후 로컬스토리지에 캐싱하여 404 원천 차단
  * - GAS 서버 왕복 없이 0.8~1.5초 만에 직접 생성 완료
  */
+// 구버전 모델 목록 캐시 키 정리 (페이지 로드당 1회만 실행하여 AI 호출마다 반복되는 스토리지 작업 제거)
+let legacyGeminiCachesPurged = false;
+function purgeLegacyGeminiModelCaches() {
+  if (legacyGeminiCachesPurged) return;
+  legacyGeminiCachesPurged = true;
+  try {
+    [
+      'CACHE_GEMINI_TEXT_MODELS_V2',
+      'CACHE_GEMINI_TEXT_MODELS_V3',
+      'CACHE_GEMINI_MODELS_STABLE_V6',
+      'CACHE_GEMINI_MODELS_V38_auto',
+      'CACHE_GEMINI_MODELS_V38_pro',
+      'CACHE_GEMINI_MODELS_V38_flash',
+      'CACHE_GEMINI_MODELS_V38_ONLY_auto',
+      'CACHE_GEMINI_MODELS_V38_ONLY_pro',
+      'CACHE_GEMINI_MODELS_V38_ONLY_flash',
+      'CACHE_GEMINI_MODELS_V38_STABLE_2026_auto',
+      'CACHE_GEMINI_MODELS_V38_STABLE_2026_pro',
+      'CACHE_GEMINI_MODELS_V38_STABLE_2026_flash',
+      'CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_auto',
+      'CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_flash',
+      'CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_latest'
+    ].forEach(k => localStorage.removeItem(k));
+  } catch (e) {}
+}
+
 async function getBrowserSupportedGeminiModels(apiKey) {
   // 구버전 및 이전 캐시들 모두 정리
-  try {
-    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
-    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_STABLE_V6');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_flash');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_pro');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_flash');
-  } catch (e) {}
+  purgeLegacyGeminiModelCaches();
 
   const cacheKey = `CACHE_GEMINI_MODELS_FLASH_LITE_CLUSTER_2026_${AppState.modelPref || 'auto'}`;
   const cached = localStorage.getItem(cacheKey);
@@ -896,22 +949,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
   }
 
   // 구버전 및 이전 캐시 청소
-  try {
-    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V2');
-    localStorage.removeItem('CACHE_GEMINI_TEXT_MODELS_V3');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_pro');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_flash');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_pro');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_ONLY_flash');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_pro');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_V38_STABLE_2026_flash');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_auto');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_flash');
-    localStorage.removeItem('CACHE_GEMINI_MODELS_FLASH_CLUSTER_2026_latest');
-  } catch (e) {}
+  purgeLegacyGeminiModelCaches();
 
   const startTime = performance.now();
   // 상위 최적 Flash 모델만 신속 시도 (503 고수요 병목 및 429 쿼터 0 에러 원천 차단)
@@ -1542,6 +1580,13 @@ function applyFiltersAndRenderMemberList() {
     return;
   }
 
+  // 회원별 피드백 건수를 1회 순회로 미리 집계 (회원 수 x 피드백 수 반복 스캔 방지)
+  const fbCountByName = {};
+  AppState.feedbacks.forEach(f => {
+    const fName = getMemberName(f);
+    fbCountByName[fName] = (fbCountByName[fName] || 0) + 1;
+  });
+
   let html = '';
   filtered.forEach((m, idx) => {
     const key = getMemberKey(m);
@@ -1550,7 +1595,7 @@ function applyFiltersAndRenderMemberList() {
     const isActive = isMemberActive(m);
     const tag = getMemberTag(m);
     const isSelected = AppState.selectedMember && getMemberKey(AppState.selectedMember) === key;
-    const fbCount = AppState.feedbacks.filter(f => getMemberName(f) === name).length;
+    const fbCount = fbCountByName[name] || 0;
 
     const ageVal = getField(m, '나이', 'age');
     const jobVal = getField(m, '직업/근무시간', '직업', '근무시간', 'job');
@@ -3967,7 +4012,7 @@ ${weightHistorySummary}
     targetFb['피드백상태'] = 'AI초안';
 
     // [5] 대시보드 메인 화면의 피드백 일지 누적 테이블도 즉시 갱신 (덮어쓰기 시각적 확인)
-    renderFeedbackTable();
+    renderFeedbackTable(recentFeedbacks);
 
     if (statusNoticeEl) {
       statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✨ 새 AI 피드백 덮어쓰기 완료:</span> 최신 분석 결과가 입력되었습니다. 내용을 검토/수정한 후 하단 <strong>[피드백 코멘트 저장]</strong>을 눌러 최종 완료해 주세요.`;
@@ -4797,6 +4842,11 @@ function getMemberKey(m) {
 function getMemberId(m) {
   if (!m) return '-';
   return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '-').trim();
+}
+
+// 회원 전용 링크(view.html?id=...) 생성용 회원번호 (view.js의 getMemberNo와 동일 규칙, 없으면 빈 문자열)
+function getMemberNo(m) {
+  return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').trim();
 }
 
 function getMemberName(m) {
