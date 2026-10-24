@@ -18,7 +18,7 @@
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
   <!-- Custom CSS (style.css + v3 모바일 우선 디자인 레이어) -->
   <link href="style.css?v=3.1.0" rel="stylesheet">
-  <link href="coach-v3.css?v=3.0.0" rel="stylesheet">
+  <link href="coach-v3.css?v=3.3.0" rel="stylesheet">
 </head>
 <body class="cv3" data-ctab="list">
 
@@ -896,7 +896,9 @@
             <div class="mb-2">
               <label for="dfModalSolution" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
                 <span><i class="bi bi-check-circle-fill text-success me-1"></i>3. 보완점 및 개선방안 (실천 솔루션)</span>
-                <small class="text-muted fw-normal">동기부여 지침서 반영</small>
+                <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" onclick="copyModalSolution()" title="회원에게 보낼 수 있도록 내용 복사">
+                  <i class="bi bi-clipboard me-1"></i>복사
+                </button>
               </label>
               <textarea class="form-control" id="dfModalSolution" rows="3" placeholder="문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지"></textarea>
             </div>
@@ -1181,6 +1183,6 @@
   <!-- Chart.js 4.x CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Main Application Logic (app.js) -->
-  <script src="app.js?v=3.2.0"></script>
+  <script src="app.js?v=3.3.0"></script>
 </body>
 </html>

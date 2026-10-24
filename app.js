@@ -3917,6 +3917,12 @@ function renderFeedbackTable(feedbacks) {
           <div class="feedback-text-cell ${solution !== '미작성' ? 'solution-cell text-success-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(solution)}">
             ${escapeHtml(solution)}
           </div>
+          ${solution !== '미작성' ? `
+            <button type="button" class="btn btn-sm btn-outline-success cv3-copy-btn mt-1 py-0 px-2" data-copy="${escapeHtml(solution)}"
+                    onclick="event.stopPropagation(); copyFeedbackSolution(this)" title="회원에게 보낼 수 있도록 내용 복사">
+              <i class="bi bi-clipboard me-1"></i>복사
+            </button>
+          ` : ''}
         </td>
         <td class="cv3-c-action text-center text-nowrap">
           ${isCompleted ? `
@@ -5646,4 +5652,48 @@ function copyMemberViewLink() {
   }
 }
 window.copyMemberViewLink = copyMemberViewLink;
+
+/**
+ * 텍스트 클립보드 복사 (보완점 및 개선방안 → 회원에게 카톡/문자로 전달용)
+ * - 최신 브라우저: Clipboard API / 구형·비보안 환경: 임시 textarea 복사 / 모두 실패 시 직접 복사 창
+ */
+function copyTextToClipboard(text, label) {
+  const value = String(text || '').trim();
+  if (!value) {
+    showToast('복사할 내용이 없습니다.', 'warning');
+    return;
+  }
+  const done = () => showToast(`📋 ${label} 내용이 복사되었습니다. 회원님께 붙여넣어 보내 주세요.`, 'success');
+  const fallback = () => {
+    const ta = document.createElement('textarea');
+    ta.value = value;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, value.length);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+    if (ok) done();
+    else prompt('아래 내용을 길게 눌러 복사해 주세요:', value);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+    navigator.clipboard.writeText(value).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
+}
+
+function copyFeedbackSolution(btn) {
+  copyTextToClipboard(btn && btn.getAttribute('data-copy'), '보완점 및 개선방안');
+}
+window.copyFeedbackSolution = copyFeedbackSolution;
+
+function copyModalSolution() {
+  const el = document.getElementById('dfModalSolution');
+  copyTextToClipboard(el ? el.value : '', '보완점 및 개선방안');
+}
+window.copyModalSolution = copyModalSolution;
 
