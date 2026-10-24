@@ -2605,10 +2605,10 @@ window.copyFullMemberLink = copyFullMemberLink;
  * ==============================================================================
  */
 const SELF_EDIT_FIELDS = {
-  exercise: { current: '현재 제안 운동 루틴', request: '회원 운동 요청', previous: '이전 버전(운동)', changedAt: '회원 운동 변경일시', label: '운동 루틴', prefix: 'workout', btnClass: 'btn-success', placeholder: '예) 무릎이 아파서 점프 동작은 빼 주세요 / 주 3회만 가능해요' },
-  diet: { current: '현재 제안 식단', request: '회원 식단 요청', previous: '이전 버전(식단)', changedAt: '회원 식단 변경일시', label: '식단', prefix: 'diet', btnClass: 'btn-warning', placeholder: '예) 점심은 회사 식당이라 바꾸기 어려워요 / 유당불내증이 있어요' }
+  exercise: { current: '현재 제안 운동 루틴', request: '회원 운동 요청', previous: '이전 버전(운동)', changedAt: '회원 운동 변경일시', note: '회원 운동 요청 결과', label: '운동 루틴', prefix: 'workout', btnClass: 'btn-success', placeholder: '예) 무릎이 아파서 점프 동작은 빼 주세요 / 주 3회만 가능해요' },
+  diet: { current: '현재 제안 식단', request: '회원 식단 요청', previous: '이전 버전(식단)', changedAt: '회원 식단 변경일시', note: '회원 식단 요청 결과', label: '식단', prefix: 'diet', btnClass: 'btn-warning', placeholder: '예) 점심은 회사 식당이라 바꾸기 어려워요 / 유당불내증이 있어요' }
 };
-const SELF_EDIT_ALL_KEYS = Object.values(SELF_EDIT_FIELDS).reduce((acc, f) => acc.concat([f.request, f.previous, f.changedAt]), []);
+const SELF_EDIT_ALL_KEYS = Object.values(SELF_EDIT_FIELDS).reduce((acc, f) => acc.concat([f.request, f.previous, f.changedAt, f.note]), []);
 
 // 루틴/식단 표시용 필드 탐색 시 셀프 수정 열(요청/이전 버전/변경일시)이 오매칭되지 않도록 제외
 function withoutSelfEditFields(member) {
@@ -2661,6 +2661,7 @@ function renderPlanRegenPanel(kind, member) {
   const hasPrevious = !!getMemberFieldExact(member, f.previous).trim();
   const lastRequest = getMemberFieldExact(member, f.request);
   const changedAt = getMemberFieldExact(member, f.changedAt);
+  const requestNote = getMemberFieldExact(member, f.note).trim();
 
   panel.classList.remove('d-none');
   panel.innerHTML = `
@@ -2673,17 +2674,32 @@ function renderPlanRegenPanel(kind, member) {
         <button type="button" class="btn btn-sm ${f.btnClass} fw-semibold" id="${f.prefix}RegenBtn" ${remaining <= 0 ? 'disabled' : ''} onclick="memberRegeneratePlan('${kind}')">
           <i class="bi bi-robot me-1"></i>AI로 다시 만들기
         </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary ${hasPrevious ? '' : 'd-none'}" id="${f.prefix}RevertBtn" onclick="memberRevertPlan('${kind}')">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="${f.prefix}RevertBtn" ${hasPrevious ? '' : 'disabled'}
+                title="${hasPrevious ? '직전 버전으로 되돌립니다' : 'AI로 한 번 이상 다시 만든 뒤 사용할 수 있어요'}" onclick="memberRevertPlan('${kind}')">
           <i class="bi bi-arrow-counterclockwise me-1"></i>이전 버전으로 되돌리기
         </button>
         <span class="small text-muted" id="${f.prefix}RegenQuota">오늘 ${remaining}회 남음</span>
       </div>
+      ${hasPrevious ? '' : `<div class="text-muted mt-1" style="font-size: 0.72rem;"><i class="bi bi-info-circle me-1"></i>되돌리기는 AI로 한 번 이상 다시 만든 뒤 사용할 수 있어요.</div>`}
       <div class="small mt-2" id="${f.prefix}RegenStatus">${changedAt ? `<span class="text-muted">최근 변경: ${escapeHtml(changedAt)}</span>` : ''}</div>
+      ${renderRequestNoteBox(requestNote)}
       <div class="text-muted mt-1" style="font-size: 0.72rem;">
         최대 1000자 · 코치님의 기본 지침과 안전 원칙 안에서 반영되며, 변경 내용은 코치님께 알림으로 전달됩니다.
       </div>
     </div>
   `;
+}
+
+// AI가 정리한 '요청 반영 안내' (반영한 내용 / 반영하지 못한 내용과 이유) 표시
+function renderRequestNoteBox(note) {
+  if (!note) return '';
+  const hasUnapplied = /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(note);
+  const tone = hasUnapplied ? 'border-warning bg-warning-subtle' : 'border-success-subtle bg-success-subtle';
+  return `
+      <div class="mt-2 p-2 px-3 rounded-3 border ${tone} small">
+        <div class="fw-bold mb-1"><i class="bi bi-clipboard-check me-1"></i>요청 반영 안내${hasUnapplied ? ' <span class="badge bg-warning text-dark ms-1">일부 미반영</span>' : ''}</div>
+        <div class="text-dark" style="white-space: pre-wrap;">${escapeHtml(note)}</div>
+      </div>`;
 }
 
 function setRegenBusy(kind, busy, message) {
@@ -2740,6 +2756,7 @@ function applySelfEditResult(kind, res) {
   setMemberFieldExact(member, f.previous, res.previous || '');
   if (res.request !== undefined) setMemberFieldExact(member, f.request, res.request);
   if (res.changedAt) setMemberFieldExact(member, f.changedAt, res.changedAt);
+  if (res.requestNote !== undefined) setMemberFieldExact(member, f.note, res.requestNote || '');
   if (typeof res.remaining === 'number') {
     CurrentMemberState.regenRemaining = { ...(CurrentMemberState.regenRemaining || {}), [kind]: res.remaining };
   }
@@ -2800,7 +2817,7 @@ async function memberRegeneratePlan(kind) {
       setRegenBusy(kind, false, '<span class="text-danger fw-semibold">회원 정보 확인에 실패해 화면에 반영하지 않았습니다. 새로고침해 주세요.</span>');
       return;
     }
-    setRegenBusy(kind, false, `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>새 ${f.label}이(가) 반영되었습니다. 마음에 들지 않으면 [이전 버전으로 되돌리기]를 눌러 주세요.</span>`);
+    setRegenBusy(kind, false, `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>새 ${f.label}이(가) 반영되었습니다. 아래 '요청 반영 안내'를 확인해 주세요. 마음에 들지 않으면 [이전 버전으로 되돌리기]를 눌러 주세요.</span>`);
     return;
   }
   handleSelfEditError(kind, res);

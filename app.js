@@ -635,7 +635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.3';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.4';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -2220,7 +2220,7 @@ function updatePersonalInfoPanel(mem) {
 }
 
 function omitGuideAndSelfEditFields(mem) {
-  const selfEdit = ['회원운동요청', '회원식단요청', '이전버전(운동)', '이전버전(식단)', '회원운동변경일시', '회원식단변경일시'];
+  const selfEdit = ['회원운동요청', '회원식단요청', '이전버전(운동)', '이전버전(식단)', '회원운동변경일시', '회원식단변경일시', '회원운동요청결과', '회원식단요청결과'];
   const out = {};
   Object.keys(mem || {}).forEach(k => {
     const clean = String(k).replace(/\s+/g, '');
@@ -4867,6 +4867,7 @@ function updateGlobalNotificationBadges() {
               회원이 <strong>${escapeHtml(item.label)}</strong>을(를) ${item.isRevert ? '이전 버전으로 되돌렸습니다.' : 'AI로 변경했습니다.'}
             </div>
             ${item.request ? `<div class="small text-muted text-truncate" style="max-width: 300px;">요청: ${escapeHtml(item.request)}</div>` : ''}
+            ${item.hasUnapplied ? '<div class="small text-warning-emphasis fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>일부 요청은 지침과 맞지 않아 반영되지 않았습니다</div>' : ''}
             <div class="text-end mt-1">
               <span class="badge bg-success text-white small px-2 py-1"><i class="bi bi-eye me-1"></i>변경 내용 확인 &rarr;</span>
             </div>
@@ -4957,8 +4958,8 @@ function getUnreadMemberPlanChangeItems() {
   if (!AppState.members || AppState.members.length === 0) return [];
   const readKeys = new Set(getReadPendingNotiKeys());
   const kinds = [
-    { kind: 'exercise', label: '운동 루틴', changed: ['회원 운동 변경일시', '회원운동변경일시'], request: ['회원 운동 요청', '회원운동요청'] },
-    { kind: 'diet', label: '식단', changed: ['회원 식단 변경일시', '회원식단변경일시'], request: ['회원 식단 요청', '회원식단요청'] }
+    { kind: 'exercise', label: '운동 루틴', changed: ['회원 운동 변경일시', '회원운동변경일시'], request: ['회원 운동 요청', '회원운동요청'], note: ['회원 운동 요청 결과', '회원운동요청결과'] },
+    { kind: 'diet', label: '식단', changed: ['회원 식단 변경일시', '회원식단변경일시'], request: ['회원 식단 요청', '회원식단요청'], note: ['회원 식단 요청 결과', '회원식단요청결과'] }
   ];
   const items = [];
   AppState.members.forEach(m => {
@@ -4975,7 +4976,8 @@ function getUnreadMemberPlanChangeItems() {
         label: k.label,
         changedAt,
         isRevert: changedAt.includes('되돌림'),
-        request: String(m[k.request[0]] || m[k.request[1]] || '').trim()
+        request: String(m[k.request[0]] || m[k.request[1]] || '').trim(),
+        hasUnapplied: /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(String(m[k.note[0]] || m[k.note[1]] || ''))
       });
     });
   });
