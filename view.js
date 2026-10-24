@@ -2668,7 +2668,7 @@ function renderPlanRegenPanel(kind, member) {
       <label class="form-label small fw-bold mb-1" for="${f.prefix}RegenRequest">
         <i class="bi bi-chat-square-text me-1"></i>${f.label} 수정 요청
       </label>
-      <textarea id="${f.prefix}RegenRequest" class="form-control form-control-sm" rows="2" maxlength="300" placeholder="${escapeHtml(f.placeholder)}">${escapeHtml(lastRequest)}</textarea>
+      <textarea id="${f.prefix}RegenRequest" class="form-control form-control-sm" rows="3" maxlength="1000" placeholder="${escapeHtml(f.placeholder)}">${escapeHtml(lastRequest)}</textarea>
       <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
         <button type="button" class="btn btn-sm ${f.btnClass} fw-semibold" id="${f.prefix}RegenBtn" ${remaining <= 0 ? 'disabled' : ''} onclick="memberRegeneratePlan('${kind}')">
           <i class="bi bi-robot me-1"></i>AI로 다시 만들기
@@ -2680,7 +2680,7 @@ function renderPlanRegenPanel(kind, member) {
       </div>
       <div class="small mt-2" id="${f.prefix}RegenStatus">${changedAt ? `<span class="text-muted">최근 변경: ${escapeHtml(changedAt)}</span>` : ''}</div>
       <div class="text-muted mt-1" style="font-size: 0.72rem;">
-        코치님의 기본 지침과 안전 원칙 안에서 반영되며, 변경 내용은 코치님께 알림으로 전달됩니다.
+        최대 1000자 · 코치님의 기본 지침과 안전 원칙 안에서 반영되며, 변경 내용은 코치님께 알림으로 전달됩니다.
       </div>
     </div>
   `;
@@ -2730,6 +2730,12 @@ async function postMemberSelfEdit(body) {
 function applySelfEditResult(kind, res) {
   const f = SELF_EDIT_FIELDS[kind];
   const member = CurrentMemberState.member;
+  // [다른 회원 오반영 차단] 서버가 처리한 회원과 현재 화면의 회원이 다르면 화면/저장본에 반영하지 않음
+  const currentKey = getMemberNo(member) || getMemberName(member);
+  if (!res.memberKey || res.memberKey !== currentKey) {
+    console.warn('[회원 셀프 수정] 응답 회원 불일치 - 반영 차단', { expected: currentKey, got: res.memberKey });
+    return false;
+  }
   setMemberFieldExact(member, f.current, res.plan || '');
   setMemberFieldExact(member, f.previous, res.previous || '');
   if (res.request !== undefined) setMemberFieldExact(member, f.request, res.request);
@@ -2746,6 +2752,7 @@ function applySelfEditResult(kind, res) {
     feedbackTotal: CurrentMemberState.rawFeedbacksTotal,
     regenRemaining: CurrentMemberState.regenRemaining
   });
+  return true;
 }
 
 function handleSelfEditError(kind, res) {
@@ -2789,7 +2796,10 @@ async function memberRegeneratePlan(kind) {
   });
 
   if (res && res.status === 'success') {
-    applySelfEditResult(kind, res);
+    if (!applySelfEditResult(kind, res)) {
+      setRegenBusy(kind, false, '<span class="text-danger fw-semibold">회원 정보 확인에 실패해 화면에 반영하지 않았습니다. 새로고침해 주세요.</span>');
+      return;
+    }
     setRegenBusy(kind, false, `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>새 ${f.label}이(가) 반영되었습니다. 마음에 들지 않으면 [이전 버전으로 되돌리기]를 눌러 주세요.</span>`);
     return;
   }
@@ -2810,7 +2820,10 @@ async function memberRevertPlan(kind) {
   });
 
   if (res && res.status === 'success') {
-    applySelfEditResult(kind, res);
+    if (!applySelfEditResult(kind, res)) {
+      setRegenBusy(kind, false, '<span class="text-danger fw-semibold">회원 정보 확인에 실패해 화면에 반영하지 않았습니다. 새로고침해 주세요.</span>');
+      return;
+    }
     setRegenBusy(kind, false, `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>이전 버전으로 되돌렸습니다.</span>`);
     return;
   }

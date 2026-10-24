@@ -635,7 +635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.1';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.2';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -1026,7 +1026,7 @@ const GAS_UNAUTHORIZED_MAX_ATTEMPTS = 3;
  * 회원이 마이페이지에서 남긴 수정 요청을 AI 프롬프트에 '가장 낮은 우선순위 참고 사항'으로 추가 (gas_backend.js와 동일 규칙)
  */
 function buildMemberRequestPromptBlock(memberRequest) {
-  const req = String(memberRequest || '').trim().slice(0, 300);
+  const req = String(memberRequest || '').trim().slice(0, 1000);
   if (!req) return '';
   return `[참고 사항: 회원 본인의 수정 요청 (우선순위 가장 낮음)]
 ${req}

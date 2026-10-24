@@ -47,7 +47,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.1';
+const BACKEND_VERSION = '2026-10-24.2';
 
 /**
  * CORS 대응 (doOptions)
@@ -186,14 +186,14 @@ function doPost(e) {
       return createJsonResponse({ status: 'success', geminiApiKey: String(propKey).trim() });
     }
 
-    // 1. 회원 상태 및 태그 즉시 업데이트
+    // 1. 회원 상태 및 태그 즉시 업데이트 (회원 셀프 수정과 동시 기록 방지를 위해 스크립트 잠금)
     if (action === 'updateMemberStatusTag') {
-      return handleUpdateMemberStatusTag(ss, payload);
+      return withMembersWriteLock(() => handleUpdateMemberStatusTag(ss, payload));
     }
 
-    // 2. 회원의 운동/식단 수정 제안 지침 및 루틴/식단 내용 업데이트
+    // 2. 회원의 운동/식단 수정 제안 지침 및 루틴/식단 내용 업데이트 (스크립트 잠금)
     if (action === 'updateMemberGuidelineRoutine') {
-      return handleUpdateMemberGuidelineRoutine(ss, payload);
+      return withMembersWriteLock(() => handleUpdateMemberGuidelineRoutine(ss, payload));
     }
 
     // 3. 5대 지침서(Guidelines) 업데이트
@@ -661,22 +661,12 @@ function handleUpdateMemberStatusTag(ss, payload) {
     return createJsonResponse({ status: 'error', message: '시트에 상태 또는 태그 열이 정의되어 있지 않습니다.' });
   }
 
-  const values = sheet.getDataRange().getValues();
-  let targetRow = -1;
-
-  for (let i = 1; i < values.length; i++) {
-    const rowName = String(values[i][nameCol - 1] || '').trim();
-    const rowId = idCol ? String(values[i][idCol - 1] || '').trim() : '';
-
-    if (rowName === memberKey || rowId === memberKey) {
-      targetRow = i + 1;
-      break;
-    }
+  // [다른 회원 오기록 차단] 회원번호(우선) 또는 이름이 정확히 1개 행에서만 일치할 때만 저장
+  const located = locateUniqueMemberRow(sheet.getDataRange().getValues(), idCol, nameCol, memberKey);
+  if (located.error) {
+    return createJsonResponse({ status: 'error', code: located.code, message: located.error });
   }
-
-  if (targetRow === -1) {
-    return createJsonResponse({ status: 'error', message: `회원 '${memberKey}'을(를) 찾을 수 없습니다.` });
-  }
+  const targetRow = located.row;
 
   if (newStatus !== undefined && statusCol) {
     sheet.getRange(targetRow, statusCol).setValue(newStatus);
@@ -734,22 +724,12 @@ function handleUpdateMemberGuidelineRoutine(ss, payload) {
     '식단계획', '식단 계획', '식단제안', '식단 제안'
   ]);
 
-  const values = sheet.getDataRange().getValues();
-  let targetRow = -1;
-
-  for (let i = 1; i < values.length; i++) {
-    const rowName = String(values[i][nameCol - 1] || '').trim();
-    const rowId = idCol ? String(values[i][idCol - 1] || '').trim() : '';
-
-    if (rowName === memberKey || rowId === memberKey) {
-      targetRow = i + 1;
-      break;
-    }
+  // [다른 회원 오기록 차단] 회원번호(우선) 또는 이름이 정확히 1개 행에서만 일치할 때만 저장
+  const located = locateUniqueMemberRow(sheet.getDataRange().getValues(), idCol, nameCol, memberKey);
+  if (located.error) {
+    return createJsonResponse({ status: 'error', code: located.code, message: located.error });
   }
-
-  if (targetRow === -1) {
-    return createJsonResponse({ status: 'error', message: `회원 '${memberKey}'을(를) 찾을 수 없습니다.` });
-  }
+  const targetRow = located.row;
 
   // 전달된 필드만 정확한 컬럼에 쓰기 (기존 열 구조 100% 보존)
   if (payload.exerciseGuideline !== undefined && exGuideCol) {
@@ -3063,7 +3043,7 @@ function memberViewFilterFeedbacks(feedbacks, member) {
  * ==============================================================================
  */
 const MEMBER_REGEN_DAILY_LIMIT = 3;
-const MEMBER_REQUEST_MAX_LEN = 300;
+const MEMBER_REQUEST_MAX_LEN = 1000;
 const MEMBER_PLAN_FIELDS = {
   exercise: { current: '현재 제안 운동 루틴', request: '회원 운동 요청', previous: '이전 버전(운동)', changedAt: '회원 운동 변경일시', label: '운동 루틴' },
   diet: { current: '현재 제안 식단', request: '회원 식단 요청', previous: '이전 버전(식단)', changedAt: '회원 식단 변경일시', label: '식단' }
@@ -3117,7 +3097,7 @@ function resolveAuthorizedMember(ss, payload) {
   if (!payload.memberToken || !phoneLast4 || !verifyMemberToken(payload.memberToken, memberKey, phoneLast4)) {
     return { error: { status: 'error', code: 'auth_required', message: '본인 인증이 만료되었습니다. 휴대폰 번호 뒤 4자리로 다시 인증해 주세요.' } };
   }
-  return { sheet: memberSheet, member: member, memberKey: memberKey };
+  return { sheet: memberSheet, member: member, memberKey: memberKey, phoneLast4: phoneLast4 };
 }
 
 function memberRegenUsageKey(memberKey, kind) {
@@ -3174,6 +3154,12 @@ function handleMemberRegeneratePlan(ss, payload) {
     return createJsonResponse({ status: 'error', code: 'empty_request', message: '어떻게 바꾸고 싶은지 수정 요청을 입력해 주세요.' });
   }
 
+  // AI 호출 전 1차 확인: 본인 행이 정확히 1개인지 (중복 시 AI 비용 소모 없이 즉시 중단)
+  const precheck = locateSelfEditRow(auth.sheet, auth.memberKey, auth.phoneLast4);
+  if (precheck.error) {
+    return createJsonResponse({ status: 'error', code: precheck.code, message: precheck.error.replace(' (횟수는 차감되지 않았습니다)', '') });
+  }
+
   const quota = changeMemberRegenUsage(auth.memberKey, kind, 1);
   if (!quota.ok) {
     return createJsonResponse({
@@ -3199,24 +3185,47 @@ function handleMemberRegeneratePlan(ss, payload) {
     });
   }
 
-  const sheet = auth.sheet;
-  const row = auth.member._rowNumber;
-  const colMap = getHeaderColumnMap(sheet);
-  const currentCol = getOrAddExactColumn(sheet, colMap, fields.current);
-  const previousCol = getOrAddExactColumn(sheet, colMap, fields.previous);
-  const requestCol = getOrAddExactColumn(sheet, colMap, fields.request);
-  const changedCol = getOrAddExactColumn(sheet, colMap, fields.changedAt);
-  const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
+  // [다른 회원 오기록 차단] AI 생성(수십 초) 동안 시트 정렬·행 삽입/삭제가 있어도 안전하도록
+  // 잠금을 건 뒤 '저장 직전'에 회원번호+휴대폰 뒷자리로 본인 행을 다시 찾아 정확히 1개일 때만 기록
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let oldPlan = '';
+  let nowStr = '';
+  let row = -1;
+  let locateError = null;
+  try {
+    const sheet = auth.sheet;
+    const located = locateSelfEditRow(sheet, auth.memberKey, auth.phoneLast4);
+    if (located.error) {
+      locateError = located;
+    } else {
+    row = located.row;
+    const colMap = getHeaderColumnMap(sheet);
+    const currentCol = getOrAddExactColumn(sheet, colMap, fields.current);
+    const previousCol = getOrAddExactColumn(sheet, colMap, fields.previous);
+    const requestCol = getOrAddExactColumn(sheet, colMap, fields.request);
+    const changedCol = getOrAddExactColumn(sheet, colMap, fields.changedAt);
+    nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
 
-  const oldPlan = String(sheet.getRange(row, currentCol).getValue() || '');
-  sheet.getRange(row, previousCol).setValue(oldPlan);
-  sheet.getRange(row, currentCol).setValue(newPlan);
-  sheet.getRange(row, requestCol).setValue(request);
-  sheet.getRange(row, changedCol).setValue(nowStr);
-  SpreadsheetApp.flush();
+    oldPlan = String(sheet.getRange(row, currentCol).getValue() || '');
+    sheet.getRange(row, previousCol).setValue(oldPlan);
+    sheet.getRange(row, currentCol).setValue(newPlan);
+    sheet.getRange(row, requestCol).setValue(request);
+    sheet.getRange(row, changedCol).setValue(nowStr);
+    SpreadsheetApp.flush();
+    appendMemberPlanLog(ss, auth, kind, 'AI 재생성', row, request);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+  if (locateError) {
+    const refunded = changeMemberRegenUsage(auth.memberKey, kind, -1);
+    return createJsonResponse({ status: 'error', code: locateError.code, message: locateError.error, remaining: refunded.remaining });
+  }
 
   return createJsonResponse({
     status: 'success',
+    memberKey: auth.memberKey,
     kind: kind,
     plan: newPlan,
     previous: oldPlan,
@@ -3234,30 +3243,126 @@ function handleMemberRevertPlan(ss, payload) {
   if (!kind) return createJsonResponse({ status: 'error', code: 'bad_request', message: '잘못된 요청입니다.' });
   const fields = MEMBER_PLAN_FIELDS[kind];
 
-  const sheet = auth.sheet;
-  const row = auth.member._rowNumber;
-  const colMap = getHeaderColumnMap(sheet);
-  const previousCol = findExactColumn(colMap, [fields.previous]);
-  const previous = previousCol ? String(sheet.getRange(row, previousCol).getValue() || '') : '';
-  if (!previous.trim()) {
-    return createJsonResponse({ status: 'error', code: 'no_previous', message: '되돌릴 이전 버전이 없습니다.' });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  let previous = '';
+  let current = '';
+  let nowStr = '';
+  try {
+    const sheet = auth.sheet;
+    const located = locateSelfEditRow(sheet, auth.memberKey, auth.phoneLast4);
+    if (located.error) {
+      return createJsonResponse({ status: 'error', code: located.code, message: located.error });
+    }
+    const row = located.row;
+    const colMap = getHeaderColumnMap(sheet);
+    const previousCol = findExactColumn(colMap, [fields.previous]);
+    previous = previousCol ? String(sheet.getRange(row, previousCol).getValue() || '') : '';
+    if (!previous.trim()) {
+      return createJsonResponse({ status: 'error', code: 'no_previous', message: '되돌릴 이전 버전이 없습니다.' });
+    }
+
+    const currentCol = getOrAddExactColumn(sheet, colMap, fields.current);
+    const changedCol = getOrAddExactColumn(sheet, colMap, fields.changedAt);
+    nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
+    current = String(sheet.getRange(row, currentCol).getValue() || '');
+
+    sheet.getRange(row, currentCol).setValue(previous);
+    sheet.getRange(row, previousCol).setValue(current);
+    sheet.getRange(row, changedCol).setValue(nowStr + ' (되돌림)');
+    SpreadsheetApp.flush();
+    appendMemberPlanLog(ss, auth, kind, '이전 버전 되돌림', row, '');
+  } finally {
+    lock.releaseLock();
   }
-
-  const currentCol = getOrAddExactColumn(sheet, colMap, fields.current);
-  const changedCol = getOrAddExactColumn(sheet, colMap, fields.changedAt);
-  const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm');
-  const current = String(sheet.getRange(row, currentCol).getValue() || '');
-
-  sheet.getRange(row, currentCol).setValue(previous);
-  sheet.getRange(row, previousCol).setValue(current);
-  sheet.getRange(row, changedCol).setValue(nowStr + ' (되돌림)');
-  SpreadsheetApp.flush();
 
   return createJsonResponse({
     status: 'success',
+    memberKey: auth.memberKey,
     kind: kind,
     plan: previous,
     previous: current,
     changedAt: nowStr + ' (되돌림)'
   });
+}
+
+/**
+ * ==============================================================================
+ * [다른 회원 데이터 오기록 차단 장치]
+ * ==============================================================================
+ */
+
+// Members 시트 쓰기 작업 직렬화 (코치 저장 ↔ 회원 셀프 수정 동시 기록 방지)
+function withMembersWriteLock(fn) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return fn();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 코치 저장용 회원 행 탐색: 회원번호 정확 일치 우선, 없으면 이름 정확 일치
+ * - 일치 행이 2개 이상이면 저장 중단 (중복 회원번호/동명이인으로 다른 회원에게 기록되는 사고 방지)
+ */
+function locateUniqueMemberRow(values, idCol, nameCol, memberKey) {
+  const key = String(memberKey || '').trim();
+  if (!key) return { code: 'not_found', error: '회원 식별값이 없습니다.' };
+  const idRows = [];
+  const nameRows = [];
+  for (let i = 1; i < values.length; i++) {
+    const rowId = idCol ? String(values[i][idCol - 1] || '').trim() : '';
+    const rowName = nameCol ? String(values[i][nameCol - 1] || '').trim() : '';
+    if (rowId && rowId === key) idRows.push(i + 1);
+    if (rowName && rowName === key) nameRows.push(i + 1);
+  }
+  const rows = idRows.length > 0 ? idRows : nameRows;
+  if (rows.length === 1) return { row: rows[0] };
+  if (rows.length === 0) return { code: 'not_found', error: `회원 '${key}'을(를) 찾을 수 없습니다.` };
+  return {
+    code: 'duplicate_member',
+    error: `시트에 '${key}'와(과) 일치하는 회원이 ${rows.length}명(행 ${rows.join(', ')}) 있어, 다른 회원 정보가 바뀌지 않도록 저장을 중단했습니다. 회원번호/이름 중복을 정리해 주세요.`
+  };
+}
+
+/**
+ * 회원 셀프 수정용 본인 행 재탐색 (저장 직전 호출)
+ * - 토큰에 서명된 회원 식별값(회원번호 또는 이름)과 정확히 같은 행이 1개이고, 휴대폰 뒷자리도 같아야 기록
+ */
+function locateSelfEditRow(sheet, memberKey, phoneLast4) {
+  const rows = getSheetDataWithHeaders(sheet).filter(m => (memberViewGetNo(m) || memberViewGetName(m)) === memberKey);
+  if (rows.length === 0) {
+    return { code: 'member_moved', error: '회원 정보를 다시 확인하지 못해 저장하지 않았습니다. 새로고침 후 다시 시도해 주세요. (횟수는 차감되지 않았습니다)' };
+  }
+  if (rows.length > 1) {
+    return { code: 'duplicate_member', error: '같은 회원 정보가 시트에 중복되어 있어 저장하지 않았습니다. 담당 코치님께 문의해 주세요. (횟수는 차감되지 않았습니다)' };
+  }
+  if (memberViewPhoneLast4(rows[0]) !== phoneLast4) {
+    return { code: 'member_moved', error: '회원 정보가 변경되어 저장하지 않았습니다. 다시 인증해 주세요. (횟수는 차감되지 않았습니다)' };
+  }
+  return { row: rows[0]._rowNumber };
+}
+
+// 회원 셀프 수정 변경 이력 (MemberPlanLog 시트, 없으면 자동 생성) - 사고 발생 시 추적용
+function appendMemberPlanLog(ss, auth, kind, actionLabel, row, request) {
+  try {
+    let logSheet = ss.getSheetByName('MemberPlanLog');
+    if (!logSheet) {
+      logSheet = ss.insertSheet('MemberPlanLog');
+      logSheet.appendRow(['일시', '회원번호/키', '이름', '종류', '작업', '기록 행', '회원 요청']);
+    }
+    logSheet.appendRow([
+      Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss'),
+      auth.memberKey,
+      memberViewGetName(auth.member),
+      MEMBER_PLAN_FIELDS[kind].label,
+      actionLabel,
+      row,
+      String(request || '').slice(0, 1000)
+    ]);
+  } catch (e) {
+    Logger.log('[MemberPlanLog 기록 실패] ' + e.toString());
+  }
 }
