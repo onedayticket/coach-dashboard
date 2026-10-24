@@ -47,7 +47,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.5';
+const BACKEND_VERSION = '2026-10-24.6';
 
 /**
  * CORS 대응 (doOptions)
@@ -105,8 +105,9 @@ function doGet(e) {
       return createJsonResponse({
         status: 'success',
         data: {
-          members: getSheetDataWithHeaders(memberSheet),
-          feedbacks: getSheetDataWithHeaders(feedbackSheet),
+          // 전송량 절감: 공백 제거 별칭 키 중복 없이 원본 헤더만 전송 (대시보드는 공백 무관 탐색으로 동일하게 읽음)
+          members: getSheetDataWithHeaders(memberSheet, { noAliases: true }),
+          feedbacks: getSheetDataWithHeaders(feedbackSheet, { noAliases: true }),
           guidelines: getGuidelinesData(guidelineSheet)
         }
       });
@@ -408,8 +409,9 @@ function getOrAddColumn(sheet, colMap, standardHeaderName, candidateNames) {
  * [핵심 보강] 원본 헤더 키(headers[j])와 함께 모든 공백이 제거된 정규화 키(headers[j].replace(/\s+/g, ''))를
  * 동시에 행 객체에 주입하여, 프론트엔드 및 GAS 내부에서 띄어쓰기 여부와 무관하게 접근 보장!
  */
-function getSheetDataWithHeaders(sheet) {
+function getSheetDataWithHeaders(sheet, options) {
   if (!sheet) return [];
+  const withAliases = !(options && options.noAliases);
   const range = sheet.getDataRange();
   const values = range.getValues();
   if (values.length <= 1) return [];
@@ -435,7 +437,7 @@ function getSheetDataWithHeaders(sheet) {
 
       // 공백 제거 정규화 키도 동시에 등록 (예: '공복 몸무게' -> '공복몸무게')
       const cleanHeader = rawHeader.replace(/\s+/g, '');
-      if (cleanHeader && !(cleanHeader in obj)) {
+      if (withAliases && cleanHeader && !(cleanHeader in obj)) {
         obj[cleanHeader] = val;
       }
     }

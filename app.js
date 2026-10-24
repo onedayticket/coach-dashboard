@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.5';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.6';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -751,18 +751,34 @@ async function fetchJsonHedged(url, init, opts = {}) {
  * - 저장본은 코치 브라우저에만 보관되며 화면 잠금(로그아웃)·인증 만료 시 즉시 삭제
  * ==============================================================================
  */
+// 저장본 용량 초과 시 최근 피드백만 남겨 재시도할 단계별 개수 (브라우저 저장 한도 약 5MB)
+const COACH_CACHE_FEEDBACK_FALLBACK_LIMITS = [600, 300, 120];
+
 function saveCoachDataCache() {
+  const build = (feedbacks) => JSON.stringify({
+    gasUrl: (AppState.gasUrl || '').trim(),
+    savedAt: AppState.lastSyncedAt || AppState.cacheSavedAt || Date.now(), // '기준 시각' = 마지막 서버 수신 시각
+    members: AppState.members,
+    feedbacks: feedbacks,
+    guidelines: AppState.guidelines
+  });
   try {
-    localStorage.setItem(STORAGE_COACH_DATA_CACHE_KEY, JSON.stringify({
-      gasUrl: (AppState.gasUrl || '').trim(),
-      savedAt: AppState.lastSyncedAt || AppState.cacheSavedAt || Date.now(), // '기준 시각' = 마지막 서버 수신 시각
-      members: AppState.members,
-      feedbacks: AppState.feedbacks,
-      guidelines: AppState.guidelines
-    }));
+    localStorage.setItem(STORAGE_COACH_DATA_CACHE_KEY, build(AppState.feedbacks));
+    return;
   } catch (e) {
-    console.warn('[데이터 저장본 기록 실패 - 용량 초과 등]', e);
+    console.warn('[데이터 저장본 기록 실패 - 용량 초과, 최근 피드백만 저장 재시도]', e);
   }
+  // 용량 초과: 기존 저장본을 지우고 최근 피드백 위주로 축소 저장 (화면 즉시 표시용, 최신 전체는 서버에서 다시 받음)
+  try { localStorage.removeItem(STORAGE_COACH_DATA_CACHE_KEY); } catch (e) {}
+  const recentFirst = [...(AppState.feedbacks || [])].sort((a, b) =>
+    (new Date(getFeedbackDate(b)).getTime() || 0) - (new Date(getFeedbackDate(a)).getTime() || 0));
+  for (const limit of COACH_CACHE_FEEDBACK_FALLBACK_LIMITS) {
+    try {
+      localStorage.setItem(STORAGE_COACH_DATA_CACHE_KEY, build(recentFirst.slice(0, limit)));
+      return;
+    } catch (e) {}
+  }
+  console.warn('[데이터 저장본 기록 포기 - 저장 공간 부족]');
 }
 
 function loadCoachDataCache() {
