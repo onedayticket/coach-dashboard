@@ -273,6 +273,8 @@
             <div id="workoutRoutineBox" class="routine-display-box border-start border-4 border-success">
               <!-- JS에서 수정 지침을 완전 배제하고 한눈에 잘 들어오게 서식화하여 렌더링 -->
             </div>
+            <!-- 회원 셀프 수정 (AI 재생성 / 되돌리기) 패널: JS에서 인증된 회원에게만 렌더링 -->
+            <div id="workoutRegenPanel" class="d-none"></div>
           </div>
         </div>
       </div>
@@ -291,6 +293,8 @@
             <div id="dietPlanBox" class="routine-display-box border-start border-4 border-warning">
               <!-- JS에서 수정 지침을 완전 배제하고 한눈에 잘 들어오게 서식화하여 렌더링 -->
             </div>
+            <!-- 회원 셀프 수정 (AI 재생성 / 되돌리기) 패널: JS에서 인증된 회원에게만 렌더링 -->
+            <div id="dietRegenPanel" class="d-none"></div>
           </div>
         </div>
       </div>
@@ -453,6 +457,6 @@
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Member Page Logic (view.js) -->
-  <script src="view.js?v=2.2.3"></script>
+  <script src="view.js?v=2.4.0"></script>
 </body>
 </html>

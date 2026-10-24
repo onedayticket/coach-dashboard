@@ -652,6 +652,7 @@ function saveMemberSession(targetId, memberToken, data) {
     member: data.member,
     feedbacks: data.feedbacks,
     feedbackTotal: data.feedbackTotal,
+    regenRemaining: data.regenRemaining,
     timestamp: Date.now()
   }));
 }
@@ -876,7 +877,7 @@ async function loadMemberPageData(targetId) {
       const cached = rawCache ? JSON.parse(rawCache) : null;
       if (cached && cached.member) {
         console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(cached.member)}`);
-        applyMemberData(cached.member, cached.feedbacks || [], false, { feedbackTotal: cached.feedbackTotal || 0 });
+        applyMemberData(cached.member, cached.feedbacks || [], false, { feedbackTotal: cached.feedbackTotal || 0, regenRemaining: cached.regenRemaining });
 
         const statusBadge = document.getElementById('dataConnectionStatusBadge');
         if (statusBadge) {
@@ -908,7 +909,7 @@ async function loadMemberPageData(targetId) {
   if (res && res.status === 'success' && res.data) {
     // [성공] 저장된 회원 토큰이 유효 -> 최신 데이터로 갱신
     saveMemberSession(targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0 });
+    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0, regenRemaining: res.data.regenRemaining });
     unlockAndRenderMemberPage();
     console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(res.data.member)} (ID: ${targetId})`);
     return;
@@ -1128,6 +1129,7 @@ function applyMemberData(member, allFeedbacks, isMock, serverInfo) {
     CurrentMemberState.feedbacks = Array.isArray(allFeedbacks) ? allFeedbacks : [];
     CurrentMemberState.rawMembersTotal = CurrentMemberState.feedbacks.length;
     CurrentMemberState.rawFeedbacksTotal = serverInfo.feedbackTotal || 0;
+    CurrentMemberState.regenRemaining = serverInfo.regenRemaining || null;
   } else {
     CurrentMemberState.feedbacks = filterFeedbacksForMember(allFeedbacks, member);
     CurrentMemberState.rawMembersTotal = isMock ? VIEW_MOCK_DB.members.length : (allFeedbacks ? allFeedbacks.length : 0);
@@ -1272,7 +1274,7 @@ async function handleMemberAuthLogin() {
 
   if (res && res.status === 'success' && res.data) {
     saveMemberSession(CurrentMemberState.targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0 });
+    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0, regenRemaining: res.data.regenRemaining });
     closeModalAndRender();
     return;
   }
@@ -1351,6 +1353,9 @@ function unlockAndRenderMemberPage() {
   // 4. 식단 플랜 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
   renderDietPlanBox(member);
 
+  // 5-1. 회원 셀프 수정 패널 (AI 재생성 / 이전 버전 되돌리기) - 서버 인증된 실제 회원에게만 표시
+  renderPlanRegenPanels(member);
+
   // 5. 데일리 데이터 추이 3개의 독립 꺾은선 차트 (코치 대시보드와 동일)
   renderThreeIndependentCharts(feedbacks);
 
@@ -1413,7 +1418,7 @@ function renderWorkoutRoutineBox(member) {
   const container = document.getElementById('workoutRoutineBox');
   if (!container) return;
 
-  const rawRoutine = String(getField(member, '현재 제안 운동 루틴', '현재제안운동루틴', '운동루틴', 'workoutRoutine') || '').trim();
+  const rawRoutine = String(getField(withoutSelfEditFields(member), '현재 제안 운동 루틴', '현재제안운동루틴', '운동루틴', 'workoutRoutine') || '').trim();
 
   if (!rawRoutine) {
     container.classList.remove('has-accordion');
@@ -1783,7 +1788,7 @@ function renderDietPlanBox(member) {
   const container = document.getElementById('dietPlanBox');
   if (!container) return;
 
-  const rawDiet = String(getField(member, '현재 제안 식단', '현재제안식단', '식단', 'dietPlan') || '').trim();
+  const rawDiet = String(getField(withoutSelfEditFields(member), '현재 제안 식단', '현재제안식단', '식단', 'dietPlan') || '').trim();
   container.innerHTML = parseDietPlanToAccordionHtml(rawDiet, 'viewDiet');
 }
 
@@ -2591,3 +2596,226 @@ window.promptGasUrl = promptGasUrl;
 window.copyFullMemberLink = copyFullMemberLink;
 
 
+
+/**
+ * ==============================================================================
+ * [회원 셀프 수정] AI 운동 루틴/식단 재생성 & 이전 버전 되돌리기
+ * - 기본 지침서 5종·코치 수정 지침은 서버에서만 읽으며 회원은 '수정 요청'만 입력
+ * - 하루 종류별 3회 제한, 결과는 즉시 반영되고 코치 대시보드에 알림
+ * ==============================================================================
+ */
+const SELF_EDIT_FIELDS = {
+  exercise: { current: '현재 제안 운동 루틴', request: '회원 운동 요청', previous: '이전 버전(운동)', changedAt: '회원 운동 변경일시', label: '운동 루틴', prefix: 'workout', btnClass: 'btn-success', placeholder: '예) 무릎이 아파서 점프 동작은 빼 주세요 / 주 3회만 가능해요' },
+  diet: { current: '현재 제안 식단', request: '회원 식단 요청', previous: '이전 버전(식단)', changedAt: '회원 식단 변경일시', label: '식단', prefix: 'diet', btnClass: 'btn-warning', placeholder: '예) 점심은 회사 식당이라 바꾸기 어려워요 / 유당불내증이 있어요' }
+};
+const SELF_EDIT_ALL_KEYS = Object.values(SELF_EDIT_FIELDS).reduce((acc, f) => acc.concat([f.request, f.previous, f.changedAt]), []);
+
+// 루틴/식단 표시용 필드 탐색 시 셀프 수정 열(요청/이전 버전/변경일시)이 오매칭되지 않도록 제외
+function withoutSelfEditFields(member) {
+  if (!member) return member;
+  const blocked = SELF_EDIT_ALL_KEYS.map(k => k.replace(/\s+/g, ''));
+  const out = {};
+  Object.keys(member).forEach(k => {
+    if (!blocked.includes(String(k).replace(/\s+/g, ''))) out[k] = member[k];
+  });
+  return out;
+}
+
+function getMemberFieldExact(member, name) {
+  if (!member) return '';
+  const clean = name.replace(/\s+/g, '');
+  const key = Object.keys(member).find(k => String(k).replace(/\s+/g, '') === clean);
+  return key ? String(member[key] == null ? '' : member[key]) : '';
+}
+
+function setMemberFieldExact(member, name, value) {
+  const clean = name.replace(/\s+/g, '');
+  let found = false;
+  Object.keys(member).forEach(k => {
+    if (String(k).replace(/\s+/g, '') === clean) { member[k] = value; found = true; }
+  });
+  if (!found) member[name] = value;
+}
+
+function canMemberSelfEdit() {
+  return !CurrentMemberState.isUsingMock && !CurrentMemberState.isLegacyBackend &&
+    !!storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId);
+}
+
+function renderPlanRegenPanels(member) {
+  ['exercise', 'diet'].forEach(kind => renderPlanRegenPanel(kind, member));
+}
+
+function renderPlanRegenPanel(kind, member) {
+  const f = SELF_EDIT_FIELDS[kind];
+  const panel = document.getElementById(`${f.prefix}RegenPanel`);
+  if (!panel) return;
+  if (!member || !canMemberSelfEdit()) {
+    panel.classList.add('d-none');
+    panel.innerHTML = '';
+    return;
+  }
+
+  const remainingMap = CurrentMemberState.regenRemaining || {};
+  const remaining = (typeof remainingMap[kind] === 'number') ? remainingMap[kind] : 3;
+  const hasPrevious = !!getMemberFieldExact(member, f.previous).trim();
+  const lastRequest = getMemberFieldExact(member, f.request);
+  const changedAt = getMemberFieldExact(member, f.changedAt);
+
+  panel.classList.remove('d-none');
+  panel.innerHTML = `
+    <div class="mt-3 p-3 rounded-3 border bg-light">
+      <label class="form-label small fw-bold mb-1" for="${f.prefix}RegenRequest">
+        <i class="bi bi-chat-square-text me-1"></i>${f.label} 수정 요청
+      </label>
+      <textarea id="${f.prefix}RegenRequest" class="form-control form-control-sm" rows="2" maxlength="300" placeholder="${escapeHtml(f.placeholder)}">${escapeHtml(lastRequest)}</textarea>
+      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
+        <button type="button" class="btn btn-sm ${f.btnClass} fw-semibold" id="${f.prefix}RegenBtn" ${remaining <= 0 ? 'disabled' : ''} onclick="memberRegeneratePlan('${kind}')">
+          <i class="bi bi-robot me-1"></i>AI로 다시 만들기
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary ${hasPrevious ? '' : 'd-none'}" id="${f.prefix}RevertBtn" onclick="memberRevertPlan('${kind}')">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>이전 버전으로 되돌리기
+        </button>
+        <span class="small text-muted" id="${f.prefix}RegenQuota">오늘 ${remaining}회 남음</span>
+      </div>
+      <div class="small mt-2" id="${f.prefix}RegenStatus">${changedAt ? `<span class="text-muted">최근 변경: ${escapeHtml(changedAt)}</span>` : ''}</div>
+      <div class="text-muted mt-1" style="font-size: 0.72rem;">
+        코치님의 기본 지침과 안전 원칙 안에서 반영되며, 변경 내용은 코치님께 알림으로 전달됩니다.
+      </div>
+    </div>
+  `;
+}
+
+function setRegenBusy(kind, busy, message) {
+  const f = SELF_EDIT_FIELDS[kind];
+  const regenBtn = document.getElementById(`${f.prefix}RegenBtn`);
+  const revertBtn = document.getElementById(`${f.prefix}RevertBtn`);
+  const statusEl = document.getElementById(`${f.prefix}RegenStatus`);
+  if (regenBtn) regenBtn.disabled = busy;
+  if (revertBtn) revertBtn.disabled = busy;
+  if (statusEl && message !== undefined) statusEl.innerHTML = message;
+}
+
+/**
+ * 셀프 수정 요청 전송 (데이터 변경 요청이므로 병렬 재요청 금지)
+ * - 구글 리다이렉트 오류(unauthorized: 서버 미실행)만 재전송, 그 외 응답은 그대로 반환
+ */
+async function postMemberSelfEdit(body) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 180000);
+    try {
+      const res = await fetch(CurrentMemberState.gasUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+      const raw = await res.text();
+      clearTimeout(timeoutId);
+      let json = null;
+      try { json = JSON.parse(raw); } catch (e) {
+        return { status: 'error', code: 'unknown_result', message: '서버 응답을 확인하지 못했습니다. 새로고침하여 반영 여부를 확인해 주세요.' };
+      }
+      if (json && json.code === 'unauthorized') continue;
+      return json;
+    } catch (err) {
+      clearTimeout(timeoutId);
+      return { status: 'error', code: 'unknown_result', message: '서버 응답이 지연되었습니다. 잠시 후 새로고침하여 반영 여부를 확인해 주세요.' };
+    }
+  }
+  return { status: 'error', code: 'unknown_result', message: '서버 연결이 불안정합니다. 잠시 후 다시 시도해 주세요.' };
+}
+
+function applySelfEditResult(kind, res) {
+  const f = SELF_EDIT_FIELDS[kind];
+  const member = CurrentMemberState.member;
+  setMemberFieldExact(member, f.current, res.plan || '');
+  setMemberFieldExact(member, f.previous, res.previous || '');
+  if (res.request !== undefined) setMemberFieldExact(member, f.request, res.request);
+  if (res.changedAt) setMemberFieldExact(member, f.changedAt, res.changedAt);
+  if (typeof res.remaining === 'number') {
+    CurrentMemberState.regenRemaining = { ...(CurrentMemberState.regenRemaining || {}), [kind]: res.remaining };
+  }
+  if (kind === 'exercise') renderWorkoutRoutineBox(member);
+  else renderDietPlanBox(member);
+  renderPlanRegenPanel(kind, member);
+  saveMemberSession(CurrentMemberState.targetId, null, {
+    member: member,
+    feedbacks: CurrentMemberState.feedbacks,
+    feedbackTotal: CurrentMemberState.rawFeedbacksTotal,
+    regenRemaining: CurrentMemberState.regenRemaining
+  });
+}
+
+function handleSelfEditError(kind, res) {
+  if (res && res.code === 'auth_required') {
+    clearMemberSession(CurrentMemberState.targetId);
+    document.getElementById('memberPageContent')?.classList.add('d-none');
+    showMemberAuthModal();
+    return;
+  }
+  if (res && typeof res.remaining === 'number') {
+    CurrentMemberState.regenRemaining = { ...(CurrentMemberState.regenRemaining || {}), [kind]: res.remaining };
+    const f = SELF_EDIT_FIELDS[kind];
+    const quotaEl = document.getElementById(`${f.prefix}RegenQuota`);
+    if (quotaEl) quotaEl.textContent = `오늘 ${res.remaining}회 남음`;
+  }
+  setRegenBusy(kind, false, `<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml((res && res.message) || '요청을 처리하지 못했습니다.')}</span>`);
+  if (res && res.code === 'quota_exceeded') {
+    const regenBtn = document.getElementById(`${SELF_EDIT_FIELDS[kind].prefix}RegenBtn`);
+    if (regenBtn) regenBtn.disabled = true;
+  }
+}
+
+async function memberRegeneratePlan(kind) {
+  const f = SELF_EDIT_FIELDS[kind];
+  if (!f || !canMemberSelfEdit()) return;
+  const inputEl = document.getElementById(`${f.prefix}RegenRequest`);
+  const request = String(inputEl ? inputEl.value : '').trim();
+  if (!request) {
+    setRegenBusy(kind, false, '<span class="text-danger fw-semibold">어떻게 바꾸고 싶은지 수정 요청을 입력해 주세요.</span>');
+    inputEl?.focus();
+    return;
+  }
+
+  setRegenBusy(kind, true, `<span class="text-primary fw-semibold"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>AI가 새 ${f.label}을(를) 만드는 중입니다... (보통 20~40초)</span>`);
+  const res = await postMemberSelfEdit({
+    action: 'memberRegeneratePlan',
+    id: CurrentMemberState.targetId,
+    memberToken: storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId),
+    kind: kind,
+    request: request
+  });
+
+  if (res && res.status === 'success') {
+    applySelfEditResult(kind, res);
+    setRegenBusy(kind, false, `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>새 ${f.label}이(가) 반영되었습니다. 마음에 들지 않으면 [이전 버전으로 되돌리기]를 눌러 주세요.</span>`);
+    return;
+  }
+  handleSelfEditError(kind, res);
+}
+
+async function memberRevertPlan(kind) {
+  const f = SELF_EDIT_FIELDS[kind];
+  if (!f || !canMemberSelfEdit()) return;
+  if (!confirm(`${f.label}을(를) 이전 버전으로 되돌릴까요?`)) return;
+
+  setRegenBusy(kind, true, '<span class="text-primary fw-semibold"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>이전 버전으로 되돌리는 중입니다...</span>');
+  const res = await postMemberSelfEdit({
+    action: 'memberRevertPlan',
+    id: CurrentMemberState.targetId,
+    memberToken: storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId),
+    kind: kind
+  });
+
+  if (res && res.status === 'success') {
+    applySelfEditResult(kind, res);
+    setRegenBusy(kind, false, `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>이전 버전으로 되돌렸습니다.</span>`);
+    return;
+  }
+  handleSelfEditError(kind, res);
+}
+
+window.memberRegeneratePlan = memberRegeneratePlan;
+window.memberRevertPlan = memberRevertPlan;
