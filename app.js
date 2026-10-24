@@ -635,7 +635,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.2';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.3';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -3878,12 +3878,8 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   }
   // 2순위: 회원 및 날짜 일치 탐색
   if (!targetFb) {
-    targetFb = AppState.feedbacks.find(f => {
-      const fName = getMemberName(f);
-      if (fName !== memberName && (!memberKey || fName !== memberKey)) return false;
-      const fbDate = getFeedbackDate(f);
-      return fbDate === targetDate || fbDate.includes(targetDate) || targetDate.includes(fbDate) || (cleanDateStr(fbDate) === cleanDateStr(targetDate));
-    });
+    // [정확 매칭] 이름 완전 일치 + 폼 입력 날짜(오늘 날짜) 완전 일치
+    targetFb = AppState.feedbacks.find(f => getMemberName(f) === memberName && getFeedbackDate(f) === targetDate);
   }
   if (!targetFb) return;
 
@@ -4442,17 +4438,15 @@ function initDailyFeedbackModalActions() {
         targetFb = AppState.feedbacks.find(f => f._rowNumber === currentCtxRow || f.rowNumber === currentCtxRow);
       }
       if (!targetFb) {
-        targetFb = AppState.feedbacks.find(f => {
-          const fName = getMemberName(f);
-          const fDate = getFeedbackDate(f);
-          const isNameMatch = fName === memberName || (memberKey && fName === memberKey);
-          const isDateMatch = String(fDate).includes(dateStr) || String(dateStr).includes(String(fDate)) || (cleanDateStr(fDate) === cleanDateStr(dateStr));
-          return isNameMatch && isDateMatch;
-        });
+        // [정확 매칭] 이름 완전 일치 + 폼 입력 날짜(오늘 날짜) 완전 일치
+        targetFb = AppState.feedbacks.find(f => getMemberName(f) === memberName && getFeedbackDate(f) === dateStr);
       }
       if (!targetFb && AppState.currentFeedbackContext && AppState.currentFeedbackContext.feedback) {
         targetFb = AppState.currentFeedbackContext.feedback;
       }
+
+      // 서버 저장 실패 시 화면을 원래 상태로 되돌리기 위한 스냅샷 (저장 안 된 내용이 '완료'로 보이는 오해 방지)
+      const fbSnapshot = targetFb ? { ...targetFb } : null;
 
       if (targetFb) {
         targetFb['운동_실행률_점수'] = exScoreToSave;
@@ -4524,10 +4518,11 @@ function initDailyFeedbackModalActions() {
       }
 
       const targetNotiKey = `${memberName}_${dateStr}`;
-      markAiDraftAsRead(targetNotiKey);
-      markPendingNotiAsRead(targetNotiKey);
 
       if (res && res.status === 'success') {
+        // 저장 성공 시에만 해당 알림 읽음 처리 (실패한 피드백 알림이 사라지지 않도록)
+        markAiDraftAsRead(targetNotiKey);
+        markPendingNotiAsRead(targetNotiKey);
         showToast('✓ 피드백 코멘트가 구글 시트에 성공적으로 저장되었습니다!', 'success');
         
         // 피드백 테이블 & 3개 독립 차트 즉시 갱신
@@ -4545,20 +4540,18 @@ function initDailyFeedbackModalActions() {
         }
       } else {
         const errMsg = (res && res.message) ? res.message : '시트 저장 실패';
-        showToast(`⚠️ [시트 저장 오류] ${errMsg}`, 'danger', 7000);
+        showToast(`⚠️ [시트 저장 오류 - 저장되지 않았습니다] ${errMsg}`, 'danger', 9000);
         console.error('[피드백 코멘트 저장 실패 디버그]', res);
 
-        // 오프라인/Mock 모드이거나 에러 발생 시에도 로컬 화면은 최신 데이터로 반영하여 코칭 연속성 보장
+        // 시트에 저장되지 않았으므로 화면의 피드백 기록을 저장 전 상태로 복원하고, 작성 내용 보존을 위해 모달은 열어 둠
+        if (targetFb && fbSnapshot) {
+          Object.keys(targetFb).forEach(k => { delete targetFb[k]; });
+          Object.assign(targetFb, fbSnapshot);
+        }
         const userFeedbacks = AppState.feedbacks.filter(f => getMemberName(f) === memberName);
         renderFeedbackTable(userFeedbacks);
         renderThreeIndependentCharts(userFeedbacks);
         updateGlobalNotificationBadges();
-
-        const modalEl = document.getElementById('dailyFeedbackModal');
-        if (modalEl && window.bootstrap) {
-          const modal = bootstrap.Modal.getInstance(modalEl);
-          if (modal) modal.hide();
-        }
       }
     });
   }
