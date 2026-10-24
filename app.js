@@ -603,12 +603,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       toggleSidebar(true);
     }
 
-    // [모바일 UI 초기화] 모바일 화면일 경우 기본적으로 목록 뷰 활성화
-    if (window.innerWidth < 768) {
-      if (!document.body.classList.contains('mobile-view-detail')) {
-        document.body.classList.add('mobile-view-list');
-      }
-    }
+    // [모바일 UI 초기화] 하단 탭바 / 스와이프 / 운동·식단·그래프 전환 연결
+    initCoachMobileTabs();
 
     // [보안 1단계 & 2단계] 코치 인증 확인
     if (!isCoachAuthenticated()) {
@@ -823,7 +819,7 @@ function renderDashboardAfterData() {
   AppState.userEditedSinceRender = false;
   if (AppState.members.length > 0) {
     const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
-    selectMember(getMemberKey(firstActive));
+    selectMember(getMemberKey(firstActive), { auto: true });
   }
 }
 
@@ -921,7 +917,7 @@ function rerenderAfterBackgroundRefresh() {
 
   if (!AppState.selectedMember && AppState.members.length > 0) {
     const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
-    selectMember(getMemberKey(firstActive));
+    selectMember(getMemberKey(firstActive), { auto: true });
   }
 }
 
@@ -1687,36 +1683,141 @@ function toggleSidebar(forceState) {
 window.toggleSidebar = toggleSidebar;
 
 /**
- * [모바일 UI 최적화] 참여자 목록 <-> 상세 코칭 뷰 전환 (원터치 전환)
+ * ==============================================================================
+ * [모바일 하단 탭바] 회원 / 프로필 / 루틴·식단 / 피드백 / 지침서
+ * - 화면 폭 992px 미만에서는 한 번에 한 화면만 보여 주고 하단 탭바·좌우 스와이프로 전환
+ * - 데스크톱에서는 기존 2열 레이아웃 그대로 (탭 상태만 기억)
+ * ==============================================================================
  */
-function switchMobileCoachView(view) {
-  if (window.innerWidth >= 768) return; // 데스크톱에서는 2열 레이아웃 유지
+const COACH_TABS = ['list', 'profile', 'routine', 'feedback', 'guide'];
+const COACH_DETAIL_TABS = ['profile', 'routine', 'feedback'];
+const CoachTabState = { current: 'list', lastDetail: 'profile', scroll: {}, routineSeg: 'exercise' };
 
-  const btnList = document.getElementById('btnMobileTabList');
-  const btnDetail = document.getElementById('btnMobileTabDetail');
+function isCoachMobileLayout() {
+  return window.innerWidth < 992;
+}
 
-  if (view === 'detail') {
-    document.body.classList.remove('mobile-view-list');
-    document.body.classList.add('mobile-view-detail');
-    if (btnList) { btnList.classList.remove('active'); btnList.classList.add('text-muted'); }
-    if (btnDetail) { btnDetail.classList.add('active'); btnDetail.classList.remove('text-muted'); }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    setTimeout(() => {
-      if (AppState && AppState.charts) {
-        if (AppState.charts.weight && AppState.charts.weight.resize) AppState.charts.weight.resize();
-        if (AppState.charts.exercise && AppState.charts.exercise.resize) AppState.charts.exercise.resize();
-        if (AppState.charts.diet && AppState.charts.diet.resize) AppState.charts.diet.resize();
-      }
-    }, 150);
-  } else {
-    document.body.classList.remove('mobile-view-detail');
-    document.body.classList.add('mobile-view-list');
-    if (btnList) { btnList.classList.add('active'); btnList.classList.remove('text-muted'); }
-    if (btnDetail) { btnDetail.classList.remove('active'); btnDetail.classList.add('text-muted'); }
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+function switchCoachTab(tab, opts = {}) {
+  if (!COACH_TABS.includes(tab)) return;
+  const prev = CoachTabState.current;
+  const mobile = isCoachMobileLayout();
+  if (mobile && prev !== tab) CoachTabState.scroll[prev] = window.scrollY || 0;
+
+  if (tab === 'guide') {
+    if (AppState.currentView !== 'guidelines') switchDashboardView('guidelines');
+  } else if (AppState.currentView !== 'members') {
+    switchDashboardView('members');
   }
+
+  CoachTabState.current = tab;
+  if (COACH_DETAIL_TABS.includes(tab)) CoachTabState.lastDetail = tab;
+  document.body.setAttribute('data-ctab', tab);
+  document.querySelectorAll('[data-ctab-target]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-ctab-target') === tab);
+  });
+
+  if (!mobile || prev === tab) return;
+
+  // 탭 전환 애니메이션 (스와이프/탭 방향에 맞춰 살짝 밀려 들어옴)
+  const dir = opts.direction || (COACH_TABS.indexOf(tab) > COACH_TABS.indexOf(prev) ? 'next' : 'prev');
+  const target = tab === 'list' ? document.getElementById('sidebarColumn') : document.getElementById('mainContentColumn');
+  if (target) {
+    target.classList.remove('cv3-enter-next', 'cv3-enter-prev');
+    void target.offsetWidth;
+    target.classList.add(dir === 'next' ? 'cv3-enter-next' : 'cv3-enter-prev');
+  }
+  window.scrollTo({ top: CoachTabState.scroll[tab] || 0, behavior: 'auto' });
+  if (tab === 'feedback') resizeCoachCharts();
+}
+window.switchCoachTab = switchCoachTab;
+
+// 기존 호출부 호환: 'list' = 회원 목록, 'detail' = 마지막으로 보던 상세 탭
+function switchMobileCoachView(view) {
+  switchCoachTab(view === 'detail' ? CoachTabState.lastDetail : 'list');
 }
 window.switchMobileCoachView = switchMobileCoachView;
+
+function resizeCoachCharts() {
+  setTimeout(() => {
+    if (AppState && AppState.charts) {
+      ['weight', 'exercise', 'diet'].forEach(k => {
+        const chart = AppState.charts[k];
+        if (chart && chart.resize) chart.resize();
+      });
+    }
+  }, 60);
+}
+
+function setRoutineSegment(seg) {
+  CoachTabState.routineSeg = seg;
+  document.body.setAttribute('data-croutine', seg);
+  document.querySelectorAll('[data-routine-seg]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-routine-seg') === seg);
+  });
+}
+
+function setCoachChartSegment(key) {
+  document.querySelectorAll('[data-coach-chart]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-coach-chart') === key);
+  });
+  document.querySelectorAll('[data-coach-chart-panel]').forEach(panel => {
+    panel.classList.toggle('is-active', panel.getAttribute('data-coach-chart-panel') === key);
+  });
+  resizeCoachCharts();
+}
+
+// 좌우 스와이프로 탭 이동 (입력창·가로 스크롤 표·차트·모달 위에서는 무시)
+function isSwipeExcludedTarget(el) {
+  for (let node = el; node && node !== document.body; node = node.parentElement) {
+    const tag = node.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'CANVAS') return true;
+    if (node.classList && (node.classList.contains('modal') || node.classList.contains('dropdown-menu'))) return true;
+    if (node.scrollWidth > node.clientWidth + 4) {
+      const ox = window.getComputedStyle(node).overflowX;
+      if (ox === 'auto' || ox === 'scroll') return true;
+    }
+  }
+  return false;
+}
+
+function initCoachMobileTabs() {
+  document.body.setAttribute('data-ctab', CoachTabState.current);
+  setRoutineSegment(CoachTabState.routineSeg);
+
+  document.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target : null;
+    if (!t) return;
+    const tabBtn = t.closest('[data-ctab-target]');
+    if (tabBtn) switchCoachTab(tabBtn.getAttribute('data-ctab-target'));
+    const segBtn = t.closest('[data-routine-seg]');
+    if (segBtn) setRoutineSegment(segBtn.getAttribute('data-routine-seg'));
+    const chartBtn = t.closest('[data-coach-chart]');
+    if (chartBtn) setCoachChartSegment(chartBtn.getAttribute('data-coach-chart'));
+  });
+
+  let start = null;
+  document.addEventListener('touchstart', (e) => {
+    if (!isCoachMobileLayout() || document.body.classList.contains('modal-open') || e.touches.length !== 1) {
+      start = null;
+      return;
+    }
+    start = isSwipeExcludedTarget(e.target) ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!start) return;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - start.x;
+    const dy = touch.clientY - start.y;
+    const quick = Date.now() - start.t < 600;
+    start = null;
+    if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.6) return;
+    const idx = COACH_TABS.indexOf(CoachTabState.current);
+    const nextIdx = dx < 0 ? idx + 1 : idx - 1;
+    if (nextIdx < 0 || nextIdx >= COACH_TABS.length) return;
+    switchCoachTab(COACH_TABS[nextIdx], { direction: dx < 0 ? 'next' : 'prev' });
+  }, { passive: true });
+}
 
 /**
  * 참여자 관리 뷰 <-> 코칭 지침서 관리 뷰 전환
@@ -1771,6 +1872,13 @@ function switchDashboardView(viewName) {
         if (AppState.charts.diet) AppState.charts.diet.resize();
       }, 100);
     }
+  }
+
+  // 하단 탭바 상태 동기화 (상단 메뉴·회원 선택 등 다른 경로로 전환된 경우)
+  if (viewName === 'guidelines' && CoachTabState.current !== 'guide') {
+    switchCoachTab('guide');
+  } else if (viewName !== 'guidelines' && CoachTabState.current === 'guide') {
+    switchCoachTab('list');
   }
 }
 
@@ -2124,7 +2232,7 @@ function openCustomTagModal(memberKey, currentTag) {
 /**
  * 참여자 선택 시 전체 메인 패널 갱신
  */
-function selectMember(memberKey) {
+function selectMember(memberKey, opts = {}) {
   const mem = AppState.members.find(m => getMemberKey(m) === memberKey);
   if (!mem) return;
 
@@ -2162,18 +2270,13 @@ function selectMember(memberKey) {
   // 3. [하단] 피드백 누적 및 3개 독립 Chart.js 그래프 렌더링
   updateFeedbackSection(mem);
 
-  // 4. [모바일 UI 최적화] 모바일 화면일 경우 상세 코칭 뷰로 자동 전환
-  if (window.innerWidth < 768) {
-    switchMobileCoachView('detail');
-    const mobileMemberTop = document.getElementById('mobileSelectedMemberNameTop');
-    if (mobileMemberTop) {
-      mobileMemberTop.textContent = `${getMemberName(mem)} (${getField(mem, '상태', 'status') || '유효'})`;
-    }
-    const mobileTabBadge = document.getElementById('mobileTabMemberBadge');
-    if (mobileTabBadge) {
-      mobileTabBadge.textContent = getMemberName(mem);
-      mobileTabBadge.className = 'badge bg-primary text-white ms-1';
-    }
+  // 4. [모바일] 상단 회원 표시 갱신, 직접 선택한 경우에만 상세 탭으로 이동 (자동 선택은 목록 유지)
+  const mobileMemberTop = document.getElementById('mobileSelectedMemberNameTop');
+  if (mobileMemberTop) {
+    mobileMemberTop.textContent = `${getMemberName(mem)} · ${getMemberId(mem) || ''} (${getField(mem, '상태', 'status') || '유효'})`;
+  }
+  if (!opts.auto && isCoachMobileLayout()) {
+    switchCoachTab(opts.tab || CoachTabState.lastDetail);
   }
 }
 
@@ -2363,9 +2466,7 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
   if (!routineBodyPart) {
     if (!introHtml) {
       return `
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
-          ${escapeHtml(cleanText)}
-        </div>
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">${escapeHtml(cleanText)}</div>
       `;
     }
     return `
@@ -2394,9 +2495,7 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
         <div class="accordion routine-accordion" id="${prefix}_accordion">
           ${introHtml}
         </div>
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">
-          ${escapeHtml(sanitizedRoutineBody)}
-        </div>
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">${escapeHtml(sanitizedRoutineBody)}</div>
       </div>
     `;
   }
@@ -2918,9 +3017,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
         <div class="accordion diet-accordion" id="${prefix}_accordion">
           ${introHtml}
         </div>
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">
-          ${formatCellContent(cleanText).replace(/\n/g, '<br>')}
-        </div>
+        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2">${formatCellContent(cleanText).replace(/\n/g, '<br>')}</div>
         ${fallbackPlanB}
       </div>
     `;
@@ -3788,33 +3885,33 @@ function renderFeedbackTable(feedbacks) {
     const isDraft = (cleanStatus === 'ai초안' || cleanStatus === '초안' || cleanStatus === '초안대기');
 
     html += `
-      <tr class="${isCompleted ? 'table-light-subtle' : (isDraft ? 'table-info-subtle' : '')}">
-        <td class="text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
-        <td class="text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
-        <td class="text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
-        <td class="text-nowrap text-center">
+      <tr class="${isCompleted ? 'table-light-subtle is-done' : (isDraft ? 'table-info-subtle is-draft' : 'is-todo')}">
+        <td class="cv3-c-date text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
+        <td class="cv3-c-name text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
+        <td class="cv3-c-weight text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
+        <td class="cv3-c-ex text-nowrap text-center" data-label="운동">
           <span class="badge ${getScoreBadgeClass(exScore)}">${exScore !== '-' ? `${exScore} 점` : '-'}</span>
         </td>
-        <td class="text-nowrap text-center">
+        <td class="cv3-c-diet text-nowrap text-center" data-label="식단">
           <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore !== '-' ? `${dietScore} 점` : '-'}</span>
         </td>
-        <td class="small" style="min-width: 200px; max-width: 320px;">
+        <td class="cv3-c-summary small ${summary === '미작성' ? 'is-empty' : ''}" data-label="피드백 요약" style="min-width: 200px; max-width: 320px;">
           <div class="feedback-text-cell" title="${escapeHtml(summary)}">
             ${isDraft ? '<span class="badge bg-info text-white me-1" style="font-size: 0.68rem;">AI초안</span>' : ''}
             ${escapeHtml(summary)}
           </div>
         </td>
-        <td class="small" style="min-width: 180px; max-width: 260px;">
+        <td class="cv3-c-problem small ${problem === '미작성' ? 'is-empty' : ''}" data-label="문제점 분석" style="min-width: 180px; max-width: 260px;">
           <div class="feedback-text-cell ${problem !== '미작성' && problem !== '특이사항 없음' ? 'problem-cell text-danger-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(problem)}">
             ${escapeHtml(problem)}
           </div>
         </td>
-        <td class="small" style="min-width: 200px; max-width: 320px;">
+        <td class="cv3-c-solution small ${solution === '미작성' ? 'is-empty' : ''}" data-label="보완점 및 개선방안" style="min-width: 200px; max-width: 320px;">
           <div class="feedback-text-cell ${solution !== '미작성' ? 'solution-cell text-success-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(solution)}">
             ${escapeHtml(solution)}
           </div>
         </td>
-        <td class="text-center text-nowrap">
+        <td class="cv3-c-action text-center text-nowrap">
           ${isCompleted ? `
             <!-- [4단계] 피드백 완료 시 초록색 버튼 표시 (클릭 수정 모달 유지) -->
             <button type="button" class="btn btn-sm btn-success fw-semibold px-2 py-1 shadow-sm text-white"
@@ -4921,7 +5018,7 @@ function handleAiDraftNotificationClick(key, memberKey, targetDate) {
   }
 
   if (memberKey) {
-    selectMember(memberKey);
+    selectMember(memberKey, { tab: 'feedback' });
   }
 
   setTimeout(() => {
@@ -4943,7 +5040,7 @@ function handlePendingNotificationClick(key, memberKey, targetDate) {
   }
 
   if (memberKey) {
-    selectMember(memberKey);
+    selectMember(memberKey, { tab: 'feedback' });
   }
 
   setTimeout(() => {
@@ -4992,7 +5089,7 @@ function handleMemberPlanChangeNotificationClick(key, memberKey) {
     const dropdownInstance = bootstrap.Dropdown.getInstance(bellBtn);
     if (dropdownInstance) dropdownInstance.hide();
   }
-  if (memberKey) selectMember(memberKey);
+  if (memberKey) selectMember(memberKey, { tab: 'routine' });
 }
 
 // 하위 호환성 유지용
@@ -5134,7 +5231,7 @@ function initApiSettings() {
       await loadAllData();
       applyFiltersAndRenderMemberList();
       populateInlineGuidelines();
-      if (AppState.members.length > 0) selectMember(getMemberKey(AppState.members[0]));
+      if (AppState.members.length > 0) selectMember(getMemberKey(AppState.members[0]), { auto: true });
     });
   }
 

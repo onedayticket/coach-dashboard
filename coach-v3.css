@@ -1,0 +1,663 @@
+/**
+ * ==============================================================================
+ * [코치 대시보드 v3 디자인 레이어 - coach-v3.css]
+ * style.css 위에 덮어쓰는 모던 라이트 테마 + 모바일 우선 레이아웃
+ * - 992px 미만: 하단 탭바(회원/프로필/루틴·식단/피드백/지침서) + 한 화면씩 표시 + 스와이프 전환
+ * - 992px 이상: 기존 2열 레이아웃 유지 (스타일만 갱신)
+ * ==============================================================================
+ */
+
+:root {
+  --cv-bg: #f2f4f6;
+  --cv-surface: #ffffff;
+  --cv-surface-2: #f7f8fa;
+  --cv-line: #e8ebee;
+  --cv-ink: #191f28;
+  --cv-ink-2: #4e5968;
+  --cv-ink-3: #8b95a1;
+  --cv-primary: #3182f6;
+  --cv-primary-soft: #e8f3ff;
+  --cv-workout: #0ca678;
+  --cv-diet: #f08c00;
+  --cv-radius: 20px;
+  --cv-radius-sm: 14px;
+  --cv-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --cv-tabbar-h: 64px;
+  --cv-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --primary-color: #3182f6;
+  --primary-hover: #1b64da;
+  --primary-light: #e8f3ff;
+}
+
+body.cv3 {
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', Roboto, sans-serif;
+  background: var(--cv-bg);
+  color: var(--cv-ink);
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ========================================================================= */
+/* [상단 앱바] */
+/* ========================================================================= */
+.cv3-navbar {
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-bottom: 1px solid var(--cv-line);
+  z-index: 1030;
+}
+
+.cv3-navbar .navbar-brand {
+  color: var(--cv-ink);
+  font-weight: 800;
+  font-size: 1rem;
+  gap: 8px;
+}
+
+.cv3-brand-mark {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #3182f6, #7048e8);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+}
+
+.cv3-icon-btn {
+  width: 38px;
+  height: 38px;
+  padding: 0 !important;
+  border-radius: 12px !important;
+  border: none !important;
+  background: var(--cv-surface-2) !important;
+  color: var(--cv-ink-2) !important;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+}
+
+.cv3-icon-btn:hover,
+.cv3-icon-btn:active,
+.cv3-icon-btn.show {
+  background: #eceef1 !important;
+  color: var(--cv-ink) !important;
+}
+
+#btnAiDraftNotification i { color: #f59f00; }
+#btnCoachLogout i { color: var(--cv-ink-2); }
+
+.cv3-navbar #btnToggleSidebar {
+  border-radius: 10px;
+  color: var(--cv-ink-2);
+  border-color: var(--cv-line);
+}
+
+.cv3 .view-nav-btn {
+  color: var(--cv-ink-3);
+  border-radius: 10px;
+}
+
+.cv3 .view-nav-btn:hover {
+  color: var(--cv-ink);
+  background: var(--cv-surface-2);
+}
+
+.cv3 .view-nav-btn.active {
+  color: #fff !important;
+  background-color: var(--cv-ink) !important;
+  border-color: var(--cv-ink) !important;
+  box-shadow: none;
+}
+
+.cv3 .view-nav-btn.active i { color: #fff !important; }
+
+#apiStatusBadge {
+  border-radius: 999px;
+  font-weight: 600;
+}
+
+/* ========================================================================= */
+/* [공통 카드 / 버튼 / 입력 리프레시] */
+/* ========================================================================= */
+.cv3 .sidebar-panel,
+.cv3 .section-panel,
+.cv3 .guideline-card-box {
+  border: none;
+  border-radius: var(--cv-radius);
+  box-shadow: var(--cv-shadow);
+}
+
+.cv3 .section-panel:hover { box-shadow: var(--cv-shadow); }
+
+.cv3 .section-header {
+  border-bottom: 1px solid var(--cv-line);
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.cv3 .section-title {
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--cv-ink);
+}
+
+.cv3 .sidebar-header { border-bottom-color: var(--cv-line); }
+
+.cv3 .member-card-item {
+  border: 1px solid var(--cv-line);
+  border-radius: 16px;
+}
+
+.cv3 .member-card-item:hover {
+  background: #fafbfc;
+  border-color: #d5dae0;
+}
+
+.cv3 .member-card-item.active {
+  background: #f4f8ff !important;
+  border-color: var(--cv-primary) !important;
+  box-shadow: 0 0 0 3px rgba(49, 130, 246, 0.12);
+}
+
+.cv3 .info-field-box {
+  background: var(--cv-surface-2);
+  border: none;
+  border-radius: 12px;
+}
+
+.cv3 .personal-lifestyle-card {
+  background: var(--cv-surface-2) !important;
+  border: none !important;
+  border-radius: var(--cv-radius-sm) !important;
+  box-shadow: none;
+}
+
+.cv3 .routine-box {
+  border: 1px solid var(--cv-line) !important;
+  border-radius: 18px;
+}
+
+.cv3 .routine-box.border-success { border-top: 4px solid var(--cv-workout) !important; }
+.cv3 .routine-box.border-warning { border-top: 4px solid var(--cv-diet) !important; }
+
+.cv3 .chart-card {
+  border: 1px solid var(--cv-line);
+  border-radius: 16px;
+}
+
+.cv3 .btn {
+  border-radius: 10px;
+  font-weight: 600;
+}
+
+.cv3 .btn-primary {
+  background-color: var(--cv-primary);
+  border-color: var(--cv-primary);
+}
+
+.cv3 .btn-primary:hover {
+  background-color: #1b64da;
+  border-color: #1b64da;
+}
+
+.cv3 .form-control,
+.cv3 .form-select {
+  border-radius: 12px;
+  border-color: var(--cv-line);
+}
+
+.cv3 .form-control:focus,
+.cv3 .form-select:focus {
+  border-color: var(--cv-primary);
+  box-shadow: 0 0 0 4px rgba(49, 130, 246, 0.12);
+}
+
+.cv3 .modal-content {
+  border: none;
+  border-radius: 24px;
+  overflow: hidden;
+}
+
+.cv3 .feedback-table thead th {
+  background: var(--cv-surface-2);
+  color: var(--cv-ink-2);
+  border-bottom: 1px solid var(--cv-line);
+}
+
+.cv3 .notification-dropdown-menu {
+  border: none;
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+/* 세그먼트 전환 버튼 (운동/식단, 그래프) */
+.cv3-seg {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+  padding: 4px;
+  background: var(--cv-surface-2);
+  border-radius: 12px;
+}
+
+.cv3-seg.cv3-seg-3 { grid-template-columns: repeat(3, 1fr); }
+
+.cv3-seg-btn {
+  border: none;
+  background: transparent;
+  height: 36px;
+  border-radius: 9px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--cv-ink-3);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.cv3-seg-btn.is-active {
+  background: #fff;
+  color: var(--cv-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.cv3-seg-btn[data-routine-seg="exercise"].is-active i { color: var(--cv-workout); }
+.cv3-seg-btn[data-routine-seg="diet"].is-active i { color: var(--cv-diet); }
+
+/* ========================================================================= */
+/* [모바일 / 태블릿 (992px 미만): 한 화면씩 + 하단 탭바] */
+/* ========================================================================= */
+.cv3-tabbar { display: none; }
+
+@media (max-width: 991.98px) {
+  body.cv3 {
+    padding-bottom: calc(var(--cv-tabbar-h) + var(--cv-safe-bottom) + 8px);
+    background: var(--cv-bg);
+  }
+
+  .cv3 .main-wrapper {
+    padding: 10px 12px 12px !important;
+    min-height: 0;
+  }
+
+  .cv3 .container-fluid {
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+  }
+
+  .cv3 .row.g-2.g-md-3 {
+    --bs-gutter-x: 0;
+    --bs-gutter-y: 0;
+  }
+
+  .cv3-navbar {
+    padding-top: calc(6px + env(safe-area-inset-top, 0px)) !important;
+    padding-bottom: 6px !important;
+  }
+
+  .cv3-navbar .navbar-brand { font-size: 0.98rem; }
+
+  /* 하단 탭바 */
+  .cv3-tabbar {
+    display: flex;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1040;
+    justify-content: space-around;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: saturate(180%) blur(12px);
+    -webkit-backdrop-filter: saturate(180%) blur(12px);
+    border-top: 1px solid var(--cv-line);
+    padding: 6px 4px calc(6px + var(--cv-safe-bottom));
+  }
+
+  body.modal-open .cv3-tabbar { display: none; }
+
+  .cv3-tab {
+    flex: 1 1 0;
+    height: calc(var(--cv-tabbar-h) - 12px);
+    border: none;
+    background: transparent;
+    color: var(--cv-ink-3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+
+  .cv3-tab-icon {
+    font-size: 1.28rem;
+    line-height: 1;
+  }
+
+  .cv3-tab.is-active { color: var(--cv-ink); }
+  .cv3-tab.is-active .cv3-tab-icon { color: var(--cv-primary); }
+
+  /* 한 번에 한 화면 */
+  #sidebarColumn,
+  #mainContentColumn {
+    width: 100% !important;
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+
+  body.cv3[data-ctab="list"] #mainContentColumn { display: none !important; }
+  body.cv3:not([data-ctab="list"]) #sidebarColumn { display: none !important; }
+
+  body.cv3[data-ctab="profile"] #panelGuidelineRoutine,
+  body.cv3[data-ctab="profile"] #panelFeedbackHistory,
+  body.cv3[data-ctab="routine"] #panelPersonalInfo,
+  body.cv3[data-ctab="routine"] #panelFeedbackHistory,
+  body.cv3[data-ctab="feedback"] #panelPersonalInfo,
+  body.cv3[data-ctab="feedback"] #panelGuidelineRoutine {
+    display: none !important;
+  }
+
+  body.cv3[data-croutine="exercise"] #colDietPlan,
+  body.cv3[data-croutine="diet"] #colExerciseRoutine {
+    display: none !important;
+  }
+
+  /* 모바일에서는 섹션 접기 대신 탭으로 분리 → 항상 펼침, 내부 스크롤 제거 */
+  #memberDetailContent .collapse {
+    display: block !important;
+    height: auto !important;
+  }
+
+  #memberDetailContent .btn-toggle-collapse { display: none !important; }
+
+  #exerciseRoutineAccordionPreview,
+  #dietPlanAccordionPreview {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+
+  .cv3 .sidebar-panel {
+    height: auto;
+    max-height: none;
+    position: static;
+    margin-bottom: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .cv3 .sidebar-panel > .p-2.border-bottom { display: none !important; }
+
+  .cv3 .sidebar-header {
+    background: var(--cv-surface);
+    border-radius: var(--cv-radius);
+    box-shadow: var(--cv-shadow);
+    border: none;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .cv3 .sidebar-body {
+    max-height: none;
+    overflow: visible;
+    padding: 0 0 12px;
+  }
+
+  .cv3 #sidebarMembersMode { overflow: visible !important; }
+
+  .cv3 .member-card-item {
+    background: var(--cv-surface);
+    border: none;
+    box-shadow: var(--cv-shadow);
+    border-radius: 18px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .cv3 .member-card-item:hover { transform: none; }
+
+  .cv3 .section-panel {
+    margin-bottom: 12px;
+    border-radius: var(--cv-radius);
+  }
+
+  .cv3 .section-header { padding: 14px 16px; }
+  .cv3 .section-title { font-size: 1.02rem; }
+  .cv3 .section-body { padding: 14px !important; }
+
+  .cv3 .routine-box {
+    border: none !important;
+    padding: 0;
+  }
+
+  .cv3 .routine-box.border-success,
+  .cv3 .routine-box.border-warning { border-top: none !important; }
+
+  /* 현재 회원 표시 줄 */
+  .cv3-member-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--cv-surface);
+    border-radius: 16px;
+    box-shadow: var(--cv-shadow);
+    padding: 6px 8px;
+    margin-bottom: 10px;
+    position: sticky;
+    top: 62px;
+    z-index: 1020;
+  }
+
+  .cv3-strip-back {
+    width: 36px;
+    height: 36px;
+    border: none;
+    border-radius: 11px;
+    background: var(--cv-surface-2);
+    color: var(--cv-ink-2);
+    flex-shrink: 0;
+  }
+
+  .cv3-strip-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-weight: 800;
+    font-size: 0.92rem;
+  }
+
+  .cv3-strip-btn {
+    border: none;
+    background: var(--cv-primary-soft);
+    color: var(--cv-primary);
+    font-weight: 700;
+    font-size: 0.8rem;
+    border-radius: 10px;
+    height: 34px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  /* 그래프: 한 번에 하나 */
+  .cv3-chart-col:not(.is-active) { display: none !important; }
+  .cv3 .chart-card { height: 230px; }
+
+  /* 피드백 기록: 표 → 카드 */
+  .cv3 .cv3-fb-table thead { display: none; }
+
+  .cv3 .table-responsive:has(.cv3-fb-table) {
+    border: none !important;
+    background: transparent !important;
+    overflow: visible;
+  }
+
+  .cv3 .cv3-fb-table,
+  .cv3 .cv3-fb-table tbody {
+    display: block;
+    width: 100%;
+  }
+
+  .cv3 .cv3-fb-table tr {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    background: var(--cv-surface) !important;
+    border: 1px solid var(--cv-line);
+    border-radius: 18px;
+    padding: 14px;
+    margin-bottom: 10px;
+  }
+
+  .cv3 .cv3-fb-table tr.is-todo { border-left: 4px solid var(--cv-primary); }
+  .cv3 .cv3-fb-table tr.is-draft { border-left: 4px solid #22b8cf; }
+
+  .cv3 .cv3-fb-table td {
+    display: block;
+    border: none !important;
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  .cv3 .cv3-fb-table td[colspan] {
+    flex: 1 1 100%;
+    padding: 24px 0 !important;
+  }
+
+  .cv3 .cv3-c-date { order: 1; font-size: 0.95rem !important; color: var(--cv-ink) !important; font-weight: 800 !important; }
+  .cv3 .cv3-c-name { order: 2; color: var(--cv-ink-3) !important; font-weight: 600 !important; }
+  .cv3 .cv3-c-weight { order: 3; margin-left: auto; font-size: 0.85rem; }
+  .cv3 .cv3-c-ex,
+  .cv3 .cv3-c-diet { order: 4; display: inline-flex !important; align-items: center; gap: 4px; }
+
+  .cv3 .cv3-c-ex::before,
+  .cv3 .cv3-c-diet::before {
+    content: attr(data-label);
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--cv-ink-3);
+  }
+
+  .cv3 .cv3-c-summary,
+  .cv3 .cv3-c-problem,
+  .cv3 .cv3-c-solution {
+    order: 5;
+    flex: 1 1 100%;
+  }
+
+  .cv3 .cv3-c-summary::before,
+  .cv3 .cv3-c-problem::before,
+  .cv3 .cv3-c-solution::before {
+    content: attr(data-label);
+    display: block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    color: var(--cv-ink-3);
+    margin-bottom: 3px;
+  }
+
+  .cv3 .cv3-fb-table .feedback-text-cell {
+    min-height: 0;
+    max-height: none;
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    border-radius: 12px;
+  }
+
+  .cv3 .cv3-fb-table .feedback-text-cell { resize: none; }
+
+  /* 미작성 칸은 숨기고, 요약까지 비어 있으면 한 줄 안내만 */
+  .cv3 .cv3-c-problem.is-empty,
+  .cv3 .cv3-c-solution.is-empty { display: none !important; }
+
+  .cv3 .cv3-c-summary.is-empty::before { display: none; }
+
+  .cv3 .cv3-c-summary.is-empty .feedback-text-cell {
+    background: transparent;
+    border: none;
+    padding: 0;
+    color: var(--cv-ink-3) !important;
+    font-size: 0.8rem;
+  }
+
+  .cv3 .cv3-c-summary.is-empty .feedback-text-cell::after { content: ' · 아래 버튼으로 작성'; }
+
+  .cv3 .cv3-c-action {
+    order: 6;
+    flex: 1 1 100%;
+    margin-top: 2px;
+  }
+
+  .cv3 .cv3-c-action .btn {
+    width: 100%;
+    padding: 10px 12px !important;
+    border-radius: 12px;
+    font-size: 0.9rem;
+  }
+
+  /* 지침서 화면 */
+  .cv3 #viewGuidelinesWrapper .section-header { flex-wrap: wrap; }
+  .cv3 #viewGuidelinesWrapper .section-body { padding: 12px !important; background: transparent !important; }
+  .cv3 #btnSaveAllGuidelinesInline { width: 100%; }
+  .cv3 .guideline-card-box { padding: 16px; }
+  .cv3 #viewGuidelinesWrapper .alert { display: none !important; }
+  .cv3 .guideline-card-box > .d-flex:first-child { flex-wrap: wrap; gap: 8px; }
+  .cv3 .guideline-card-box h5 { font-size: 1rem; }
+  .cv3 .guideline-card-box > .d-flex:first-child > .btn { margin-left: auto; }
+
+  /* 탭 전환 애니메이션 */
+  .cv3-enter-next { animation: cv3EnterNext 0.24s ease-out; }
+  .cv3-enter-prev { animation: cv3EnterPrev 0.24s ease-out; }
+
+  @keyframes cv3EnterNext {
+    from { opacity: 0.4; transform: translateX(28px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  @keyframes cv3EnterPrev {
+    from { opacity: 0.4; transform: translateX(-28px); }
+    to { opacity: 1; transform: none; }
+  }
+}
+
+@media (max-width: 991.98px) and (prefers-reduced-motion: reduce) {
+  .cv3-enter-next,
+  .cv3-enter-prev { animation: none; }
+}
+
+/* 좁은 화면: 연결 상태는 색 점만 표시 (가로 넘침 방지) */
+@media (max-width: 575.98px) {
+  body.cv3 { overflow-x: clip; }
+
+  #apiStatusBadge {
+    font-size: 0 !important;
+    padding: 9px !important;
+    line-height: 0;
+  }
+
+  #apiStatusBadge .status-dot {
+    margin: 0 !important;
+    width: 10px;
+    height: 10px;
+  }
+
+  .cv3-navbar .container-fluid { flex-wrap: nowrap; }
+  .cv3-navbar .ms-auto { gap: 6px !important; }
+  .cv3-navbar .dropdown.me-1 { margin-right: 0 !important; }
+}

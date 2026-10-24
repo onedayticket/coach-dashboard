@@ -42,6 +42,8 @@
 ├── app.js             # 프론트엔드 비즈니스 로직, 상태 관리(AppState), Gemini/GAS 통신, 보안 인증
 ├── gas_backend.js     # 구글 앱스 스크립트 웹앱 백엔드 (doGet, doPost, 시트 스마트 스캐너, AI 프롬프트)
 ├── style.css          # 모던 대시보드 커스텀 스타일시트 (다크 내비게이션, 글래스모피즘 모달, 반응형 그리드)
+├── coach-v3.css       # v3 디자인 레이어 (라이트 테마, 모바일 하단 탭바·스와이프·카드형 피드백)
+├── view.html / view.js / view.css  # 회원 마이페이지 (홈·운동·식단·피드백 4탭, 하단 탭바 + 좌우 스와이프)
 ├── agent.md           # AI 에이전트 개발 및 협업 가이드라인 문서
 ├── .github/           # GitHub Actions 자동 배포 워크플로우
 │   └── workflows/

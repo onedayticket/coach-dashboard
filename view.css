@@ -1,271 +1,1167 @@
 /**
  * ==============================================================================
- * [4주 온라인 습관화 코칭 - 회원 전용 마이페이지 view.css]
- * 모바일 최적화 & 감성적인 프리미엄 라이트/모던 테마
+ * [4주 온라인 습관화 코칭 - 회원 마이페이지 view.css v3]
+ * 모바일 앱 스타일: 상단 앱바 + 좌우 스와이프 4개 화면 + 하단 탭바
  * ==============================================================================
  */
 
 :root {
-  --member-primary: #4f46e5;
-  --member-primary-light: #eef2ff;
-  --member-accent: #06b6d4;
-  --member-success: #10b981;
-  --member-warning: #f59e0b;
-  --member-bg: #f8fafc;
-  --card-bg: #ffffff;
-  --text-dark: #0f172a;
-  --text-muted: #64748b;
-  --border-color: #e2e8f0;
-}
-
-body {
-  font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background-color: var(--member-bg);
-  color: var(--text-dark);
-  min-height: 100vh;
-  margin: 0;
-  padding: 0;
-  -webkit-font-smoothing: antialiased;
-}
-
-/* 상단 글로벌 내비게이션 */
-.member-navbar {
-  background: #0f172a;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
-}
-
-.member-nav-brand {
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: #ffffff;
-  text-decoration: none;
-}
-
-.member-nav-brand:hover {
-  color: #e2e8f0;
-}
-
-/* 피드백 제출 CTA 버튼 (애니메이션 펄스 효과) */
-.cta-feedback-btn {
-  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-  color: #ffffff !important;
-  border: none;
-  border-radius: 50rem;
-  padding: 0.65rem 1.4rem;
-  font-weight: 700;
-  box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
-  transition: all 0.25s ease;
-  animation: pulseCta 2.5s infinite;
-}
-
-.cta-feedback-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 20px rgba(245, 158, 11, 0.55);
-}
-
-@keyframes pulseCta {
-  0% { transform: scale(1); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4); }
-  50% { transform: scale(1.03); box-shadow: 0 6px 22px rgba(245, 158, 11, 0.6); }
-  100% { transform: scale(1); box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4); }
-}
-
-/* 히어로 환영 섹션 */
-.member-hero-card {
-  background: linear-gradient(135deg, #1e1b4b 0%, #312e81 60%, #4338ca 100%);
-  color: #ffffff;
-  border-radius: 1.25rem;
-  padding: 2rem 1.75rem;
-  position: relative;
-  overflow: hidden;
-  box-shadow: 0 10px 30px rgba(49, 46, 129, 0.25);
-}
-
-.member-hero-card::after {
-  content: '';
-  position: absolute;
-  top: -50%;
-  right: -20%;
-  width: 300px;
-  height: 300px;
-  background: radial-gradient(circle, rgba(255, 255, 255, 0.15) 0%, transparent 70%);
-  border-radius: 50%;
-}
-
-.weight-stat-pill {
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 1rem;
-  padding: 0.85rem 1.25rem;
-}
-
-/* 모던 카드 공통 스타일 */
-.member-content-card {
-  background: #ffffff;
-  border-radius: 1.25rem;
-  border: 1px solid var(--border-color);
-  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
-  overflow: hidden;
-  margin-bottom: 1.5rem;
-  transition: box-shadow 0.2s ease;
-}
-
-.member-content-card:hover {
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.07);
-}
-
-.member-card-header {
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid var(--border-color);
-  background-color: #fafbfd;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.member-card-title {
-  font-size: 1.15rem;
-  font-weight: 700;
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  --mp-bg: #f2f4f6;
+  --mp-surface: #ffffff;
+  --mp-surface-2: #f7f8fa;
+  --mp-line: #e8ebee;
+  --mp-ink: #191f28;
+  --mp-ink-2: #4e5968;
+  --mp-ink-3: #8b95a1;
+  --mp-primary: #3182f6;
+  --mp-primary-soft: #e8f3ff;
+  --mp-workout: #0ca678;
+  --mp-workout-soft: #e6fcf5;
+  --mp-diet: #f08c00;
+  --mp-diet-soft: #fff4e6;
+  --mp-feedback: #7048e8;
+  --mp-feedback-soft: #f3f0ff;
+  --mp-good: #0ca678;
+  --mp-mid: #f08c00;
+  --mp-low: #f03e3e;
+  --mp-radius: 20px;
+  --mp-radius-sm: 14px;
+  --mp-shadow: 0 1px 2px rgba(0, 0, 0, 0.03), 0 4px 16px rgba(0, 0, 0, 0.04);
+  --mp-appbar-h: 58px;
+  --mp-tabbar-h: 64px;
+  --mp-safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ========================================================================= */
-/* [한눈에 쏙 들어오는 운동 루틴 & 식단 서식 박스] */
+/* [기본 앱 셸: 화면 전체를 앱처럼 고정하고 각 탭 안에서만 세로 스크롤] */
 /* ========================================================================= */
-.routine-display-box {
-  background: #ffffff;
-  border-radius: 0.85rem;
-  padding: 1.35rem 1.5rem;
-  font-size: 0.95rem;
-  line-height: 1.85;
-  color: #1e293b;
-  white-space: pre-wrap;
-  word-break: break-word;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.04);
-  min-height: 200px;
-}
-
-.routine-display-box.border-start {
-  border-left-width: 5px !important;
-}
-
-/* ========================================================================= */
-/* [3개 독립 꺾은선 차트 카드 (코치 대시보드와 동일)] */
-/* ========================================================================= */
-.chart-card {
-  background: #ffffff;
-  border: 1px solid var(--border-color);
-  border-radius: 0.85rem;
-  padding: 1rem 1.15rem;
-  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.03);
+html, body {
   height: 100%;
 }
 
-.chart-card-title {
-  font-size: 0.88rem;
-  font-weight: 700;
-  margin-bottom: 0.75rem;
+body.mp-body {
+  font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', 'Segoe UI', Roboto, sans-serif;
+  background: var(--mp-bg);
+  color: var(--mp-ink);
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+  letter-spacing: -0.01em;
+}
+
+/* 상단 앱바 */
+.mp-appbar {
+  flex: 0 0 auto;
+  background: rgba(242, 244, 246, 0.92);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  padding-top: env(safe-area-inset-top, 0px);
+  z-index: 20;
+}
+
+.mp-appbar-inner {
+  height: var(--mp-appbar-h);
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 0 16px;
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mp-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mp-brand-mark {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  background: linear-gradient(135deg, #3182f6, #7048e8);
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.mp-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.mp-brand-sub {
+  font-size: 0.7rem;
+  color: var(--mp-ink-3);
+  font-weight: 600;
+}
+
+.mp-brand-title {
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--mp-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-appbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mp-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  border: none;
+  background: transparent;
+  color: var(--mp-ink-2);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  transition: background 0.15s ease;
+}
+
+.mp-icon-btn:active,
+.mp-icon-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.mp-cta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--mp-primary);
+  color: #fff !important;
+  font-weight: 700;
+  font-size: 0.88rem;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.12s ease, background 0.15s ease;
+}
+
+.mp-cta-chip:hover { background: #1b64da; }
+.mp-cta-chip:active { transform: scale(0.97); }
+
+/* 로딩 / 접근 오류 화면 */
+.mp-screen {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
+}
+
+.mp-screen.d-none { display: none !important; }
+
+.mp-state-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--mp-surface);
+  border-radius: 24px;
+  padding: 32px 24px;
+  box-shadow: var(--mp-shadow);
+  text-align: center;
+}
+
+.mp-state-icon {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+  border-radius: 20px;
+  background: #fff4e6;
+  color: var(--mp-diet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.9rem;
+}
+
+.mp-state-title {
+  font-weight: 800;
+  font-size: 1.15rem;
+  margin: 0 0 8px;
+}
+
+.mp-state-desc {
+  color: var(--mp-ink-2);
+  font-size: 0.92rem;
+  line-height: 1.6;
+}
+
+.mp-loader {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 18px;
+  border-radius: 50%;
+  border: 4px solid var(--mp-primary-soft);
+  border-top-color: var(--mp-primary);
+  animation: mpSpin 0.8s linear infinite;
+}
+
+@keyframes mpSpin { to { transform: rotate(360deg); } }
+
+.mp-note {
+  background: var(--mp-surface-2);
+  border-radius: var(--mp-radius-sm);
+  padding: 12px 14px;
+  font-size: 0.82rem;
+  color: var(--mp-ink-2);
+  line-height: 1.55;
+}
+
+/* 메인 앱 영역 */
+.mp-app {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.mp-track {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+.mp-track::-webkit-scrollbar { display: none; }
+
+.mp-pane {
+  flex: 0 0 100%;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mp-pane-inner {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 4px 16px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 하단 탭바 */
+.mp-tabbar {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-around;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  border-top: 1px solid var(--mp-line);
+  padding: 6px 8px calc(6px + var(--mp-safe-bottom));
+  z-index: 20;
+}
+
+.mp-tab {
+  flex: 1 1 0;
+  max-width: 120px;
+  height: calc(var(--mp-tabbar-h) - 12px);
+  border: none;
+  background: transparent;
+  color: var(--mp-ink-3);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border-radius: 14px;
+  transition: color 0.18s ease, background 0.18s ease;
+}
+
+.mp-tab i {
+  font-size: 1.32rem;
+  line-height: 1;
+  transition: transform 0.18s ease;
+}
+
+.mp-tab.is-active {
+  color: var(--mp-ink);
+}
+
+.mp-tab.is-active i {
+  transform: translateY(-1px) scale(1.06);
+}
+
+.mp-tab[data-tab-target="home"].is-active i { color: var(--mp-primary); }
+.mp-tab[data-tab-target="workout"].is-active i { color: var(--mp-workout); }
+.mp-tab[data-tab-target="diet"].is-active i { color: var(--mp-diet); }
+.mp-tab[data-tab-target="feedback"].is-active i { color: var(--mp-feedback); }
+
+/* ========================================================================= */
+/* [공통 컴포넌트] */
+/* ========================================================================= */
+.mp-card {
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 18px;
+  box-shadow: var(--mp-shadow);
+}
+
+.mp-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.mp-card-title {
+  font-size: 1rem;
+  font-weight: 800;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-card-title i { color: var(--mp-primary); }
+
+.mp-card-badges {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.mp-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--mp-surface-2);
+  color: var(--mp-ink-2);
+  white-space: nowrap;
+}
+
+.mp-chip-dark { background: var(--mp-ink); color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.mp-chip-success { background: var(--mp-workout-soft); color: var(--mp-workout); }
+.mp-chip-muted { background: var(--mp-surface-2); color: var(--mp-ink-3); }
+.mp-chip-primary { background: var(--mp-primary-soft); color: var(--mp-primary); }
+
+.mp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 46px;
+  padding: 0 18px;
+  border-radius: var(--mp-radius-sm);
+  border: none;
+  font-weight: 700;
+  font-size: 0.92rem;
+  transition: transform 0.12s ease, filter 0.15s ease, background 0.15s ease;
+  white-space: nowrap;
+}
+
+.mp-btn:active:not(:disabled) { transform: scale(0.97); }
+.mp-btn:disabled { opacity: 0.45; }
+.mp-btn-block { width: 100%; }
+.mp-btn-primary { background: var(--mp-primary); color: #fff; }
+.mp-btn-primary:hover:not(:disabled) { background: #1b64da; }
+.mp-btn-ghost { background: var(--mp-surface-2); color: var(--mp-ink-2); }
+.mp-btn-ghost:hover:not(:disabled) { background: #eceef1; }
+.mp-btn-workout { background: var(--mp-workout); color: #fff; }
+.mp-btn-diet { background: var(--mp-diet); color: #fff; }
+.mp-btn-workout:hover:not(:disabled),
+.mp-btn-diet:hover:not(:disabled) { filter: brightness(0.95); }
+
+.mp-link-btn {
+  border: none;
+  background: none;
+  color: var(--mp-ink-3);
+  font-size: 0.75rem;
+  padding: 4px;
+}
+
+.mp-more-btn {
+  border: none;
+  background: none;
+  padding: 6px 0 0;
+  color: var(--mp-primary);
+  font-weight: 700;
+  font-size: 0.82rem;
+}
+
+.mp-clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.mp-clamp.is-open {
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
+/* ========================================================================= */
+/* [홈 탭] */
+/* ========================================================================= */
+.mp-hero {
+  background: linear-gradient(140deg, #3182f6 0%, #5b5bf0 55%, #7048e8 100%);
+  color: #fff;
+  border-radius: 24px;
+  padding: 20px 18px 16px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 28px rgba(49, 130, 246, 0.25);
+}
+
+.mp-hero::after {
+  content: '';
+  position: absolute;
+  top: -60px;
+  right: -40px;
+  width: 200px;
+  height: 200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.22) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.mp-hero-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.mp-hero-tag,
+.mp-hero-no {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+.mp-hero-no:empty { display: none; }
+
+.mp-hero-title {
+  font-size: 1.32rem;
+  font-weight: 800;
+  line-height: 1.35;
+  margin: 0 0 6px;
+  letter-spacing: -0.02em;
+}
+
+.mp-hero-desc {
+  font-size: 0.82rem;
+  color: rgba(255, 255, 255, 0.78);
+  margin: 0 0 16px;
+}
+
+.mp-weight-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.mp-weight-tile {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 14px;
+  padding: 10px 8px;
+  text-align: center;
+}
+
+.mp-weight-label {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.75);
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.mp-weight-val {
+  font-size: 1.12rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.mp-weight-val small {
+  font-size: 0.72rem;
+  font-weight: 600;
+  margin-left: 2px;
+  opacity: 0.8;
+}
+
+.mp-diff { color: #fff; }
+.mp-diff.is-down { color: #c3fae8; }
+.mp-diff.is-up { color: #ffe8cc; }
+
+.mp-cta-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 14px 16px;
+  box-shadow: var(--mp-shadow);
+  text-decoration: none;
+  color: var(--mp-ink);
+  transition: transform 0.12s ease;
+}
+
+.mp-cta-card:active { transform: scale(0.985); }
+
+.mp-cta-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: #fff4e6;
+  color: var(--mp-diet);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.mp-cta-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.mp-cta-text strong { font-size: 0.95rem; }
+.mp-cta-text small { color: var(--mp-ink-3); font-size: 0.76rem; margin-top: 2px; }
+.mp-cta-arrow { color: var(--mp-ink-3); }
+
+.mp-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.mp-shortcut {
+  border: none;
+  background: var(--mp-surface);
+  border-radius: 18px;
+  padding: 14px 6px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--mp-ink-2);
+  box-shadow: var(--mp-shadow);
+  transition: transform 0.12s ease;
+}
+
+.mp-shortcut:active { transform: scale(0.96); }
+
+.mp-shortcut i {
+  width: 40px;
+  height: 40px;
+  border-radius: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.15rem;
+}
+
+.mp-shortcut.is-workout i { background: var(--mp-workout-soft); color: var(--mp-workout); }
+.mp-shortcut.is-diet i { background: var(--mp-diet-soft); color: var(--mp-diet); }
+.mp-shortcut.is-feedback i { background: var(--mp-feedback-soft); color: var(--mp-feedback); }
+
+.mp-latest .mp-card-title i { color: #fab005; }
+.mp-latest .mp-card-head { margin-bottom: 8px; }
+
+.mp-info-list {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.mp-info-row {
+  background: var(--mp-surface-2);
+  border-radius: 12px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.mp-info-row.is-block { grid-column: 1 / -1; }
+
+.mp-info-row dt {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--mp-ink-3);
+  margin-bottom: 2px;
+}
+
+.mp-info-row dd {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--mp-ink);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.mp-status-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+}
+
+.mp-status-row .badge {
+  white-space: normal;
+  font-weight: 600;
+  line-height: 1.4;
+  border-radius: 999px;
+  padding: 6px 12px;
+}
+
+/* ========================================================================= */
+/* [운동 / 식단 / 피드백 탭 공통 헤더] */
+/* ========================================================================= */
+.mp-pane-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 2px 2px;
+}
+
+.mp-pane-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.mp-pane-head.is-workout .mp-pane-icon { background: var(--mp-workout-soft); color: var(--mp-workout); }
+.mp-pane-head.is-diet .mp-pane-icon { background: var(--mp-diet-soft); color: var(--mp-diet); }
+.mp-pane-head.is-feedback .mp-pane-icon { background: var(--mp-feedback-soft); color: var(--mp-feedback); }
+
+.mp-pane-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0;
+  letter-spacing: -0.02em;
+}
+
+.mp-pane-sub {
+  font-size: 0.78rem;
+  color: var(--mp-ink-3);
+  margin: 2px 0 0;
+}
+
+/* ========================================================================= */
+/* [운동 루틴 & 식단 표시 박스] */
+/* ========================================================================= */
+.routine-display-box {
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 18px;
+  font-size: 0.92rem;
+  line-height: 1.8;
+  color: var(--mp-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: var(--mp-shadow);
+}
+
+.routine-display-box:has(.routine-accordion-container),
+.routine-display-box:has(.diet-accordion-container),
+.routine-display-box.has-accordion {
+  white-space: normal !important;
+  background: transparent !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+}
+
+.workout-intro-card,
+.diet-intro-card {
+  border: none !important;
+  border-radius: var(--mp-radius-sm);
+}
+
+.workout-intro-card { background: var(--mp-workout-soft); }
+.diet-intro-card { background: var(--mp-diet-soft); }
+
+.routine-accordion .accordion-item,
+.diet-accordion .accordion-item {
+  border: none !important;
+  border-radius: 18px !important;
+  margin-bottom: 8px;
+  overflow: hidden;
+  background: var(--mp-surface);
+  box-shadow: var(--mp-shadow);
+}
+
+.routine-accordion .routine-intro-accordion-item,
+.diet-accordion .diet-intro-accordion-item {
+  border: none !important;
+}
+
+.routine-accordion .accordion-header,
+.diet-accordion .accordion-header {
+  margin-bottom: 0;
+}
+
+.routine-accordion .accordion-button,
+.diet-accordion .accordion-button {
+  background: var(--mp-surface);
+  padding: 14px 16px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  color: var(--mp-ink);
+  border: none;
+  box-shadow: none !important;
+}
+
+.routine-accordion .accordion-button:not(.collapsed) {
+  background: var(--mp-workout-soft) !important;
+  color: #087f5b;
+}
+
+.diet-accordion .accordion-button:not(.collapsed) {
+  background: var(--mp-diet-soft) !important;
+  color: #d9480f;
+}
+
+.routine-accordion .accordion-button:focus,
+.diet-accordion .accordion-button:focus {
+  box-shadow: none;
+  border-color: transparent;
+}
+
+.routine-accordion .accordion-body,
+.diet-accordion .accordion-body {
+  padding: 12px;
+  background: var(--mp-surface);
+}
+
+/* DAY별 운동 표 */
+.routine-day-table-wrapper,
+.diet-table-wrapper {
+  border-radius: var(--mp-radius-sm);
+  overflow-x: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+  border: 1px solid var(--mp-line);
+  background: var(--mp-surface);
+}
+
+.routine-day-table,
+.diet-day-table {
+  margin-bottom: 0 !important;
+  font-size: 0.85rem;
+}
+
+.routine-day-table > :not(caption) > * > *,
+.diet-day-table > :not(caption) > * > * {
+  border-color: var(--mp-line) !important;
+}
+
+.routine-day-table thead .table-day-title-row th {
+  background: var(--mp-workout) !important;
+  color: #fff !important;
+  font-weight: 800;
+  font-size: 0.92rem;
+  text-align: center !important;
+  padding: 10px 12px;
+  border: none;
+}
+
+.routine-day-table thead .table-day-header-row th {
+  background: var(--mp-surface-2) !important;
+  color: var(--mp-ink-2) !important;
+  font-weight: 700;
+  font-size: 0.76rem;
+  padding: 8px 6px;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.routine-day-table tbody td {
+  padding: 9px 8px;
+  vertical-align: middle;
+}
+
+.routine-rest-card,
+.diet-planb-card {
+  background: var(--mp-surface-2) !important;
+  border: 1.5px dashed #d5dae0 !important;
+  border-radius: var(--mp-radius-sm);
+  box-shadow: none !important;
+}
+
+.routine-rest-card {
+  padding: 20px 16px;
+  text-align: center;
+}
+
+.diet-day-table thead tr th {
+  background: var(--mp-diet-soft) !important;
+  color: #d9480f !important;
+  font-weight: 700;
+  padding: 9px 8px;
+  text-align: center;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.diet-day-table tbody td {
+  padding: 9px 10px;
+  vertical-align: middle;
+}
+
+/* ========================================================================= */
+/* [회원 셀프 수정 패널 (AI 재생성 / 되돌리기)] */
+/* ========================================================================= */
+.mp-regen {
+  margin-top: 12px;
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 16px;
+  box-shadow: var(--mp-shadow);
+}
+
+.mp-regen-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.mp-regen-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: var(--mp-feedback-soft);
+  color: var(--mp-feedback);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.mp-regen-title {
+  font-weight: 800;
+  font-size: 0.95rem;
+  display: block;
+}
+
+.mp-regen-sub {
+  font-size: 0.74rem;
+  color: var(--mp-ink-3);
+}
+
+.mp-textarea {
+  border-radius: var(--mp-radius-sm);
+  border: 1.5px solid var(--mp-line);
+  background: var(--mp-surface-2);
+  font-size: 0.92rem;
+  padding: 12px 14px;
+  resize: vertical;
+}
+
+.mp-textarea:focus {
+  border-color: var(--mp-primary);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(49, 130, 246, 0.12);
+}
+
+.mp-regen-actions {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mp-regen-hint {
+  font-size: 0.72rem;
+  color: var(--mp-ink-3);
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.mp-note-box {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-radius: var(--mp-radius-sm);
+  font-size: 0.84rem;
+  line-height: 1.6;
+}
+
+.mp-note-box.is-ok { background: var(--mp-workout-soft); }
+.mp-note-box.is-warn { background: #fff9db; }
+
+/* ========================================================================= */
+/* [피드백 탭: 그래프 전환 + 카드형 기록] */
+/* ========================================================================= */
+.mp-seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  background: var(--mp-surface-2);
+  border-radius: 12px;
+  padding: 4px;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.mp-seg-btn {
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  height: 34px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--mp-ink-3);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.mp-seg-btn.is-active {
+  background: #fff;
+  color: var(--mp-ink);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.mp-chart { display: none; }
+.mp-chart.is-active { display: block; }
+
+.mp-chart-caption {
+  font-size: 0.74rem;
+  color: var(--mp-ink-3);
+  font-weight: 600;
+  margin-bottom: 6px;
 }
 
 .chart-canvas-wrapper {
   position: relative;
-  height: 190px;
+  height: 200px;
   width: 100%;
 }
 
-/* ========================================================================= */
-/* [일자별 피드백 누적 테이블 (코치 대시보드 목록 기준)] */
-/* ========================================================================= */
-.member-feedback-table {
-  width: 100%;
-  margin-bottom: 0;
+.mp-feedback-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
-.member-feedback-table thead th {
-  background-color: #f8fafc;
-  color: #475569;
+.mp-fb-card {
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 16px;
+  box-shadow: var(--mp-shadow);
+}
+
+.mp-fb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.mp-fb-date {
+  font-weight: 800;
+  font-size: 0.92rem;
+  color: var(--mp-ink);
+}
+
+.mp-fb-metrics {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.mp-metric,
+.mp-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.74rem;
   font-weight: 700;
-  font-size: 0.85rem;
-  padding: 0.85rem 0.75rem;
-  border-bottom: 2px solid var(--border-color);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--mp-surface-2);
+  color: var(--mp-ink-2);
   white-space: nowrap;
 }
 
-.member-feedback-table tbody td {
-  padding: 0.95rem 0.75rem;
-  vertical-align: top;
-  border-bottom: 1px solid var(--border-color);
-  font-size: 0.88rem;
-}
+.mp-score.is-good { background: var(--mp-workout-soft); color: var(--mp-good); }
+.mp-score.is-mid { background: var(--mp-diet-soft); color: var(--mp-mid); }
+.mp-score.is-low { background: #fff5f5; color: var(--mp-low); }
 
-.member-feedback-table tbody tr:hover {
-  background-color: #f8fafc;
-}
-
-/* 칭찬/성취 중심 코치 피드백 코멘트 셀 */
 .feedback-comment-cell {
-  background-color: #f0fdf4;
-  border: 1px solid #bbf7d0;
-  border-radius: 0.65rem;
-  padding: 0.75rem 1rem;
-  color: #14532d;
+  background: var(--mp-surface-2);
+  border-radius: var(--mp-radius-sm);
+  padding: 12px 14px;
+}
+
+.mp-fb-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: var(--mp-primary);
+  margin-bottom: 4px;
+}
+
+.mp-fb-label i { color: #fab005; }
+
+.mp-fb-text {
+  font-size: 0.9rem;
+  line-height: 1.65;
+  color: var(--mp-ink);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mp-fb-pending {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  color: var(--mp-ink-3);
+  background: var(--mp-surface-2);
+  border-radius: var(--mp-radius-sm);
+  padding: 12px 14px;
+}
+
+.mp-fb-note {
+  margin-top: 8px;
+}
+
+.mp-fb-note summary {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--mp-ink-2);
+  cursor: pointer;
+  padding: 6px 2px;
+  list-style: none;
+}
+
+.mp-fb-note summary::-webkit-details-marker { display: none; }
+.mp-fb-note summary::before {
+  content: '\F282';
+  font-family: 'bootstrap-icons';
+  display: inline-block;
+  margin-right: 6px;
+  font-size: 0.7rem;
+  transition: transform 0.15s ease;
+}
+
+.mp-fb-note[open] summary::before { transform: rotate(180deg); }
+
+.member-log-cell {
+  background: var(--mp-surface-2);
+  border-radius: var(--mp-radius-sm);
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  color: var(--mp-ink-2);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.mp-empty {
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 32px 18px;
+  text-align: center;
+  color: var(--mp-ink-3);
   font-size: 0.88rem;
   line-height: 1.6;
-  word-break: break-word;
+  box-shadow: var(--mp-shadow);
 }
 
-/* 회원 실천 일지 내용 셀 */
-.member-log-cell {
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.65rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.83rem;
-  color: #334155;
-  line-height: 1.6;
-  word-break: break-word;
+.mp-empty > i {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 8px;
 }
 
-/* 인증 모달 */
+/* ========================================================================= */
+/* [인증 모달] */
+/* ========================================================================= */
 .member-auth-card {
-  border-radius: 1.5rem;
+  border-radius: 28px;
   border: none;
-  box-shadow: 0 25px 60px -15px rgba(15, 23, 42, 0.4);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.35);
   overflow: hidden;
 }
 
 .member-auth-icon {
-  width: 80px;
-  height: 80px;
-  background: #eef2ff;
-  border-radius: 50%;
+  width: 72px;
+  height: 72px;
+  background: var(--mp-primary-soft);
+  color: var(--mp-primary);
+  border-radius: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 1.5rem auto;
+  margin: 0 auto 18px;
+  font-size: 2rem;
 }
 
 .member-pin-input {
   font-size: 1.8rem;
   letter-spacing: 0.75rem;
   text-align: center;
-  border-radius: 0.85rem;
-  border: 2px solid #cbd5e1;
-  padding: 0.75rem 0.5rem;
-  font-weight: 700;
+  border-radius: var(--mp-radius-sm);
+  border: 2px solid var(--mp-line);
+  background: var(--mp-surface-2);
+  padding: 12px 8px;
+  font-weight: 800;
   transition: all 0.2s ease;
 }
 
 .member-pin-input:focus {
-  border-color: #4f46e5;
-  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.15);
+  border-color: var(--mp-primary);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(49, 130, 246, 0.15);
 }
 
 .shake-effect {
@@ -278,490 +1174,35 @@ body {
   75% { transform: translateX(8px); }
 }
 
-/* 차트 카드 */
-.chart-container-box {
-  position: relative;
-  height: 260px;
-  width: 100%;
-}
-
 /* ========================================================================= */
-/* [모바일 화면 전체 활용 UI 대개편 (max-width: 768px)] */
+/* [넓은 화면: 같은 앱 구조를 가운데 정렬로 표시] */
 /* ========================================================================= */
-@media (max-width: 768px) {
-  /* 1. 컨테이너 여백 다이어트: 화면 폭 96%+ 활용 */
-  .container-xl {
-    padding-left: 0.35rem !important;
-    padding-right: 0.35rem !important;
-  }
-
-  /* 2. 상단 글로벌 네비게이션 */
-  .member-navbar {
-    padding-left: 0.5rem !important;
-    padding-right: 0.5rem !important;
-    padding-top: 0.4rem !important;
-    padding-bottom: 0.4rem !important;
-  }
-
-  .member-nav-brand {
-    font-size: 0.95rem;
-  }
-
-  /* 3. 히어로 환영 헤더 & 체중 인포그래픽 */
-  .member-hero-card {
-    padding: 1.15rem 0.85rem !important;
-    border-radius: 0.75rem !important;
-    margin-bottom: 0.5rem !important;
-  }
-
-  .member-hero-card h2 {
-    font-size: 1.25rem !important;
-  }
-
-  .weight-stat-pill {
-    padding: 0.45rem 0.2rem !important;
-    border-radius: 0.65rem !important;
-  }
-
-  .weight-stat-pill .fs-5 {
-    font-size: 0.95rem !important;
-  }
-
-  /* 4. 회원 콘텐츠 카드 */
-  .member-content-card {
-    border-radius: 0.75rem !important;
-    margin-bottom: 0.5rem !important;
-    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
-  }
-
-  .member-card-header {
-    padding: 0.65rem 0.75rem !important;
-  }
-
-  .member-card-title {
-    font-size: 0.95rem !important;
-  }
-
-  /* 5. 인적 사항 그리드 & 라이프스타일 */
-  .info-field-box {
-    padding: 0.5rem 0.6rem !important;
-    border-radius: 0.5rem !important;
-  }
-
-  .info-field-label {
-    font-size: 0.68rem !important;
-    margin-bottom: 0.15rem !important;
-  }
-
-  .info-field-val {
-    font-size: 0.88rem !important;
-  }
-
-  .personal-lifestyle-card {
-    padding: 0.65rem !important;
-    border-radius: 0.5rem !important;
-  }
-
-  .stat-icon-circle {
-    width: 32px !important;
-    height: 32px !important;
-    font-size: 0.95rem !important;
-  }
-
-  /* 6. 피드백 배너 */
-  .cta-feedback-btn {
-    width: 100%;
-    justify-content: center;
-    text-align: center;
-    padding: 0.6rem 1rem !important;
-    font-size: 0.88rem !important;
-  }
-
-  /* 7. 운동 & 식단 루틴 디스플레이 박스 */
-  .routine-display-box {
-    padding: 0.5rem !important;
-  }
-
-  .routine-accordion .accordion-button,
-  .diet-accordion .accordion-button {
-    padding: 0.6rem 0.75rem !important;
-    font-size: 0.88rem !important;
-  }
-
-  .routine-accordion .accordion-body,
-  .diet-accordion .accordion-body {
-    padding: 0.5rem !important;
-  }
-
-  /* 8. 운동 & 식단 테이블 */
-  .routine-day-table-wrapper,
-  .diet-table-wrapper {
-    border-radius: 0.5rem !important;
-  }
-
-  .routine-day-table,
-  .diet-day-table {
-    min-width: 310px;
-    font-size: 0.82rem !important;
-  }
-
-  .routine-day-table tbody td,
-  .diet-day-table tbody td {
-    padding: 0.5rem 0.4rem !important;
-  }
-
-  .routine-day-table thead .table-day-header-row th,
-  .diet-day-table thead tr th {
-    padding: 0.45rem 0.35rem !important;
-    font-size: 0.78rem !important;
-    white-space: nowrap;
-  }
-
-  .routine-rest-card {
-    padding: 1.15rem 0.85rem !important;
-  }
-
-  /* 9. 차트 카드 */
-  .chart-card {
-    padding: 0.65rem !important;
-    border-radius: 0.65rem !important;
-    height: 220px !important;
-  }
-
-  .chart-canvas-wrapper {
-    height: 175px !important;
-  }
-
-  /* 10. 피드백 누적 테이블 */
-  .member-feedback-table thead th {
-    padding: 0.5rem 0.4rem !important;
-    font-size: 0.75rem !important;
-    white-space: nowrap;
-  }
-
-  .member-feedback-table tbody td {
-    padding: 0.55rem 0.4rem !important;
-    font-size: 0.82rem !important;
-  }
-
-  .feedback-comment-cell,
-  .member-log-cell {
-    padding: 0.5rem 0.6rem !important;
-    font-size: 0.8rem !important;
-  }
-}
-
-/* ========================================================================= */
-/* [코치 대시보드와 동일한 인적 사항 그리드 및 라이프스타일 카드 스타일] */
-/* ========================================================================= */
-.info-field-box {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem;
-  padding: 0.85rem 1rem;
-  height: 100%;
-  transition: all 0.2s ease;
-}
-
-.info-field-box:hover {
-  border-color: #cbd5e1;
-  background: #f1f5f9;
-}
-
-.info-field-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 0.25rem;
-  display: flex;
-  align-items: center;
-}
-
-.info-field-val {
-  font-size: 1rem;
-  font-weight: 600;
-  color: #0f172a;
-}
-
-.personal-lifestyle-card {
-  background-color: #f8fafc !important;
-  border: 1px solid #e2e8f0 !important;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
-}
-
-.stat-icon-circle {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.05rem;
-}
-
 @media (min-width: 768px) {
-  .border-start-md {
-    border-left: 1px solid #e2e8f0;
-  }
+  .mp-pane-inner { padding-top: 12px; gap: 14px; }
+  .mp-hero { padding: 26px 24px 20px; }
+  .mp-hero-title { font-size: 1.55rem; }
+  .mp-tabbar { justify-content: center; gap: 24px; }
+  .chart-canvas-wrapper { height: 240px; }
 }
 
-.git-tag-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.65rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 50rem;
-  background-color: #f1f5f9;
-  color: #334155;
-  border: 1px solid #cbd5e1;
-  letter-spacing: -0.2px;
+@media (max-width: 360px) {
+  .mp-pane-inner { padding-left: 12px; padding-right: 12px; }
+  .mp-cta-chip span { display: none; }
+  .mp-info-list { grid-template-columns: 1fr; }
 }
 
-/* ========================================================================= */
-/* [초고속 로딩 스크린 디자인] */
-/* ========================================================================= */
-#pageLoadingScreen {
-  min-height: 60vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+@media (prefers-reduced-motion: reduce) {
+  .mp-track { scroll-behavior: auto; }
+  .mp-loader { animation-duration: 2s; }
 }
 
-.loading-card {
-  background: #ffffff;
-  border-radius: 1.5rem;
-  padding: 3rem 2rem;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.01);
-  border: 1px solid #e2e8f0;
+.mp-plain-plan {
+  background: var(--mp-surface);
+  border-radius: var(--mp-radius);
+  padding: 16px 18px;
+  font-size: 0.92rem;
+  line-height: 1.75;
+  color: var(--mp-ink);
+  box-shadow: var(--mp-shadow);
+  word-break: break-word;
 }
-
-/* ========================================================================= */
-/* [운동 루틴 아코디언 & DAY1~DAY7 마크다운 테이블 디자인] */
-/* ========================================================================= */
-.routine-display-box:has(.routine-accordion-container),
-.routine-display-box:has(.diet-accordion-container),
-.routine-display-box.has-accordion {
-  white-space: normal !important;
-  background: transparent !important;
-  border: none !important;
-  padding: 0 !important;
-  box-shadow: none !important;
-  min-height: auto !important;
-}
-
-.workout-intro-card {
-  background: linear-gradient(135deg, #f0fdf4 0%, #e8f5e9 100%);
-  border: 1px solid #bbf7d0;
-  border-left: 4px solid #16a34a !important;
-  border-radius: 0.85rem;
-}
-
-.routine-accordion .accordion-item {
-  border: 1px solid #e2e8f0;
-  border-radius: 0.75rem !important;
-  margin-bottom: 0.65rem;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  background: #ffffff;
-}
-
-.routine-accordion .routine-intro-accordion-item {
-  border-left: 4px solid #10b981 !important;
-}
-
-.routine-accordion .routine-intro-accordion-item .accordion-button:not(.collapsed) {
-  background: linear-gradient(135deg, #f0fdf4 0%, #e6fcf5 100%) !important;
-}
-
-.routine-accordion .accordion-header {
-  margin-bottom: 0;
-}
-
-.routine-accordion .accordion-button {
-  background-color: #ffffff;
-  padding: 0.85rem 1.15rem;
-  font-size: 0.95rem;
-  border: none;
-  box-shadow: none !important;
-  transition: all 0.2s ease-in-out;
-}
-
-.routine-accordion .accordion-button:not(.collapsed) {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  color: #0f172a;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.routine-accordion .accordion-button:focus {
-  box-shadow: none;
-  border-color: transparent;
-}
-
-.routine-accordion .accordion-body {
-  padding: 0.85rem;
-  background-color: #f8fafc;
-}
-
-/* DAY별 테이블 디자인 (Colspan=5 병합 셀 포함) */
-.routine-day-table-wrapper {
-  border-radius: 0.65rem;
-  overflow-x: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-}
-
-.routine-day-table {
-  margin-bottom: 0 !important;
-  font-size: 0.88rem;
-}
-
-/* 요구사항 1: 테이블 최상단 DAY 제목 행 가로 병합 (Colspan="5"), 가운데 정렬, 굵은 글씨, 포인트 배경색 */
-.routine-day-table thead .table-day-title-row th {
-  background: linear-gradient(135deg, #059669 0%, #10b981 100%) !important;
-  color: #ffffff !important;
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.03em;
-  text-align: center !important;
-  padding: 0.75rem 1rem;
-  border: none;
-}
-
-/* 테이블 열 헤더 (운동 종목, 횟수, 세트수, 쉬는시간, 무게) */
-.routine-day-table thead .table-day-header-row th {
-  background-color: #f1f5f9 !important;
-  color: #334155 !important;
-  font-weight: 700;
-  font-size: 0.82rem;
-  border-bottom: 2px solid #cbd5e1 !important;
-  padding: 0.55rem 0.5rem;
-  text-align: center;
-  white-space: nowrap;
-}
-
-.routine-day-table tbody td {
-  padding: 0.6rem 0.65rem;
-  vertical-align: middle;
-  border-color: #e2e8f0;
-}
-
-.routine-day-table tbody tr:hover {
-  background-color: #f8fafc;
-}
-
-/* 휴식일 전용 카드 (리커버리 & 스트레칭 안내) */
-.routine-rest-card {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1.5px dashed #cbd5e1;
-  border-radius: 0.85rem;
-  padding: 1.5rem 1.25rem;
-  text-align: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-/* ========================================================================= */
-/* [맞춤 식단 플랜 아코디언 & 마크다운 테이블 디자인 (회원 뷰)] */
-/* ========================================================================= */
-.diet-intro-card {
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
-  border: 1px solid #fde68a;
-  border-left: 4px solid #f59e0b !important;
-  border-radius: 0.85rem;
-}
-
-.diet-accordion .accordion-item {
-  border: 1px solid #fed7aa;
-  border-radius: 0.75rem !important;
-  margin-bottom: 0.65rem;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  background: #ffffff;
-}
-
-.diet-accordion .diet-intro-accordion-item {
-  border-left: 4px solid #f59e0b !important;
-}
-
-.diet-accordion .diet-intro-accordion-item .accordion-button:not(.collapsed) {
-  background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%) !important;
-}
-
-.diet-accordion .accordion-header {
-  margin-bottom: 0;
-}
-
-.diet-accordion .accordion-button {
-  background-color: #ffffff;
-  padding: 0.85rem 1.15rem;
-  font-size: 0.95rem;
-  border: none;
-  box-shadow: none !important;
-  transition: all 0.2s ease-in-out;
-}
-
-.diet-accordion .accordion-button:not(.collapsed) {
-  background: linear-gradient(135deg, #fffdf5 0%, #fef9c3 100%);
-  color: #78350f;
-  border-bottom: 1px solid #fde68a;
-}
-
-.diet-accordion .accordion-button:focus {
-  box-shadow: none;
-  border-color: transparent;
-}
-
-.diet-accordion .accordion-body {
-  padding: 0.85rem;
-  background-color: #fffdf5;
-}
-
-/* 식단 테이블 디자인 */
-.diet-table-wrapper {
-  border-radius: 0.65rem;
-  overflow-x: auto !important;
-  -webkit-overflow-scrolling: touch !important;
-  border: 1px solid #fed7aa;
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
-}
-
-.diet-day-table {
-  margin-bottom: 0 !important;
-  font-size: 0.88rem;
-}
-
-.diet-day-table thead tr th {
-  background-color: #fef3c7 !important;
-  color: #78350f !important;
-  font-weight: 700;
-  border-color: #fde68a !important;
-  padding: 0.65rem 0.6rem;
-  text-align: center;
-}
-
-.diet-day-table tbody td {
-  padding: 0.65rem 0.7rem;
-  vertical-align: middle;
-  border-color: #fef3c7;
-}
-
-.diet-day-table tbody tr:hover {
-  background-color: #fffbeb;
-}
-
-/* 돌발 상황(Plan B) 대처 가이드라인 카드 */
-.diet-planb-card {
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
-  border: 1.5px dashed #cbd5e1;
-  border-left: 4px solid #f59e0b !important;
-  border-radius: 0.85rem;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
-}
-
-

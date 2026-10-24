@@ -2,7 +2,8 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#ffffff">
   <title>4주 습관화 코칭 통합 대시보드</title>
   
   <!-- Bootstrap 5 CSS -->
@@ -13,30 +14,33 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <!-- Custom CSS (style.css) -->
-  <link href="style.css" rel="stylesheet">
+  <!-- Pretendard (한글 UI 폰트) -->
+  <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
+  <!-- Custom CSS (style.css + v3 모바일 우선 디자인 레이어) -->
+  <link href="style.css?v=3.0.0" rel="stylesheet">
+  <link href="coach-v3.css?v=3.0.0" rel="stylesheet">
 </head>
-<body>
+<body class="cv3" data-ctab="list">
 
   <!-- ========================================================================= -->
   <!-- [상단 내비게이션 바] -->
   <!-- ========================================================================= -->
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top shadow-sm py-2">
+  <nav class="navbar navbar-expand-lg sticky-top py-2 cv3-navbar">
     <div class="container-fluid px-2 px-lg-4">
-      <a class="navbar-brand d-flex align-items-center me-1 me-md-2" href="#" onclick="switchDashboardView('members'); return false;">
-        <i class="bi bi-heart-pulse-fill text-danger me-1 me-md-2 fs-5 fs-md-4"></i>
-        <span class="d-none d-sm-inline">4주 온라인 습관화 코칭 대시보드</span>
-        <span class="d-inline d-sm-none fw-bold" style="font-size: 0.95rem;">코칭 대시보드</span>
+      <a class="navbar-brand d-flex align-items-center me-1 me-md-2" href="#" onclick="switchCoachTab('list'); return false;">
+        <span class="cv3-brand-mark"><i class="bi bi-heart-pulse-fill"></i></span>
+        <span class="d-none d-sm-inline">4주 습관화 코칭 대시보드</span>
+        <span class="d-inline d-sm-none fw-bold">코칭 대시보드</span>
       </a>
 
       <!-- 사이드바 접기/펼치기 토글 버튼 (데스크톱 전용) -->
-      <button type="button" class="btn btn-outline-secondary btn-sm text-white border-secondary px-2 py-1 ms-1 d-none d-md-inline-flex align-items-center" id="btnToggleSidebar" onclick="toggleSidebar()" title="목록 사이드바 접기/펼치기">
+      <button type="button" class="btn btn-outline-secondary btn-sm px-2 py-1 ms-1 d-none d-lg-inline-flex align-items-center" id="btnToggleSidebar" onclick="toggleSidebar()" title="목록 사이드바 접기/펼치기">
         <i class="bi bi-layout-sidebar-inset" id="iconSidebarToggle"></i>
         <span class="d-none d-md-inline ms-1 small fw-medium" id="textSidebarToggle">목록 접기</span>
       </button>
 
       <!-- [요구사항 1] 대시보드 메인 뷰 전환 탭: 참여자 관리 vs 지침서 관리 (모달 아님) -->
-      <div class="d-flex align-items-center gap-1 ms-1 ms-lg-3">
+      <div class="d-none d-lg-flex align-items-center gap-1 ms-1 ms-lg-3">
         <button type="button" class="view-nav-btn active px-2 px-md-3 py-1" id="btnNavViewMembers" onclick="switchDashboardView('members')">
           <i class="bi bi-people-fill me-1"></i><span class="d-none d-sm-inline">참여자 관리</span><span class="d-inline d-sm-none">참여자</span>
         </button>
@@ -55,8 +59,8 @@
       <div class="ms-auto d-flex align-items-center gap-2">
         <!-- [신규: 5단계] 1. AI 초안 작성 알림 드롭다운 (로봇 아이콘) -->
         <div class="dropdown position-relative me-1" id="aiDraftDropdownContainer">
-          <button type="button" class="btn btn-outline-secondary btn-sm position-relative text-white border-secondary px-2 py-1" id="btnAiDraftNotification" data-bs-toggle="dropdown" aria-expanded="false" title="AI 초안 작성 알림">
-            <i class="bi bi-robot fs-6 text-warning"></i>
+          <button type="button" class="btn btn-sm position-relative cv3-icon-btn" id="btnAiDraftNotification" data-bs-toggle="dropdown" aria-expanded="false" title="AI 초안 작성 알림">
+            <i class="bi bi-robot"></i>
             <span id="unreadAiDraftBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none shadow-sm" style="font-size: 0.68rem; padding: 0.25em 0.5em;">
               0
               <span class="visually-hidden">AI 초안 알림</span>
@@ -78,8 +82,8 @@
 
         <!-- [5단계] 2. 미완료 피드백 전역 알림 드롭다운 (종 아이콘) -->
         <div class="dropdown position-relative me-1" id="notificationDropdownContainer">
-          <button type="button" class="btn btn-outline-secondary btn-sm position-relative text-white border-secondary px-2 py-1" id="btnNotificationBell" data-bs-toggle="dropdown" aria-expanded="false" title="미완료 피드백 알림">
-            <i class="bi bi-bell-fill fs-6"></i>
+          <button type="button" class="btn btn-sm position-relative cv3-icon-btn" id="btnNotificationBell" data-bs-toggle="dropdown" aria-expanded="false" title="미완료 피드백 알림">
+            <i class="bi bi-bell-fill"></i>
             <span id="unreadFeedbackBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none shadow-sm" style="font-size: 0.68rem; padding: 0.25em 0.5em;">
               0
               <span class="visually-hidden">미완료 피드백</span>
@@ -105,13 +109,13 @@
         </span>
 
         <!-- 설정 모달 버튼 -->
-        <button type="button" class="btn btn-dark btn-sm border-secondary text-white px-2 py-1" data-bs-toggle="modal" data-bs-target="#apiConfigModal" title="GAS Web App 설정">
+        <button type="button" class="btn btn-sm cv3-icon-btn d-none d-sm-inline-flex" data-bs-toggle="modal" data-bs-target="#apiConfigModal" title="GAS Web App 설정">
           <i class="bi bi-gear-fill"></i>
         </button>
 
         <!-- [보안: 코치 세션 잠금 버튼] -->
-        <button type="button" class="btn btn-dark btn-sm border-secondary text-white px-2 py-1" id="btnCoachLogout" onclick="coachLogout()" title="대시보드 화면 잠금 (로그아웃)">
-          <i class="bi bi-shield-lock-fill text-warning"></i>
+        <button type="button" class="btn btn-sm cv3-icon-btn" id="btnCoachLogout" onclick="coachLogout()" title="대시보드 화면 잠금 (로그아웃)">
+          <i class="bi bi-shield-lock-fill"></i>
         </button>
       </div>
     </div>
@@ -121,16 +125,6 @@
   <!-- [메인 화면 분할 레이아웃 컨테이너] -->
   <!-- ========================================================================= -->
   <div class="container-fluid px-1 px-md-3 px-lg-4 py-2 py-md-3 main-wrapper">
-
-    <!-- [모바일 전용 뷰 전환 탭: 참여자 목록 vs 상세 코칭] -->
-    <div class="d-flex d-md-none w-100 p-1 mb-2 bg-white rounded-3 border shadow-sm mobile-view-tabs" id="mobileModeSwitchBar">
-      <button type="button" class="btn btn-sm flex-fill fw-bold mobile-tab-btn active" id="btnMobileTabList" onclick="switchMobileCoachView('list')">
-        <i class="bi bi-people-fill me-1"></i>참여자 목록 <span class="badge bg-primary text-white ms-1" id="mobileTabCountBadge">0</span>
-      </button>
-      <button type="button" class="btn btn-sm flex-fill fw-bold mobile-tab-btn text-muted" id="btnMobileTabDetail" onclick="switchMobileCoachView('detail')">
-        <i class="bi bi-clipboard2-pulse me-1"></i>상세 코칭 <span class="badge bg-secondary-subtle text-secondary ms-1" id="mobileTabMemberBadge">미선택</span>
-      </button>
-    </div>
 
     <div class="row g-2 g-md-3">
 
@@ -272,16 +266,14 @@
           <!-- 참여자 상세 정보 컨테이너 -->
           <div id="memberDetailContent" class="d-none">
 
-            <!-- [모바일 전용 상단 퀵 바: 목록으로 돌아가기] -->
-            <div class="d-flex d-md-none align-items-center justify-content-between p-2 mb-2 bg-white border rounded-3 shadow-sm mobile-back-bar">
-              <button type="button" class="btn btn-sm btn-primary fw-bold px-3 py-1.5 d-inline-flex align-items-center" onclick="switchMobileCoachView('list')">
-                <i class="bi bi-arrow-left me-1"></i>참여자 목록
+            <!-- [모바일 전용: 현재 코칭 중인 회원 표시 + 회원 변경] -->
+            <div class="cv3-member-strip d-lg-none">
+              <button type="button" class="cv3-strip-back" onclick="switchCoachTab('list')" aria-label="회원 목록으로">
+                <i class="bi bi-chevron-left"></i>
               </button>
-              <div class="text-truncate px-2 text-center flex-grow-1">
-                <span class="fw-bold text-dark small" id="mobileSelectedMemberNameTop">회원 선택됨</span>
-              </div>
-              <button type="button" class="btn btn-sm btn-outline-secondary px-2.5 py-1" onclick="window.scrollTo({ top: 0, behavior: 'smooth' })" title="상단으로 이동">
-                <i class="bi bi-arrow-up"></i>
+              <div class="cv3-strip-name text-truncate" id="mobileSelectedMemberNameTop">회원 선택됨</div>
+              <button type="button" class="cv3-strip-btn" onclick="copyMemberViewLink()" title="회원 마이페이지 링크 복사">
+                <i class="bi bi-link-45deg"></i>링크
               </button>
             </div>
 
@@ -391,10 +383,15 @@
 
               <div class="collapse show" id="collapseGuidelineRoutine">
                 <div class="section-body">
+                  <!-- [모바일] 운동 / 식단 전환 -->
+                  <div class="cv3-seg d-lg-none mb-3" role="tablist" aria-label="운동/식단 전환">
+                    <button type="button" class="cv3-seg-btn is-active" data-routine-seg="exercise"><i class="bi bi-lightning-charge-fill"></i>운동</button>
+                    <button type="button" class="cv3-seg-btn" data-routine-seg="diet"><i class="bi bi-egg-fried"></i>식단</button>
+                  </div>
                   <div class="row g-4">
 
                     <!-- [좌측: 운동 관리 영역] -->
-                    <div class="col-12 col-lg-6">
+                    <div class="col-12 col-lg-6" id="colExerciseRoutine">
                       <div class="routine-box border-start border-4 border-success">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                           <h6 class="fw-bold mb-0 text-success d-flex align-items-center">
@@ -450,7 +447,7 @@
                     </div>
 
                     <!-- [우측: 식단 관리 영역] -->
-                    <div class="col-12 col-lg-6">
+                    <div class="col-12 col-lg-6" id="colDietPlan">
                       <div class="routine-box border-start border-4 border-warning">
                         <div class="d-flex align-items-center justify-content-between mb-3">
                           <h6 class="fw-bold mb-0 text-warning-emphasis d-flex align-items-center">
@@ -536,14 +533,20 @@
                   <!-- [핵심 요구사항] 서로 단위가 다른 3개의 별개 꺾은선 그래프 영역 -->
                   <div class="mb-4">
                     <div class="d-flex align-items-center justify-content-between mb-2">
-                      <span class="small fw-bold text-secondary">
+                      <span class="small fw-bold text-secondary d-none d-lg-inline">
                         <i class="bi bi-graph-up text-primary me-1"></i>데일리 데이터 추이 (서로 다른 단위 분리 꺾은선 그래프 3종)
                       </span>
+                    </div>
+                    <!-- [모바일] 그래프는 한 번에 하나씩 -->
+                    <div class="cv3-seg cv3-seg-3 d-lg-none mb-2" role="tablist" aria-label="그래프 선택">
+                      <button type="button" class="cv3-seg-btn is-active" data-coach-chart="weight">체중</button>
+                      <button type="button" class="cv3-seg-btn" data-coach-chart="exercise">운동 점수</button>
+                      <button type="button" class="cv3-seg-btn" data-coach-chart="diet">식단 점수</button>
                     </div>
                     <div class="row g-3">
                       
                       <!-- 1. 아침 공복 몸무게 변화 차트 (단위: kg) -->
-                      <div class="col-12 col-lg-4">
+                      <div class="col-12 col-lg-4 cv3-chart-col is-active" data-coach-chart-panel="weight">
                         <div class="chart-card">
                           <div class="chart-card-title text-primary">
                             <i class="bi bi-speedometer2 me-1"></i> 1. 아침 공복 몸무게 (kg)
@@ -555,7 +558,7 @@
                       </div>
 
                       <!-- 2. 운동 점수 차트 (단위: 점 / 5점 만점) -->
-                      <div class="col-12 col-lg-4">
+                      <div class="col-12 col-lg-4 cv3-chart-col" data-coach-chart-panel="exercise">
                         <div class="chart-card">
                           <div class="chart-card-title text-success">
                             <i class="bi bi-activity me-1"></i> 2. 운동 점수 (5점 만점)
@@ -567,7 +570,7 @@
                       </div>
 
                       <!-- 3. 식단 점수 차트 (단위: 점 / 5점 만점) -->
-                      <div class="col-12 col-lg-4">
+                      <div class="col-12 col-lg-4 cv3-chart-col" data-coach-chart-panel="diet">
                         <div class="chart-card">
                           <div class="chart-card-title text-warning-emphasis">
                             <i class="bi bi-egg-fried me-1"></i> 3. 식단 점수 (5점 만점)
@@ -583,7 +586,7 @@
 
                   <!-- 일자별 피드백 누적 테이블 & [피드백 하기] 버튼 -->
                   <div class="table-responsive border rounded-3 bg-white">
-                    <table class="table table-hover feedback-table mb-0">
+                    <table class="table table-hover feedback-table cv3-fb-table mb-0">
                       <thead>
                         <tr>
                           <th style="width: 95px;">날짜</th>
@@ -756,6 +759,27 @@
 
     </div>
   </div>
+
+  <!-- ========================================================================= -->
+  <!-- [모바일 하단 탭바: 회원 / 프로필 / 루틴 / 피드백 / 지침서] -->
+  <!-- ========================================================================= -->
+  <nav class="cv3-tabbar d-lg-none" id="coachTabBar" role="tablist" aria-label="메뉴">
+    <button type="button" class="cv3-tab is-active" data-ctab-target="list" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-people-fill"></i></span><span>회원</span>
+    </button>
+    <button type="button" class="cv3-tab" data-ctab-target="profile" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-person-vcard-fill"></i></span><span>프로필</span>
+    </button>
+    <button type="button" class="cv3-tab" data-ctab-target="routine" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-lightning-charge-fill"></i></span><span>루틴·식단</span>
+    </button>
+    <button type="button" class="cv3-tab" data-ctab-target="feedback" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-chat-square-heart-fill"></i></span><span>피드백</span>
+    </button>
+    <button type="button" class="cv3-tab" data-ctab-target="guide" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-journal-bookmark-fill"></i></span><span>지침서</span>
+    </button>
+  </nav>
 
   <!-- ========================================================================= -->
   <!-- [모달 1: AI 데일리 피드백 도출 및 검토 모달] -->
@@ -1157,6 +1181,6 @@
   <!-- Chart.js 4.x CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Main Application Logic (app.js) -->
-  <script src="app.js?v=2.5.0"></script>
+  <script src="app.js?v=3.0.0"></script>
 </body>
 </html>

@@ -1336,14 +1336,14 @@ function unlockAndRenderMemberPage() {
   const diffBox = document.getElementById('heroWeightDiff');
   if (diffBox && startWeight > 0) {
     if (diff < 0) {
-      diffBox.textContent = `${diff.toFixed(1)} kg 감량 👏`;
-      diffBox.className = 'fs-5 text-warning fw-extrabold ms-2';
+      diffBox.textContent = `${diff.toFixed(1)} kg`;
+      diffBox.className = 'mp-diff is-down';
     } else if (diff > 0) {
       diffBox.textContent = `+${diff.toFixed(1)} kg`;
-      diffBox.className = 'fs-5 text-white fw-bold ms-2';
+      diffBox.className = 'mp-diff is-up';
     } else {
-      diffBox.textContent = `0.0 kg (유지)`;
-      diffBox.className = 'fs-5 text-white fw-bold ms-2';
+      diffBox.textContent = `유지`;
+      diffBox.className = 'mp-diff';
     }
   }
 
@@ -1361,6 +1361,9 @@ function unlockAndRenderMemberPage() {
 
   // 6. 일자별 피드백 누적 테이블 렌더링 (코치 대시보드 목록 기준 그대로 가져옴)
   renderFeedbackTable(feedbacks);
+
+  // 7. 하단 탭바 / 좌우 스와이프 전환 연결 (최초 1회)
+  initMemberTabs();
 }
 
 /**
@@ -1399,12 +1402,12 @@ function updatePersonalInfoPanel(mem) {
   if (badgeStatus) {
     const isActive = (status === '유효' || status.toLowerCase() === 'active');
     badgeStatus.textContent = status;
-    badgeStatus.className = `badge ${isActive ? 'bg-success-subtle text-success border border-success-subtle' : 'bg-secondary-subtle text-secondary border border-secondary-subtle'} fw-normal`;
+    badgeStatus.className = `mp-chip ${isActive ? 'mp-chip-success' : 'mp-chip-muted'}`;
   }
 
   const badgeTag = document.getElementById('badgeMemberTag');
   if (badgeTag) {
-    badgeTag.innerHTML = `<i class="bi bi-tag-fill text-primary me-1"></i>${escapeHtml(tag)}`;
+    badgeTag.innerHTML = `<i class="bi bi-tag-fill"></i>${escapeHtml(tag)}`;
   }
 }
 
@@ -1521,9 +1524,7 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
   if (!routineBodyPart) {
     if (!introHtml) {
       return `
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark" style="white-space: pre-wrap;">
-          ${escapeHtml(cleanText)}
-        </div>
+        <div class="mp-plain-plan" style="white-space: pre-wrap;">${escapeHtml(cleanText)}</div>
       `;
     }
     return `
@@ -1552,9 +1553,7 @@ function parseWorkoutRoutineToAccordionHtml(rawText, prefix = 'routine') {
         <div class="accordion routine-accordion" id="${prefix}_accordion">
           ${introHtml}
         </div>
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">
-          ${escapeHtml(sanitizedRoutineBody)}
-        </div>
+        <div class="mp-plain-plan mt-2" style="white-space: pre-wrap;">${escapeHtml(sanitizedRoutineBody)}</div>
       </div>
     `;
   }
@@ -2053,9 +2052,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
         <div class="accordion diet-accordion" id="${prefix}_accordion">
           ${introHtml}
         </div>
-        <div class="p-3 bg-white rounded-3 border leading-relaxed text-dark mt-2" style="white-space: pre-wrap;">
-          ${formatCellContent(cleanText).replace(/\n/g, '<br>')}
-        </div>
+        <div class="mp-plain-plan mt-2">${formatCellContent(cleanText).replace(/\n/g, '<br>')}</div>
         ${fallbackPlanB}
       </div>
     `;
@@ -2197,8 +2194,8 @@ function renderThreeIndependentCharts(feedbacks) {
           label: '공복 몸무게',
           data: weightData,
           spanGaps: true, // [요청 반영] 체중 미입력일은 비워두지 않고 전후 입력일을 잇는 연속선 연결
-          borderColor: '#4f46e5',
-          backgroundColor: 'rgba(79, 70, 229, 0.12)',
+          borderColor: '#3182f6',
+          backgroundColor: 'rgba(49, 130, 246, 0.12)',
           borderWidth: 2.5,
           tension: 0.25,
           fill: true,
@@ -2210,7 +2207,7 @@ function renderThreeIndependentCharts(feedbacks) {
             const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
             return (val === null || val === undefined) ? 0 : 7;
           },
-          pointBackgroundColor: '#4f46e5'
+          pointBackgroundColor: '#3182f6'
         }]
       },
       options: createMemberChartOptions('kg', minW, maxW)
@@ -2375,16 +2372,14 @@ function renderFeedbackTable(feedbacks) {
     }
 
     tbody.innerHTML = `
-      <tr>
-        <td colspan="6" class="text-center py-5 text-muted small">
-          <i class="bi bi-chat-square-dots fs-3 d-block mb-2 text-secondary"></i>
-          제출된 데일리 피드백 기록이 없습니다.<br>
-          상단의 <strong>[📝 오늘의 데일리 피드백 제출하기]</strong> 버튼을 통해 오늘 첫 일지를 작성해 보세요! 👏
-          ${hintMsg}
-        </td>
-      </tr>
+      <div class="mp-empty">
+        <i class="bi bi-chat-square-dots"></i>
+        <div>아직 제출된 데일리 기록이 없어요.<br>상단 <strong>[기록하기]</strong>로 오늘 첫 일지를 남겨 보세요! 👏</div>
+        ${hintMsg}
+      </div>
     `;
     if (countBadge) countBadge.textContent = '누적 0건';
+    renderHomeLatestFeedback(null);
     return;
   }
 
@@ -2401,7 +2396,7 @@ function renderFeedbackTable(feedbacks) {
   if (countBadge) countBadge.textContent = `누적 ${sorted.length}건`;
 
   let html = '';
-  sorted.forEach(fb => {
+  sorted.forEach((fb, idx) => {
     // [사용자 요구 6대 핵심 필드 스마트 추출]
     // 1. 오늘 날짜
     const date = extractFeedbackDate(fb);
@@ -2417,53 +2412,87 @@ function renderFeedbackTable(feedbacks) {
     const memberNote = extractFeedbackMemberNote(fb);
 
     html += `
-      <tr>
-        <td class="text-nowrap fw-bold text-secondary small">${escapeHtml(date)}</td>
-        <td class="text-nowrap fw-bold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
-        <td class="text-nowrap text-center">
-          <span class="badge ${getScoreBadgeClass(exScore)}">${exScore !== '-' ? `${exScore} 점` : '-'}</span>
-        </td>
-        <td class="text-nowrap text-center">
-          <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore !== '-' ? `${dietScore} 점` : '-'}</span>
-        </td>
-        <td class="small" style="min-width: 250px;">
-          ${improvement ? `
-            <div class="feedback-comment-cell">
-              <div class="d-flex align-items-center gap-1 fw-bold text-primary mb-1">
-                <i class="bi bi-lightbulb-fill text-warning"></i>
-                <span>코치 피드백 (보완점 및 개선방안)</span>
-              </div>
-              <div class="leading-relaxed text-dark" style="white-space: pre-wrap;">${escapeHtml(improvement)}</div>
-            </div>
-          ` : `
-            <span class="badge bg-light text-secondary border px-2 py-1">코치 피드백 작성 대기 중</span>
-          `}
-        </td>
-        <td class="small" style="min-width: 210px;">
-          ${memberNote ? `
+      <article class="mp-fb-card">
+        <header class="mp-fb-head">
+          <span class="mp-fb-date">${escapeHtml(date)}</span>
+          <div class="mp-fb-metrics">
+            <span class="mp-metric"><i class="bi bi-speedometer2"></i>${weight !== '-' ? `${escapeHtml(weight)}kg` : '-'}</span>
+            <span class="mp-score ${getScoreTone(exScore)}">운동 ${exScore !== '-' ? escapeHtml(exScore) : '-'}</span>
+            <span class="mp-score ${getScoreTone(dietScore)}">식단 ${dietScore !== '-' ? escapeHtml(dietScore) : '-'}</span>
+          </div>
+        </header>
+        ${improvement ? `
+          <div class="feedback-comment-cell">
+            <div class="mp-fb-label"><i class="bi bi-lightbulb-fill"></i>코치 피드백</div>
+            <div class="mp-fb-text ${idx === 0 ? '' : 'mp-clamp'}">${escapeHtml(improvement)}</div>
+            ${idx === 0 ? '' : '<button type="button" class="mp-more-btn" onclick="toggleFeedbackClamp(this)">전체 보기</button>'}
+          </div>
+        ` : `
+          <div class="mp-fb-pending"><i class="bi bi-hourglass-split"></i>코치 피드백 작성 대기 중</div>
+        `}
+        ${memberNote ? `
+          <details class="mp-fb-note">
+            <summary>내 기록 & 코치에게 한마디</summary>
             <div class="member-log-cell">
               ${memberNote}
             </div>
-          ` : `
-            <span class="text-muted small">-</span>
-          `}
-        </td>
-      </tr>
+          </details>
+        ` : ''}
+      </article>
     `;
   });
 
   tbody.innerHTML = html;
+  renderHomeLatestFeedback(sorted.find(fb => extractFeedbackImprovement(fb)) || null);
+  updateClampButtons();
 }
 
-/**
- * 점수 뱃지 클래스
- */
-function getScoreBadgeClass(score) {
+// 홈 탭: 가장 최근 코치 피드백 미리보기
+function renderHomeLatestFeedback(fb) {
+  const box = document.getElementById('homeLatestFeedback');
+  if (!box) return;
+  if (!fb) {
+    box.innerHTML = '';
+    return;
+  }
+  box.innerHTML = `
+    <section class="mp-card mp-latest">
+      <div class="mp-card-head">
+        <h2 class="mp-card-title"><i class="bi bi-lightbulb-fill"></i>최근 코치 피드백</h2>
+        <span class="mp-fb-date">${escapeHtml(extractFeedbackDate(fb))}</span>
+      </div>
+      <div class="mp-fb-text mp-clamp">${escapeHtml(extractFeedbackImprovement(fb))}</div>
+      <button type="button" class="mp-more-btn" data-tab-target="feedback">피드백 전체 보기 <i class="bi bi-chevron-right"></i></button>
+    </section>
+  `;
+}
+
+// 4줄 이내로 다 보이는 피드백은 '전체 보기' 버튼 숨김
+function updateClampButtons() {
+  if (typeof requestAnimationFrame !== 'function') return;
+  requestAnimationFrame(() => {
+    document.querySelectorAll('.mp-more-btn[onclick]').forEach(btn => {
+      const text = btn.previousElementSibling;
+      if (!text || text.classList.contains('is-open')) return;
+      btn.hidden = text.scrollHeight <= text.clientHeight + 2;
+    });
+  });
+}
+
+function toggleFeedbackClamp(btn) {
+  const text = btn && btn.previousElementSibling;
+  if (!text) return;
+  const open = text.classList.toggle('is-open');
+  btn.textContent = open ? '접기' : '전체 보기';
+}
+
+// 점수 톤 (카드형 피드백 목록용)
+function getScoreTone(score) {
   const num = parseFloat(score);
-  if (isNaN(num)) return 'bg-secondary-subtle text-secondary border border-secondary-subtle';
-  if (num >= 4.0) return 'bg-success text-white';
-  if (num >= 2.5) return 'bg-warning text-dark';
-  return 'bg-danger text-white';
+  if (isNaN(num)) return 'is-none';
+  if (num >= 4.0) return 'is-good';
+  if (num >= 2.5) return 'is-mid';
+  return 'is-low';
 }
 
 /**
@@ -2605,8 +2634,8 @@ window.copyFullMemberLink = copyFullMemberLink;
  * ==============================================================================
  */
 const SELF_EDIT_FIELDS = {
-  exercise: { current: '현재 제안 운동 루틴', request: '회원 운동 요청', previous: '이전 버전(운동)', changedAt: '회원 운동 변경일시', note: '회원 운동 요청 결과', label: '운동 루틴', prefix: 'workout', btnClass: 'btn-success', placeholder: '예) 무릎이 아파서 점프 동작은 빼 주세요 / 주 3회만 가능해요' },
-  diet: { current: '현재 제안 식단', request: '회원 식단 요청', previous: '이전 버전(식단)', changedAt: '회원 식단 변경일시', note: '회원 식단 요청 결과', label: '식단', prefix: 'diet', btnClass: 'btn-warning', placeholder: '예) 점심은 회사 식당이라 바꾸기 어려워요 / 유당불내증이 있어요' }
+  exercise: { current: '현재 제안 운동 루틴', request: '회원 운동 요청', previous: '이전 버전(운동)', changedAt: '회원 운동 변경일시', note: '회원 운동 요청 결과', label: '운동 루틴', prefix: 'workout', btnClass: 'mp-btn-workout', placeholder: '예) 무릎이 아파서 점프 동작은 빼 주세요 / 주 3회만 가능해요' },
+  diet: { current: '현재 제안 식단', request: '회원 식단 요청', previous: '이전 버전(식단)', changedAt: '회원 식단 변경일시', note: '회원 식단 요청 결과', label: '식단', prefix: 'diet', btnClass: 'mp-btn-diet', placeholder: '예) 점심은 회사 식당이라 바꾸기 어려워요 / 유당불내증이 있어요' }
 };
 const SELF_EDIT_ALL_KEYS = Object.values(SELF_EDIT_FIELDS).reduce((acc, f) => acc.concat([f.request, f.previous, f.changedAt, f.note]), []);
 
@@ -2665,25 +2694,29 @@ function renderPlanRegenPanel(kind, member) {
 
   panel.classList.remove('d-none');
   panel.innerHTML = `
-    <div class="mt-3 p-3 rounded-3 border bg-light">
-      <label class="form-label small fw-bold mb-1" for="${f.prefix}RegenRequest">
-        <i class="bi bi-chat-square-text me-1"></i>${f.label} 수정 요청
-      </label>
-      <textarea id="${f.prefix}RegenRequest" class="form-control form-control-sm" rows="3" maxlength="1000" placeholder="${escapeHtml(f.placeholder)}">${escapeHtml(lastRequest)}</textarea>
-      <div class="d-flex flex-wrap align-items-center gap-2 mt-2">
-        <button type="button" class="btn btn-sm ${f.btnClass} fw-semibold" id="${f.prefix}RegenBtn" ${remaining <= 0 ? 'disabled' : ''} onclick="memberRegeneratePlan('${kind}')">
-          <i class="bi bi-robot me-1"></i>AI로 다시 만들기
-        </button>
-        <button type="button" class="btn btn-sm btn-outline-secondary" id="${f.prefix}RevertBtn" ${hasPrevious ? '' : 'disabled'}
-                title="${hasPrevious ? '직전 버전으로 되돌립니다' : 'AI로 한 번 이상 다시 만든 뒤 사용할 수 있어요'}" onclick="memberRevertPlan('${kind}')">
-          <i class="bi bi-arrow-counterclockwise me-1"></i>이전 버전으로 되돌리기
-        </button>
-        <span class="small text-muted" id="${f.prefix}RegenQuota">오늘 ${remaining}회 남음</span>
+    <div class="mp-regen">
+      <div class="mp-regen-head">
+        <span class="mp-regen-icon"><i class="bi bi-magic"></i></span>
+        <div class="flex-grow-1">
+          <label class="mp-regen-title" for="${f.prefix}RegenRequest">${f.label} 수정 요청</label>
+          <div class="mp-regen-sub">원하는 변경을 적으면 AI가 다시 만들어 드려요</div>
+        </div>
+        <span class="mp-chip mp-chip-muted" id="${f.prefix}RegenQuota">오늘 ${remaining}회 남음</span>
       </div>
-      ${hasPrevious ? '' : `<div class="text-muted mt-1" style="font-size: 0.72rem;"><i class="bi bi-info-circle me-1"></i>되돌리기는 AI로 한 번 이상 다시 만든 뒤 사용할 수 있어요.</div>`}
+      <textarea id="${f.prefix}RegenRequest" class="form-control mp-textarea" rows="3" maxlength="1000" placeholder="${escapeHtml(f.placeholder)}">${escapeHtml(lastRequest)}</textarea>
+      <div class="mp-regen-actions">
+        <button type="button" class="mp-btn ${f.btnClass}" id="${f.prefix}RegenBtn" ${remaining <= 0 ? 'disabled' : ''} onclick="memberRegeneratePlan('${kind}')">
+          <i class="bi bi-robot"></i>AI로 다시 만들기
+        </button>
+        <button type="button" class="mp-btn mp-btn-ghost" id="${f.prefix}RevertBtn" ${hasPrevious ? '' : 'disabled'}
+                title="${hasPrevious ? '직전 버전으로 되돌립니다' : 'AI로 한 번 이상 다시 만든 뒤 사용할 수 있어요'}" onclick="memberRevertPlan('${kind}')">
+          <i class="bi bi-arrow-counterclockwise"></i>되돌리기
+        </button>
+      </div>
+      ${hasPrevious ? '' : `<div class="mp-regen-hint"><i class="bi bi-info-circle me-1"></i>되돌리기는 AI로 한 번 이상 다시 만든 뒤 사용할 수 있어요.</div>`}
       <div class="small mt-2" id="${f.prefix}RegenStatus">${changedAt ? `<span class="text-muted">최근 변경: ${escapeHtml(changedAt)}</span>` : ''}</div>
       ${renderRequestNoteBox(requestNote)}
-      <div class="text-muted mt-1" style="font-size: 0.72rem;">
+      <div class="mp-regen-hint">
         최대 1000자 · 코치님의 기본 지침과 안전 원칙 안에서 반영되며, 변경 내용은 코치님께 알림으로 전달됩니다.
       </div>
     </div>
@@ -2694,9 +2727,9 @@ function renderPlanRegenPanel(kind, member) {
 function renderRequestNoteBox(note) {
   if (!note) return '';
   const hasUnapplied = /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(note);
-  const tone = hasUnapplied ? 'border-warning bg-warning-subtle' : 'border-success-subtle bg-success-subtle';
+  const tone = hasUnapplied ? 'is-warn' : 'is-ok';
   return `
-      <div class="mt-2 p-2 px-3 rounded-3 border ${tone} small">
+      <div class="mp-note-box ${tone}">
         <div class="fw-bold mb-1"><i class="bi bi-clipboard-check me-1"></i>요청 반영 안내${hasUnapplied ? ' <span class="badge bg-warning text-dark ms-1">일부 미반영</span>' : ''}</div>
         <div class="text-dark" style="white-space: pre-wrap;">${escapeHtml(note)}</div>
       </div>`;
@@ -2849,3 +2882,80 @@ async function memberRevertPlan(kind) {
 
 window.memberRegeneratePlan = memberRegeneratePlan;
 window.memberRevertPlan = memberRevertPlan;
+
+/**
+ * ==============================================================================
+ * [하단 탭바 & 좌우 스와이프 화면 전환]
+ * - 홈/운동/식단/피드백 4개 화면을 가로 스크롤 스냅으로 배치 (손가락으로 넘기기)
+ * - 탭바 버튼 또는 data-tab-target 요소를 누르면 해당 화면으로 부드럽게 이동
+ * ==============================================================================
+ */
+const MEMBER_TABS = ['home', 'workout', 'diet', 'feedback'];
+let memberTabsReady = false;
+
+function initMemberTabs() {
+  const track = document.getElementById('memberTabTrack');
+  if (!track || memberTabsReady) return;
+  memberTabsReady = true;
+  CurrentMemberState.activeTab = 'home';
+
+  // 동적으로 그려지는 버튼(홈 미리보기 등)도 동작하도록 위임 처리
+  document.addEventListener('click', (e) => {
+    const target = e.target && e.target.closest ? e.target.closest('[data-tab-target]') : null;
+    if (target) goToMemberTab(target.dataset.tabTarget);
+    const seg = e.target && e.target.closest ? e.target.closest('[data-chart]') : null;
+    if (seg) showMemberChart(seg.dataset.chart);
+  });
+
+  let frame = 0;
+  track.addEventListener('scroll', () => {
+    if (frame) return;
+    frame = requestAnimationFrame(() => {
+      frame = 0;
+      const width = track.clientWidth || 1;
+      setActiveMemberTab(MEMBER_TABS[Math.round(track.scrollLeft / width)] || 'home');
+    });
+  }, { passive: true });
+
+  // 화면 회전/크기 변경 시 현재 탭 위치 유지
+  if (window.addEventListener) {
+    window.addEventListener('resize', () => goToMemberTab(CurrentMemberState.activeTab || 'home', false));
+  }
+}
+
+function goToMemberTab(name, smooth = true) {
+  const idx = MEMBER_TABS.indexOf(name);
+  const track = document.getElementById('memberTabTrack');
+  if (idx < 0 || !track) return;
+  if (typeof track.scrollTo === 'function') {
+    track.scrollTo({ left: idx * track.clientWidth, behavior: smooth ? 'smooth' : 'auto' });
+  }
+  setActiveMemberTab(name);
+}
+
+function setActiveMemberTab(name) {
+  if (CurrentMemberState.activeTab === name) return;
+  CurrentMemberState.activeTab = name;
+  document.querySelectorAll('#memberTabBar [data-tab-target]').forEach(btn => {
+    const on = btn.dataset.tabTarget === name;
+    btn.classList.toggle('is-active', on);
+    btn.setAttribute('aria-selected', on ? 'true' : 'false');
+  });
+  if (name === 'feedback') {
+    resizeMemberCharts();
+    updateClampButtons();
+  }
+}
+
+// 그래프는 한 번에 하나만 표시 (체중 / 운동 점수 / 식단 점수)
+function showMemberChart(key) {
+  document.querySelectorAll('[data-chart]').forEach(btn => btn.classList.toggle('is-active', btn.dataset.chart === key));
+  document.querySelectorAll('[data-chart-panel]').forEach(p => p.classList.toggle('is-active', p.dataset.chartPanel === key));
+  resizeMemberCharts();
+}
+
+function resizeMemberCharts() {
+  Object.values(CurrentMemberState.charts || {}).forEach(chart => {
+    if (chart && typeof chart.resize === 'function') chart.resize();
+  });
+}
