@@ -1791,6 +1791,23 @@ function renderDietPlanBox(member) {
   container.innerHTML = parseDietPlanToAccordionHtml(rawDiet, 'viewDiet');
 }
 
+// 돌발 상황(Plan B) 대처법: 기본은 접힌 한 줄 카드, 눌러야 펼쳐짐 (식단 화면 길이 단축)
+function renderPlanBCard(cleanPlanB, formatCellContent) {
+  if (!cleanPlanB) return '';
+  const lines = cleanPlanB.split('\n').map(l => l.trim()).filter(Boolean);
+  const body = formatCellContent(lines.join('\n')).replace(/\n/g, '<br>');
+  return `
+    <details class="diet-planb-card mt-3 p-3 rounded-3 border bg-light">
+      <summary class="d-flex align-items-center gap-2 text-dark fw-bold small">
+        <i class="bi bi-shield-exclamation text-warning fs-6"></i>
+        <span>돌발 상황(Plan B) 대처법</span>
+        <span class="text-muted fw-normal ms-auto">${lines.length}개 · 펼치기</span>
+      </summary>
+      <div class="small text-secondary leading-relaxed mt-2">${body}</div>
+    </details>
+  `;
+}
+
 /**
  * 마크다운 식단 플랜 텍스트를 [식단 소개 알림 박스] + [클린데이 & 주말/휴일 아코디언 표] + [Plan B 가이드라인 카드]로 변환하여 렌더링
  */
@@ -2034,19 +2051,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
 
   // 일반 텍스트 안전 폴백 (표 데이터가 양쪽 모두 전혀 없는 경우)
   if (cleanDayData.dataRows.length === 0 && weekendData.dataRows.length === 0) {
-    let fallbackPlanB = '';
-    if (cleanPlanB) {
-      const formattedPlanB = formatCellContent(cleanPlanB).replace(/\n/g, '<br>');
-      fallbackPlanB = `
-        <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
-          <div class="d-flex align-items-center gap-2 mb-1 text-dark fw-bold small">
-            <i class="bi bi-shield-exclamation text-warning fs-5"></i>
-            <span>돌발 상황(Plan B) 대처 가이드라인</span>
-          </div>
-          <div class="small text-secondary leading-relaxed">${formattedPlanB}</div>
-        </div>
-      `;
-    }
+    const fallbackPlanB = renderPlanBCard(cleanPlanB, formatCellContent);
     return `
       <div class="diet-accordion-container">
         <div class="accordion diet-accordion" id="${prefix}_accordion">
@@ -2116,21 +2121,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
   `;
 
   // 8. 돌발 상황(Plan B) 대처 가이드라인 독립 알림 박스
-  let planBHtml = '';
-  if (cleanPlanB) {
-    const formattedPlanB = formatCellContent(cleanPlanB).replace(/\n/g, '<br>');
-    planBHtml = `
-      <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
-        <div class="d-flex align-items-center gap-2 mb-2 text-dark fw-bold small">
-          <i class="bi bi-shield-exclamation text-warning fs-5"></i>
-          <span class="fs-6">돌발 상황(Plan B) 대처 가이드라인</span>
-        </div>
-        <div class="small text-secondary leading-relaxed fw-medium">
-          ${formattedPlanB}
-        </div>
-      </div>
-    `;
-  }
+  const planBHtml = renderPlanBCard(cleanPlanB, formatCellContent);
 
   return `
     <div class="diet-accordion-container">

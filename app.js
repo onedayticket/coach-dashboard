@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.4';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.5';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -2756,6 +2756,23 @@ function switchRoutineViewMode(mode) {
   }
 }
 
+// 돌발 상황(Plan B) 대처법: 기본은 접힌 한 줄 카드, 눌러야 펼쳐짐 (식단 화면 길이 단축)
+function renderPlanBCard(cleanPlanB, formatCellContent) {
+  if (!cleanPlanB) return '';
+  const lines = cleanPlanB.split('\n').map(l => l.trim()).filter(Boolean);
+  const body = formatCellContent(lines.join('\n')).replace(/\n/g, '<br>');
+  return `
+    <details class="diet-planb-card mt-3 p-3 rounded-3 border bg-light">
+      <summary class="d-flex align-items-center gap-2 text-dark fw-bold small">
+        <i class="bi bi-shield-exclamation text-warning fs-6"></i>
+        <span>돌발 상황(Plan B) 대처법</span>
+        <span class="text-muted fw-normal ms-auto">${lines.length}개 · 펼치기</span>
+      </summary>
+      <div class="small text-secondary leading-relaxed mt-2">${body}</div>
+    </details>
+  `;
+}
+
 /**
  * 마크다운 식단 플랜 텍스트를 [식단 소개 알림 박스] + [클린데이 & 주말/휴일 아코디언 표] + [Plan B 가이드라인 카드]로 변환하여 렌더링
  */
@@ -2999,19 +3016,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
 
   // 일반 텍스트 안전 폴백 (표 데이터가 양쪽 모두 전혀 없는 경우)
   if (cleanDayData.dataRows.length === 0 && weekendData.dataRows.length === 0) {
-    let fallbackPlanB = '';
-    if (cleanPlanB) {
-      const formattedPlanB = formatCellContent(cleanPlanB).replace(/\n/g, '<br>');
-      fallbackPlanB = `
-        <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
-          <div class="d-flex align-items-center gap-2 mb-1 text-dark fw-bold small">
-            <i class="bi bi-shield-exclamation text-warning fs-5"></i>
-            <span>돌발 상황(Plan B) 대처 가이드라인</span>
-          </div>
-          <div class="small text-secondary leading-relaxed">${formattedPlanB}</div>
-        </div>
-      `;
-    }
+    const fallbackPlanB = renderPlanBCard(cleanPlanB, formatCellContent);
     return `
       <div class="diet-accordion-container">
         <div class="accordion diet-accordion" id="${prefix}_accordion">
@@ -3081,21 +3086,7 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
   `;
 
   // 8. 돌발 상황(Plan B) 대처 가이드라인 독립 알림 박스
-  let planBHtml = '';
-  if (cleanPlanB) {
-    const formattedPlanB = formatCellContent(cleanPlanB).replace(/\n/g, '<br>');
-    planBHtml = `
-      <div class="diet-planb-card mt-3 p-3 rounded-3 border bg-light shadow-sm">
-        <div class="d-flex align-items-center gap-2 mb-2 text-dark fw-bold small">
-          <i class="bi bi-shield-exclamation text-warning fs-5"></i>
-          <span class="fs-6">돌발 상황(Plan B) 대처 가이드라인</span>
-        </div>
-        <div class="small text-secondary leading-relaxed fw-medium">
-          ${formattedPlanB}
-        </div>
-      </div>
-    `;
-  }
+  const planBHtml = renderPlanBCard(cleanPlanB, formatCellContent);
 
   return `
     <div class="diet-accordion-container">
@@ -3435,7 +3426,7 @@ ${buildMemberRequestPromptBlock(getField(mem, '회원 식단 요청', '회원식
    - 주말/휴일에 외식이나 약속 시 실천할 치팅 및 자유식 관리 식단표를 동일한 4열 마크다운 테이블로 작성하십시오.
    - 테이블 바로 아래에 '- 총 예상 칼로리: 약 [계산값] kcal'를 표기하십시오.
 6. **[돌발 상황(Plan B) 대처 가이드라인]**:
-   - 외식, 회식, 야근, 야식 유혹 등 돌발 상황 대처법 및 수분 섭취(1.5~2L) 팁을 간결하게 작성하십시오.
+   - 회원에게 가장 필요한 상황만 골라 **최대 3줄**로 작성하십시오. 각 줄은 '- 상황: 대처법' 형식의 한 문장(40자 내외)으로, 부연 설명·예시 나열은 금지합니다.
 
 [출력 양식 예시]
 [식단 소개]
@@ -3460,9 +3451,9 @@ ${buildMemberRequestPromptBlock(getField(mem, '회원 식단 요청', '회원식
 - 총 예상 칼로리: 약 1,260 kcal
 
 [돌발 상황(Plan B) 대처 가이드라인]
-- 외식/회식 시: 밥은 1/2공기 이하로 줄이고, 국물 요리는 건더기 위주로 섭취하세요.
-- 야근 및 늦은 귀가 시: 취침 3시간 전에는 탄수화물을 제한하고 가벼운 단백질 위주로 허기만 달랩니다.
-- 수분 섭취: 하루 최소 1.5L~2L의 미온수를 텀블러로 나누어 섭취하세요.`;
+- 회식: 밥 반 공기, 국물 대신 건더기 위주
+- 야근 후 허기: 두유·삶은 달걀로 가볍게
+- 수분: 하루 1.5~2L, 텀블러로 나눠 마시기`;
 
         const directRes = await callGeminiDirectlyFromBrowser(prompt, '당신은 회원 맞춤 영양/식단 코칭 전문가입니다.');
         if (directRes && directRes.isAborted) {

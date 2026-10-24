@@ -47,7 +47,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.4';
+const BACKEND_VERSION = '2026-10-24.5';
 
 /**
  * CORS 대응 (doOptions)
@@ -1580,7 +1580,7 @@ ${buildMemberRequestPromptBlock(memberRequest)}
    - 주말/휴일에 외식이나 약속 시 실천할 치팅 및 자유식 관리 식단표를 동일한 4열 마크다운 테이블로 작성하십시오.
    - 테이블 바로 아래에 '- 총 예상 칼로리: 약 [계산값] kcal'를 표기하십시오.
 6. **[돌발 상황(Plan B) 대처 가이드라인]**:
-   - 외식, 회식, 야근, 야식 유혹 등 돌발 상황 대처법 및 수분 섭취(1.5~2L) 팁을 간결하게 작성하십시오.
+   - 회원에게 가장 필요한 상황만 골라 **최대 3줄**로 작성하십시오. 각 줄은 '- 상황: 대처법' 형식의 한 문장(40자 내외)으로, 부연 설명·예시 나열은 금지합니다.
 
 [출력 양식 예시]
 [식단 소개]
@@ -1605,9 +1605,9 @@ ${buildMemberRequestPromptBlock(memberRequest)}
 - 총 예상 칼로리: 약 1,260 kcal
 
 [돌발 상황(Plan B) 대처 가이드라인]
-- 외식/회식 시: 밥은 1/2공기 이하로 줄이고, 국물 요리는 건더기 위주로 섭취하세요.
-- 야근 및 늦은 귀가 시: 취침 3시간 전에는 탄수화물을 제한하고 가벼운 단백질 위주로 허기만 달랩니다.
-- 수분 섭취: 하루 최소 1.5L~2L의 미온수를 텀블러로 나누어 섭취하세요.
+- 회식: 밥 반 공기, 국물 대신 건더기 위주
+- 야근 후 허기: 두유·삶은 달걀로 가볍게
+- 수분: 하루 1.5~2L, 텀블러로 나눠 마시기
 `;
 
   const finalPrompt = prompt + (payload.withRequestNote ? buildMemberRequestNoteInstruction('식단') : '');
@@ -1649,9 +1649,9 @@ ${buildMemberRequestPromptBlock(memberRequest)}
 - 총 예상 칼로리: 약 1,260 kcal
 
 [돌발 상황(Plan B) 대처 가이드라인]
-- 외식/회식 시: 밥은 1/2공기 이하로 줄이고, 국물 요리는 건더기 위주로 섭취하세요.
-- 야근 및 늦은 귀가 시: 취침 3시간 전에는 탄수화물을 제한하고 가벼운 단백질 위주로 허기만 달랩니다.
-- 수분 섭취: 하루 최소 1.5L~2L의 미온수를 텀블러로 나누어 섭취하세요.`;
+- 회식: 밥 반 공기, 국물 대신 건더기 위주
+- 야근 후 허기: 두유·삶은 달걀로 가볍게
+- 수분: 하루 1.5~2L, 텀블러로 나눠 마시기`;
   }
 
   return { dietPlan: finalPlan, isAiGenerated: isAiGenerated, debug: aiResult.debug };

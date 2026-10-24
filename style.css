@@ -1111,3 +1111,12 @@ body.coach-locked .main-wrapper {
 
 
 
+
+/* 돌발 상황(Plan B): 접힌 카드 */
+details.diet-planb-card summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+details.diet-planb-card summary::-webkit-details-marker { display: none; }
+details.diet-planb-card[open] summary .text-muted { visibility: hidden; }
