@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.7';
+const BACKEND_VERSION = '2026-10-24.8';
 
 /**
  * CORS 대응 (doOptions)
@@ -149,6 +149,7 @@ function doGet(e) {
  *   5. generateWorkoutRoutine: AI 운동 루틴 생성 (지침서 + 수정제안지침 최우선 반영)
  *   6. generateDietPlan: AI 식단 생성 (지침서 + 수정제안지침 최우선 반영)
  *   7. generateDailyFeedback: AI 데일리 피드백 코멘트 & 운동/식단 수정 제안 도출 (체중 추이 분석 + 근거 제시)
+ *   - buildAiPrompt: 코치 브라우저 직통 스트리밍용 프롬프트만 조립해 반환 (workout/diet/daily)
  *   8. generateComprehensiveFeedback: AI 기간별 종합 피드백 요약 및 자립 방안 생성
  */
 function doPost(e) {
@@ -184,10 +185,16 @@ function doPost(e) {
       return createUnauthorizedResponse();
     }
 
-    // 0. [AI 설정] 로그인한 코치 브라우저가 스트리밍 직통 호출에 사용할 Gemini 키 전달
+    // 0. [AI 설정] 로그인한 코치 브라우저가 스트리밍 직통 호출에 사용할 '브라우저 전용' Gemini 키만 전달
+    // - 서버용 GEMINI_API_KEY는 절대 내려보내지 않음 (GEMINI_BROWSER_API_KEY 미등록 시 빈 값 -> 브라우저 직통 생략)
     if (action === 'getAiConfig') {
-      const propKey = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || DEFAULT_GEMINI_API_KEY || '';
-      return createJsonResponse({ status: 'success', geminiApiKey: String(propKey).trim() });
+      const browserKey = PropertiesService.getScriptProperties().getProperty('GEMINI_BROWSER_API_KEY') || '';
+      return createJsonResponse({ status: 'success', geminiApiKey: String(browserKey).trim() });
+    }
+
+    // 0-1. [AI 프롬프트] 브라우저 직통 스트리밍용 프롬프트 조립 (프롬프트는 서버에서만 만듦)
+    if (action === 'buildAiPrompt') {
+      return handleBuildAiPrompt(ss, payload);
     }
 
     // 1. 회원 상태 및 태그 즉시 업데이트 (회원 셀프 수정과 동시 기록 방지를 위해 스크립트 잠금)
@@ -1388,19 +1395,33 @@ function formatObjectAsFullProfile(obj, excludeKeys) {
  * - '운동 루틴 수정 제안 지침'이 있다면 최우선 반영
  */
 function buildWorkoutRoutine(ss, payload) {
-  const guidelines = (payload && payload.guidelines && payload.guidelines.exercise)
+  const built = buildWorkoutPromptFromPayload(ss, payload);
+  const aiResult = callGemini(built.prompt, built.systemInstruction, payload);
+  // [실패는 실패로] AI 실패 시 고정 템플릿 루틴을 만들지 않고 빈 값 + 사유 반환
+  const isAiGenerated = !!aiResult.text;
+  return { routine: isAiGenerated ? aiResult.text : '', isAiGenerated: isAiGenerated, debug: aiResult.debug };
+}
+
+// 요청 payload에서 운동 프롬프트 재료(지침서·코치 수정 지침·회원 요청)를 모아 buildWorkoutPrompt 호출
+function buildWorkoutPromptFromPayload(ss, payload) {
+  const member = payload.member || {};
+  const guidelines = (payload.guidelines && payload.guidelines.exercise)
     ? payload.guidelines
     : getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
-  const baseExerciseGuideline = guidelines.exercise || '점진적 과부하와 관절 부상 방지(스트레칭 10분 필수), 주 3~4회 루틴';
-
-  const member = payload.member || {};
-  const customExerciseGuideline = payload.customExerciseGuideline ||
+  const customGuideline = payload.customExerciseGuideline ||
     getGasField(member, ['운동 수정 제안 지침', '운동수정제안지침', '운동 루틴 수정 제안 지침', '운동루틴수정제안지침', '운동수정지침', '운동제안지침', '운동지침']) || '';
-
-  const memberName = getGasField(member, ['이름', 'name', '성명', '참여자이름', '회원명']) || '참여자';
-  // [요구사항 1] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
-  const memberFullProfile = formatObjectAsFullProfile(member);
   const memberRequest = String(payload.memberRequest || getGasField(member, ['회원 운동 요청', '회원운동요청']) || '').trim();
+  return buildWorkoutPrompt(member, guidelines, customGuideline, memberRequest, !!payload.withRequestNote);
+}
+
+/**
+ * [프롬프트 단일 출처] 운동 루틴 프롬프트 - 코치 대시보드(직통/GAS)·회원 셀프 재생성 공통
+ * @return {{prompt: string, systemInstruction: string}}
+ */
+function buildWorkoutPrompt(member, guidelines, customExerciseGuideline, memberRequest, withRequestNote) {
+  const baseExerciseGuideline = (guidelines && guidelines.exercise) || '점진적 과부하와 관절 부상 방지(스트레칭 10분 필수), 주 3~4회 루틴';
+  // [요구사항 1] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
+  const memberFullProfile = formatObjectAsFullProfile(member || {});
 
   const prompt = `
 당신은 '4주 온라인 운동 습관화 코칭 프로그램'의 전문 수석 트레이너입니다.
@@ -1471,11 +1492,10 @@ DAY6 (휴식) - 야외 가벼운 산책 40분
 DAY7 (휴식) - 완전 휴식 및 컨디션 회복
 `;
 
-  const finalPrompt = prompt + (payload.withRequestNote ? buildMemberRequestNoteInstruction('운동 루틴') : '');
-  const aiResult = callGemini(finalPrompt, '당신은 회원 맞춤 운동 코칭 전문가입니다. 지정된 출력 형식([루틴 소개], [루틴], 마크다운 테이블, 빈 무게칸)을 엄격히 준수합니다.' + MEMBER_REQUEST_SAFETY_INSTRUCTION, payload);
-  // [실패는 실패로] AI 실패 시 고정 템플릿 루틴을 만들지 않고 빈 값 + 사유 반환
-  const isAiGenerated = !!aiResult.text;
-  return { routine: isAiGenerated ? aiResult.text : '', isAiGenerated: isAiGenerated, debug: aiResult.debug };
+  return {
+    prompt: prompt + (withRequestNote ? buildMemberRequestNoteInstruction('운동 루틴') : ''),
+    systemInstruction: '당신은 회원 맞춤 운동 코칭 전문가입니다. 지정된 출력 형식([루틴 소개], [루틴], 마크다운 테이블, 빈 무게칸)을 엄격히 준수합니다.' + MEMBER_REQUEST_SAFETY_INSTRUCTION
+  };
 }
 
 function handleAiWorkoutRoutine(ss, payload) {
@@ -1497,19 +1517,33 @@ function handleAiWorkoutRoutine(ss, payload) {
  * - '식단 수정 제안 지침'이 있다면 최우선 반영
  */
 function buildDietPlan(ss, payload) {
-  const guidelines = (payload && payload.guidelines && payload.guidelines.diet)
+  const built = buildDietPromptFromPayload(ss, payload);
+  const aiResult = callGemini(built.prompt, built.systemInstruction, payload);
+  // [실패는 실패로] AI 실패 시 고정 템플릿 식단을 만들지 않고 빈 값 + 사유 반환
+  const isAiGenerated = !!aiResult.text;
+  return { dietPlan: isAiGenerated ? aiResult.text : '', isAiGenerated: isAiGenerated, debug: aiResult.debug };
+}
+
+// 요청 payload에서 식단 프롬프트 재료(지침서·코치 수정 지침·회원 요청)를 모아 buildDietPrompt 호출
+function buildDietPromptFromPayload(ss, payload) {
+  const member = payload.member || {};
+  const guidelines = (payload.guidelines && payload.guidelines.diet)
     ? payload.guidelines
     : getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
-  const baseDietGuideline = guidelines.diet || '극단적 탄수화물 제한 지양, 매끼니 양질의 단백질 20~30g과 식이섬유 포함';
-
-  const member = payload.member || {};
-  const customDietGuideline = payload.customDietGuideline ||
+  const customGuideline = payload.customDietGuideline ||
     getGasField(member, ['식단 수정 제안 지침', '식단수정제안지침', '식단수정지침', '식단제안지침', '식단지침']) || '';
-
-  const memberName = getGasField(member, ['이름', 'name', '성명', '참여자이름', '회원명']) || '참여자';
-  // [요구사항 1] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
-  const memberFullProfile = formatObjectAsFullProfile(member);
   const memberRequest = String(payload.memberRequest || getGasField(member, ['회원 식단 요청', '회원식단요청']) || '').trim();
+  return buildDietPrompt(member, guidelines, customGuideline, memberRequest, !!payload.withRequestNote);
+}
+
+/**
+ * [프롬프트 단일 출처] 식단 프롬프트 - 코치 대시보드(직통/GAS)·회원 셀프 재생성 공통
+ * @return {{prompt: string, systemInstruction: string}}
+ */
+function buildDietPrompt(member, guidelines, customDietGuideline, memberRequest, withRequestNote) {
+  const baseDietGuideline = (guidelines && guidelines.diet) || '극단적 탄수화물 제한 지양, 매끼니 양질의 단백질 20~30g과 식이섬유 포함';
+  // [요구사항 1] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
+  const memberFullProfile = formatObjectAsFullProfile(member || {});
 
   const prompt = `
 당신은 '4주 온라인 식단 습관화 코칭 프로그램'의 전문 임상 영양 코치입니다.
@@ -1568,11 +1602,10 @@ ${buildMemberRequestPromptBlock(memberRequest)}
 - 수분: 하루 1.5~2L, 텀블러로 나눠 마시기
 `;
 
-  const finalPrompt = prompt + (payload.withRequestNote ? buildMemberRequestNoteInstruction('식단') : '');
-  const aiResult = callGemini(finalPrompt, '당신은 회원 맞춤 영양/식단 코칭 전문가입니다.' + MEMBER_REQUEST_SAFETY_INSTRUCTION, payload);
-  // [실패는 실패로] AI 실패 시 고정 템플릿 식단을 만들지 않고 빈 값 + 사유 반환
-  const isAiGenerated = !!aiResult.text;
-  return { dietPlan: isAiGenerated ? aiResult.text : '', isAiGenerated: isAiGenerated, debug: aiResult.debug };
+  return {
+    prompt: prompt + (withRequestNote ? buildMemberRequestNoteInstruction('식단') : ''),
+    systemInstruction: '당신은 회원 맞춤 영양/식단 코칭 전문가입니다.' + MEMBER_REQUEST_SAFETY_INSTRUCTION
+  };
 }
 
 function handleAiDietPlan(ss, payload) {
@@ -1612,41 +1645,44 @@ function normalizeScoreValue(raw) {
 }
 
 /**
- * 7. [AI] 데일리 피드백 도출 (공통 생성 코어)
- * - 웹앱 API 요청(handleAiDailyFeedback) 및 구글 폼 제출 트리거(onFormSubmitHandler) 양쪽에서 공통 사용
- * - 피드백 지침서 & 동기부여 지침서 기반
- * - 최근 최소 3일 이상의 누적 체중 변화 추이 및 식단/운동 분석
- * - 계획 수정 필요 시 'AI 운동 수정 제안' 및 'AI 식단 수정 제안' 도출 (명확한 '근거' 제시)
+ * 데일리 피드백 프롬프트에 넣을 '최근 기록' 범위: 오늘(현재 피드백 날짜) 이전 기록 중 최근 N건
+ * (나중에 날짜 기준(예: 7일)으로 바꿀 때 selectRecentFeedbacksForPrompt만 수정)
  */
-function generateDailyFeedbackCore(ss, payload) {
-  const guidelineSheet = findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']);
-  const guidelines = payload.guidelines || getGuidelinesData(guidelineSheet);
+const RECENT_FEEDBACK_WINDOW = 3;
 
-  const member = payload.member || {};
-  const currentFeedback = payload.feedback || {};
-  const recentFeedbacks = payload.recentFeedbacks || []; // 최근 날짜순 배열 (최소 3일 이상)
+function selectRecentFeedbacksForPrompt(currentFeedback, feedbacks) {
+  const curDate = getFeedbackRowDate(currentFeedback || {});
+  const curRow = currentFeedback && (currentFeedback._rowNumber || currentFeedback.rowNumber);
+  return (Array.isArray(feedbacks) ? feedbacks : [])
+    .map(f => ({ f: f, date: getFeedbackRowDate(f) }))
+    .filter(x => x.date && (curDate ? x.date < curDate : !(curRow && (x.f._rowNumber || x.f.rowNumber) === curRow)))
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(-RECENT_FEEDBACK_WINDOW)
+    .map(x => x.f);
+}
 
-  // 최근 체중 추이 텍스트 요약 (운동_실행률_점수, 식단_실행률_점수 동의어 반영)
-  let weightHistorySummary = recentFeedbacks.map(f => {
-    const fDate = getGasField(f, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자']);
+/**
+ * [프롬프트 단일 출처] 데일리 피드백 프롬프트 - 코치 대시보드(직통/GAS)·폼 제출 트리거 공통
+ * - recentFeedbacks: 해당 회원의 피드백 목록 (전체를 넘겨도 됨, 범위는 RECENT_FEEDBACK_WINDOW로 선택)
+ * @return {{prompt: string, systemInstruction: string}}
+ */
+function buildDailyFeedbackPrompt(member, feedback, recentFeedbacks, guidelines) {
+  const currentFeedback = feedback || {};
+  const g = guidelines || {};
+
+  const curDate = getFeedbackRowDate(currentFeedback) || '오늘';
+  const curWeight = getGasField(currentFeedback, ['공복 몸무게', '공복몸무게', '체중', 'weight']) || '-';
+  const displayScore = (v) => (v !== '' && v !== null && v !== undefined) ? v : '-';
+
+  // 최근 체중 추이 텍스트 요약 (오늘 이전 기록만, 운동_실행률_점수·식단_실행률_점수 동의어 반영)
+  let weightHistorySummary = selectRecentFeedbacksForPrompt(currentFeedback, recentFeedbacks).map(f => {
     const fWeight = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
     const fExScore = getGasField(f, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']);
     const fDietScore = getGasField(f, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']);
-    const dispEx = (fExScore !== '' && fExScore !== null && fExScore !== undefined) ? fExScore : '-';
-    const dispDiet = (fDietScore !== '' && fDietScore !== null && fDietScore !== undefined) ? fDietScore : '-';
-    return `${fDate}: ${fWeight}kg (운동: ${dispEx}점, 식단: ${dispDiet}점)`;
+    return `${getFeedbackRowDate(f)}: ${fWeight}kg (운동: ${displayScore(fExScore)}점, 식단: ${displayScore(fDietScore)}점)`;
   }).join('\n');
-
-  const curDate = getGasField(currentFeedback, ['오늘 날짜', '오늘날짜', '피드백 날짜', '피드백날짜', '날짜', 'date', '일자', '피드백일자']) || '오늘';
-  const curWeight = getGasField(currentFeedback, ['공복 몸무게', '공복몸무게', '체중', 'weight']) || '-';
-  const curExScoreRaw = getGasField(currentFeedback, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']);
-  const curDietScoreRaw = getGasField(currentFeedback, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']);
-  // [점수는 회원 제출값만 사용] 비어 있으면 빈칸 유지 (운동 4점/식단 5점 등 기본값 추정 금지, AI에게도 맡기지 않음)
-  const curExScore = normalizeScoreValue(curExScoreRaw);
-  const curDietScore = normalizeScoreValue(curDietScoreRaw);
-
   if (!weightHistorySummary) {
-    weightHistorySummary = `${curDate}: ${curWeight}kg`;
+    weightHistorySummary = `이전 기록 없음 (오늘 ${curDate}: ${curWeight}kg)`;
   }
 
   // [요구사항 1 & 2] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
@@ -1659,7 +1695,7 @@ function generateDailyFeedbackCore(ss, payload) {
     }
   });
 
-  const memberFullProfile = formatObjectAsFullProfile(member);
+  const memberFullProfile = formatObjectAsFullProfile(member || {});
   const feedbackFullData = formatObjectAsFullProfile(cleanFeedbackForAi);
 
   const prompt = `
@@ -1676,8 +1712,8 @@ ${feedbackFullData}
 ${weightHistorySummary}
 
 [코칭 지침서 (DB)]
-- 피드백 지침서: ${guidelines.feedback || '24시간 내 피드백, 칭찬(Positive Reinforcement) 선행 후 1가지 실행 가능한 개선안 제안'}
-- 동기부여 지침서: ${guidelines.motivation || '한 끼 실패가 4주의 실패는 아님을 강조, 자책감 방지 및 회복탄력성'}
+- 피드백 지침서: ${g.feedback || '24시간 내 피드백, 칭찬(Positive Reinforcement) 선행 후 1가지 실행 가능한 개선안 제안'}
+- 동기부여 지침서: ${g.motivation || '한 끼 실패가 4주의 실패는 아님을 강조, 자책감 방지 및 회복탄력성'}
 
 [요청 사항]
 반드시 아래 JSON 형식으로만 응답해 주세요. 다른 설명이나 마크다운 없이 순수 JSON만 출력하십시오:
@@ -1690,7 +1726,47 @@ ${weightHistorySummary}
 }
 `;
 
-  const aiResult = callGemini(prompt, '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.', payload);
+  return {
+    prompt: prompt,
+    systemInstruction: '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.'
+  };
+}
+
+/**
+ * [AI 프롬프트 내려주기] 코치 브라우저 직통 스트리밍용 - 프롬프트는 서버 build 함수에서만 조립
+ * - kind: 'workout' | 'diet' | 'daily'
+ */
+function handleBuildAiPrompt(ss, payload) {
+  let built = null;
+  if (payload.kind === 'workout') built = buildWorkoutPromptFromPayload(ss, payload);
+  else if (payload.kind === 'diet') built = buildDietPromptFromPayload(ss, payload);
+  else if (payload.kind === 'daily') {
+    const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
+    built = buildDailyFeedbackPrompt(payload.member || {}, payload.feedback || {}, payload.recentFeedbacks || [], guidelines);
+  }
+  if (!built) {
+    return createJsonResponse({ status: 'error', code: 'bad_request', message: '알 수 없는 프롬프트 종류입니다: ' + payload.kind });
+  }
+  return createJsonResponse({ status: 'success', prompt: built.prompt, systemInstruction: built.systemInstruction });
+}
+
+/**
+ * 7. [AI] 데일리 피드백 도출 (공통 생성 코어)
+ * - 웹앱 API 요청(handleAiDailyFeedback) 및 구글 폼 제출 트리거(onFormSubmitHandler) 양쪽에서 공통 사용
+ * - 피드백 지침서 & 동기부여 지침서 기반
+ * - 최근 최소 3일 이상의 누적 체중 변화 추이 및 식단/운동 분석
+ * - 계획 수정 필요 시 'AI 운동 수정 제안' 및 'AI 식단 수정 제안' 도출 (명확한 '근거' 제시)
+ */
+function generateDailyFeedbackCore(ss, payload) {
+  const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
+  const currentFeedback = payload.feedback || {};
+
+  // [점수는 회원 제출값만 사용] 비어 있으면 빈칸 유지 (운동 4점/식단 5점 등 기본값 추정 금지, AI에게도 맡기지 않음)
+  const curExScore = normalizeScoreValue(getGasField(currentFeedback, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']));
+  const curDietScore = normalizeScoreValue(getGasField(currentFeedback, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']));
+
+  const built = buildDailyFeedbackPrompt(payload.member || {}, currentFeedback, payload.recentFeedbacks || [], guidelines);
+  const aiResult = callGemini(built.prompt, built.systemInstruction, payload);
 
   let parsed = null;
   if (aiResult.text) {
@@ -2168,14 +2244,13 @@ function onFormSubmitHandler(e) {
       }
     }
 
-    // 3. Feedbacks 시트에서 해당 회원의 이전 최근 3일 치 기록 추출
+    // 3. Feedbacks 시트에서 해당 회원의 기록 추출
     const allFeedbacks = getSheetDataWithHeaders(feedbackSheet);
     const exactTargetName = String(memberName).trim();
     const memberFeedbacks = allFeedbacks.filter(f => getFeedbackRowName(f) === exactTargetName);
 
-    // 날짜 기준 오름차순 정렬 후 최근 3건 (회원이 입력한 '오늘 날짜' 1순위 반영)
-    memberFeedbacks.sort((a, b) => String(getFeedbackRowDate(a)).localeCompare(String(getFeedbackRowDate(b))));
-    const recentFeedbacks = memberFeedbacks.slice(-3);
+    // 최근 기록 범위(오늘 이전 RECENT_FEEDBACK_WINDOW건) 선택은 buildDailyFeedbackPrompt에서 공통 처리
+    const recentFeedbacks = memberFeedbacks;
 
     // 4. Guidelines 시트에서 피드백 & 동기부여 지침서 가져오기
     const guidelines = getGuidelinesData(guidelineSheet);

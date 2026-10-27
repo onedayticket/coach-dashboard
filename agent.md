@@ -24,6 +24,7 @@
 | 차트 | Chart.js 4.4.1 (CDN) | 체중 / 운동 점수 / 식단 점수 개별 그래프 |
 | Backend & DB | GAS 웹앱 + Google Sheets | `gas_backend.js`를 Apps Script에 붙여넣어 배포 |
 | AI | Google Gemini API — Flash 계열만 사용 | 우선순위: `gemini-flash-lite-latest` → `gemini-flash-latest` → `gemini-3.7-flash` → `gemini-3.8-flash` (ListModels 결과로 자동 선정, Pro 계열 제외) |
+| AI 키 | GAS 스크립트 속성 | 서버 호출: `GEMINI_API_KEY` (브라우저로 절대 전달 금지) / 코치 브라우저 직통 스트리밍: `GEMINI_BROWSER_API_KEY` (없으면 직통 생략, GAS 생성만 사용) |
 | 호스팅 | GitHub Pages | `main` 푸시 시 `.github/workflows/deploy.yml`로 자동 배포 |
 | 캐시 | `localStorage` | 코치 데이터 캐시(용량 초과 시 최신 피드백 600/300/120건만 보관), 설정, 알림 읽음 상태 |
 
@@ -82,7 +83,10 @@ coach-dashboard/
 
 ### 6.1 프롬프트는 `gas_backend.js` 한 곳에서만 만든다
 - 운동 루틴, 식단, 데일리 피드백, 종합 피드백, 회원 수정 요청 등 모든 AI 프롬프트는 `gas_backend.js`에서 만듭니다.
-- `app.js`·`view.js`에는 **새 프롬프트를 추가하지 않습니다.** 프론트엔드는 `action`과 데이터만 보내고 결과를 받아 표시합니다.
+  - 운동 루틴: `buildWorkoutPrompt` / 식단: `buildDietPrompt` / 데일리 피드백: `buildDailyFeedbackPrompt` — 코치 직통·GAS 생성·폼 제출 트리거·회원 셀프 재생성이 모두 이 함수를 씁니다.
+  - 데일리 피드백의 최근 기록 범위는 `RECENT_FEEDBACK_WINDOW`(오늘 이전 최근 N건) 한 곳에서 정합니다.
+- `app.js`·`view.js`에는 **프롬프트를 두지 않습니다.** 프론트엔드는 `action`과 데이터만 보내고 결과를 받아 표시합니다.
+  - 코치 브라우저 직통 스트리밍은 `buildAiPrompt` action으로 GAS가 조립한 `{ prompt, systemInstruction }`을 받아 그대로 호출합니다.
 - 프롬프트를 고칠 때는 `gas_backend.js`만 수정합니다.
 
 ### 6.2 계산 가능한 값은 코드가 계산한다
@@ -107,7 +111,6 @@ coach-dashboard/
 
 ### 6.6 현재 코드에 남아 있는 정리 대상
 아래는 위 규칙과 어긋나는 기존 코드입니다. 해당 부분을 수정할 때 규칙에 맞게 옮기고, 같은 패턴을 새로 만들지 마십시오.
-- `app.js`의 브라우저 직통 모드 프롬프트(운동 루틴·식단·데일리 피드백 생성) → `gas_backend.js`로 일원화 대상
 - `gas_backend.js`의 `locateUniqueMemberRow`(코치 저장용)가 회원번호가 없을 때 이름으로 행을 찾는 처리 → 회원번호 전용으로 교체 대상
 - 폼 제출 피드백(Feedbacks)과 회원 연결이 이름 완전 일치에 의존 (폼에 회원번호 항목이 없음) → 폼에 회원번호 항목 추가 후 교체 대상
 
