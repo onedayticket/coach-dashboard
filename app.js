@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.6';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.7';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -755,6 +755,8 @@ async function fetchJsonHedged(url, init, opts = {}) {
 const COACH_CACHE_FEEDBACK_FALLBACK_LIMITS = [600, 300, 120];
 
 function saveCoachDataCache() {
+  // 미리보기(Mock)·서버 실패 화면의 데이터는 저장본으로 남기지 않음
+  if (AppState.dataSource === 'mock' || AppState.dataSource === 'offline') return;
   const build = (feedbacks) => JSON.stringify({
     gasUrl: (AppState.gasUrl || '').trim(),
     savedAt: AppState.lastSyncedAt || AppState.cacheSavedAt || Date.now(), // '기준 시각' = 마지막 서버 수신 시각
@@ -859,6 +861,14 @@ async function startDashboard() {
     refreshDataInBackground();
     return;
   }
+  await loadAllData();
+  renderDashboardAfterData();
+}
+
+/**
+ * 첫 로딩 실패 후 [다시 시도]: 서버에서 다시 받아 화면 전체 렌더링
+ */
+async function retryInitialLoad() {
   await loadAllData();
   renderDashboardAfterData();
 }
@@ -974,15 +984,24 @@ async function loadAllData() {
       }
 
       console.warn('[GAS 백엔드 오류 반환]:', (resJson && resJson.message) ? resJson.message : '데이터 형식 불일치');
-      showToast('⚠️ 구글 시트 서버 응답 지연으로 로컬 Mock 모드로 표시합니다.\n상단 상태바를 통해 언제든 다시 연결할 수 있습니다.', 'warning', 6000);
     } catch (e) {
       clearTimeout(coldStartNoticeTimer);
       console.warn(`[GAS 연동 실패 ${((Date.now() - loadStart) / 1000).toFixed(1)}초]:`, e.message || e.name);
-      showToast('⚠️ 구글 시트 서버 응답 지연으로 로컬 Mock 모드로 표시합니다.\n상단 상태바를 통해 언제든 다시 연결할 수 있습니다.', 'warning', 6000);
     }
+
+    // [실패는 실패로] 서버 실패를 Mock 데이터로 대신 채우지 않음 -> 빈 화면 + 실패 배지 + [다시 시도]
+    AppState.members = [];
+    AppState.feedbacks = [];
+    AppState.isOnline = false;
+    AppState.dataSource = 'offline';
+    AppState.syncState = 'failed';
+    updateApiStatusUI();
+    hideLoadingOverlay();
+    showRetryToast('서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.', retryInitialLoad);
+    return;
   }
 
-  // Fallback to Mock
+  // 시트 미연동(GAS URL 없음) 미리보기 전용 Mock 데이터
   AppState.members = JSON.parse(JSON.stringify(MOCK_DB.members));
   AppState.feedbacks = JSON.parse(JSON.stringify(MOCK_DB.feedbacks));
   AppState.guidelines = JSON.parse(JSON.stringify(MOCK_DB.guidelines));
@@ -1047,7 +1066,7 @@ ${req}
 `;
 }
 
-async function postToGasBackend(payload) {
+async function postToGasBackend(payload, options = {}) {
   const gasUrl = AppState.gasUrl.trim();
 
   // Gemini API Key 및 모델 선호도 자동 주입
@@ -1082,6 +1101,9 @@ async function postToGasBackend(payload) {
       } else if (json && json.status === 'success' && /^update/.test(String(payload.action || '')) && AppState.dataSource !== 'mock') {
         // 저장 성공 시 화면에 반영된 최신 상태를 저장본에도 즉시 기록 (새로고침 직후 이전 내용이 잠깐 보이는 현상 방지)
         saveCoachDataCache();
+      } else if (json && json.status === 'error' && /^update/.test(String(payload.action || '')) && !options.silent && payload.action !== 'updateFeedbackComment') {
+        // 피드백 코멘트 저장은 호출부에서 자체 오류 처리 (중복 알림 방지)
+        showRetryToast(`저장하지 못했습니다: ${json.message || '서버 오류'}`, options.retry || (() => retryGasPost(payload)));
       }
       return json;
     } catch (e) {
@@ -1089,17 +1111,41 @@ async function postToGasBackend(payload) {
         console.log('[GAS POST 요청 취소됨]');
         return { status: 'cancelled', message: '요청이 사용자에 의해 취소되었습니다.' };
       }
-      console.warn('[GAS POST 통신 실패 - Mock 시뮬레이션]', e);
+      // [실패는 실패로] 통신 실패·응답 지연을 Mock 응답으로 바꾸지 않고 실패 안내 + [다시 시도] 제공
+      console.warn('[GAS POST 통신 실패]', e);
+      const failure = { status: 'error', code: 'network', message: '서버 응답이 늦어요. 잠시 후 다시 시도해 주세요.' };
+      if (!options.silent) {
+        const retry = options.retry || (() => retryGasPost(payload));
+        showRetryToast(failure.message, retry);
+      }
+      return failure;
     }
   }
 
-  // 사용자가 취소한 상태라면 Mock 시뮬레이션 실행하지 않고 즉시 반환
+  // 사용자가 취소한 상태라면 즉시 반환
   if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
     return { status: 'cancelled', message: '요청이 사용자에 의해 취소되었습니다.' };
   }
 
-  // Mock 시뮬레이션
+  // 시트 미연동 미리보기(Mock) 모드에서만 로컬 시뮬레이션 (화면 메모리에만 반영, 시트·저장본에는 기록하지 않음)
+  if (AppState.dataSource !== 'mock') {
+    return { status: 'error', code: 'no_server', message: '구글 시트 서버 주소가 설정되지 않아 저장하지 못했습니다. [API 설정]을 확인해 주세요.' };
+  }
   return simulateMockAction(payload);
+}
+
+/**
+ * 저장 요청 [다시 시도] 기본 동작: 같은 요청을 다시 보내고 결과를 알림
+ */
+async function retryGasPost(payload) {
+  showToast('다시 시도하는 중...', 'info');
+  const res = await postToGasBackend(payload);
+  if (res && res.status === 'success') {
+    showToast('✓ 다시 시도에 성공했습니다. 구글 시트에 반영되었습니다.', 'success');
+  } else if (res && res.status === 'error' && res.code !== 'network') {
+    showToast(`⚠️ ${res.message || '요청을 처리하지 못했습니다.'}`, 'danger');
+  }
+  return res;
 }
 
 /**
@@ -1493,140 +1539,16 @@ function simulateMockAction(payload) {
     return { status: 'success', message: '지침서가 로컬에 저장되었습니다.' };
   }
 
-  if (action === 'generateWorkoutRoutine') {
-    const custom = payload.customExerciseGuideline || '';
+  // [미리보기 전용] 시트 미연동 Mock 모드에서는 AI 생성 결과를 흉내 내지 않음 (모달에 채우거나 저장할 내용 없음)
+  if (/^generate/.test(String(action || ''))) {
     return {
-      status: 'success',
-      isAiGenerated: false,
-      debug: {
-        hasKey: false,
-        keySource: 'None (로컬 Mock 모드)',
-        errorMessage: AppState.gasUrl ? 'GAS 서버 통신 실패로 인해 로컬 Mock 데이터가 표시되었습니다. (네트워크/CORS 확인)' : 'GAS URL 미연동 상태입니다. 우측 상단 [API 설정]에서 연동 URL을 등록해 주세요.'
-      },
-      routine: `[루틴 소개]
-${custom ? `코치 수정 지침("${custom}")을 1순위로 적극 반영하여 구성했습니다.\n` : ''}회원의 생활 패턴과 체력 수준에 맞추어 관절 부담을 줄이고 기초 근력을 다지는 분할 루틴입니다.
-지속 가능한 습관 형성을 위해 운동일과 회복일을 균형 있게 배치했습니다.
-
-[루틴]
-| DAY1 [가슴, 삼두] | | | | |
-| :--- | :--- | :--- | :--- | :--- |
-| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
-| 체스트 프레스 머신 | 12회 | 3세트 | 60초 | |
-| 인클라인 덤벨 프레스 | 12회 | 3세트 | 60초 | |
-| 케이블 푸시다운 | 15회 | 3세트 | 45초 | |
-| 마무리 유산소 (트레드밀 경보) | 25분 | 1세트 | - | |
-
-DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식
-
-| DAY3 [등, 이두] | | | | |
-| :--- | :--- | :--- | :--- | :--- |
-| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
-| 랫 풀 다운 | 12회 | 3세트 | 60초 | |
-| 시티드 케이블 로우 | 12회 | 3세트 | 60초 | |
-| 암 풀 다운 | 15회 | 3세트 | 45초 | |
-| 덤벨 컬 | 12회 | 3세트 | 45초 | |
-
-DAY4 (휴식) - 폼롤러 전신 근막 이완 및 척추 스트레칭
-
-| DAY5 [하체, 코어] | | | | |
-| :--- | :--- | :--- | :--- | :--- |
-| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
-| 레그 프레스 머신 | 15회 | 3세트 | 60초 | |
-| 덤벨 스티프 데드리프트 | 12회 | 3세트 | 60초 | |
-| 레그 익스텐션 | 15회 | 3세트 | 45초 | |
-| 플랭크 | 30초 | 3세트 | 45초 | |
-
-DAY6 (휴식) - 야외 가벼운 산책 40분
-
-DAY7 (휴식) - 완전 휴식 및 에너지 재충전`
+      status: 'error',
+      code: 'preview_mode',
+      message: '시트 미연동 미리보기 모드에서는 AI 생성을 할 수 없습니다. [API 설정]에서 구글 시트를 연결해 주세요.'
     };
   }
 
-  if (action === 'generateDietPlan') {
-    const custom = payload.customDietGuideline || '';
-    return {
-      status: 'success',
-      isAiGenerated: false,
-      debug: {
-        hasKey: false,
-        keySource: 'None (로컬 Mock 모드)',
-        errorMessage: AppState.gasUrl ? 'GAS 서버 통신 실패로 인해 로컬 Mock 데이터가 표시되었습니다.' : 'GAS URL 미연동 상태입니다.'
-      },
-      dietPlan: `[4주차 맞춤 식단 가이드 (로컬 Mock 예시)]
-1. 최우선 반영 사항: ${custom ? `코치 수정 지침("${custom}") 1순위 적용` : '기본 식단 제안 지침서 균형식 적용'}
-2. 일일 식단 가이드:
-  - 아침: 복합 탄수화물 + 단백질 (사과 반 개 + 삶은 달걀 2개 + 무가당 두유 1팩)
-  - 점심: 밥 2/3 공기 + 찌개 국물 배제 + 쌈채소 풍성히 + 양질의 단백질 반찬
-  - 간식: 견과류 10알 또는 그릭요거트
-  - 저녁: 닭가슴살 샐러드 또는 연어 스테이크 + 구운 채소
-3. 수분: 하루 2L 이상 충분히 섭취.`
-    };
-  }
-
-  if (action === 'generateDailyFeedback') {
-    const currentFb = payload.feedback || {};
-    const weight = parseFloat(getField(currentFb, '공복 몸무게', '공복몸무게', '체중', 'weight')) || 80;
-    const isWeightStall = weight >= 81.5;
-
-    return {
-      status: 'success',
-      isAiGenerated: false,
-      debug: {
-        hasKey: false,
-        keySource: 'None (로컬 Mock 모드)',
-        errorMessage: '로컬 Mock 모드 데일리 피드백'
-      },
-      data: (() => {
-        const exScoreRaw = getField(currentFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore');
-        const exScoreVal = (exScoreRaw !== '' && exScoreRaw !== null && exScoreRaw !== undefined && !isNaN(parseFloat(exScoreRaw)))
-          ? Math.max(0, Math.min(5, parseFloat(exScoreRaw)))
-          : 0;
-        const dietScoreRaw = getField(currentFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore');
-        const dietScoreVal = (dietScoreRaw !== '' && dietScoreRaw !== null && dietScoreRaw !== undefined && !isNaN(parseFloat(dietScoreRaw)))
-          ? Math.max(0, Math.min(5, parseFloat(dietScoreRaw)))
-          : 5;
-
-        return {
-          "피드백_요약": `오늘도 바쁜 일상 속에서 운동(${exScoreVal}점)과 식단(${dietScoreVal}점)을 놓치지 않고 훌륭하게 수행하셨습니다! 물 섭취와 규칙적인 식사를 꾸준히 이어가고 계신 점 크게 칭찬드립니다.`,
-          "문제점_분석": isWeightStall
-            ? `최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어 순환 대사가 다소 저하된 상태입니다.`
-            : `특이사항 없음`,
-          "보완점_및_개선방안": isWeightStall
-            ? `유산소 운동 비중을 15분 늘리고 저녁 식사의 염분 섭취를 최소화해 보세요. 한 끼의 정체는 4주의 실패가 아니므로 충분한 수분 섭취와 함께 회복탄력성을 유지해 봅시다!`
-            : `현재의 페이스를 안정적으로 유지하면서, 피로도가 느껴질 때는 30분 일찍 취침하여 근육 회복을 도와주세요.`,
-          "운동_수정_제안": isWeightStall
-            ? `기존 웨이트 후 [경사도 러닝머신 20분(속도 5.5, 인클라인 6%)] 또는 [빠르게 걷기 30분] 추가하여 대사율 부스팅`
-            : ``,
-          "식단_수정_제안": isWeightStall
-            ? `저녁 식단에서 나트륨 섭취를 최소화하고, 칼륨이 풍부한 오이나 토마토 1개를 추가하여 체내 수분 정체 완화`
-            : ``,
-          "운동_실행률_점수": exScoreVal,
-          "식단_실행률_점수": dietScoreVal
-        };
-      })()
-    };
-  }
-
-  if (action === 'generateComprehensiveFeedback') {
-    return {
-      status: 'success',
-      isAiGenerated: false,
-      debug: {
-        hasKey: false,
-        keySource: 'None (로컬 Mock 모드)',
-        errorMessage: '로컬 Mock 모드 종합 피드백'
-      },
-      comprehensiveFeedback: `[${payload.startDate || '시작일'} ~ ${payload.endDate || '종료일'} 종합 코칭 리포트 (로컬 Mock 예시)]
-1. 기간 성과 총평:
-  - 데일리 피드백 기록율 90% 이상으로 매우 성실하게 참여하였습니다.
-  - 초기 체중 대비 안정적인 하향 추세를 기록하였으며, 폭식 방지 자가 조절 능력이 향상되었습니다.
-2. 향후 자립 방안 (Action Plan):
-  - 주 3회 최소 30분 운동을 '최소한의 마지노선'으로 유지할 것.
-  - 치팅데이는 점심에만 즐기고, 다음 날 아침 수분 섭취로 자연스럽게 루틴 복귀할 것.`
-    };
-  }
-
-  return { status: 'success' };
+  return { status: 'error', code: 'preview_mode', message: '미리보기 모드에서 지원하지 않는 요청입니다.' };
 }
 
 /**
@@ -3372,7 +3294,7 @@ DAY7 (휴식) - 완전 휴식 및 컨디션 회복
         member: AppState.selectedMember,
         customExerciseGuideline: customGuideline,
         guidelines: AppState.guidelines
-      });
+      }, { retry: () => btnAiExRoutine.click() });
       hideLoadingOverlay();
       if (res && res.status === 'cancelled') {
         showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
@@ -3380,6 +3302,10 @@ DAY7 (휴식) - 완전 휴식 및 컨디션 회복
       }
       const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
 
+      if (!res || res.status !== 'success' || !res.routine) {
+        showAiFailure(res, '운동 루틴', () => btnAiExRoutine.click());
+        return;
+      }
       if (res && res.routine) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentExerciseRoutine', res.routine);
@@ -3506,7 +3432,7 @@ ${buildMemberRequestPromptBlock(getField(mem, '회원 식단 요청', '회원식
         member: AppState.selectedMember,
         customDietGuideline: customGuideline,
         guidelines: AppState.guidelines
-      });
+      }, { retry: () => btnAiDietPlan.click() });
       hideLoadingOverlay();
       if (res && res.status === 'cancelled') {
         showToast('식단 생성이 취소되었습니다.', 'info', 3000);
@@ -3514,6 +3440,10 @@ ${buildMemberRequestPromptBlock(getField(mem, '회원 식단 요청', '회원식
       }
       const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
 
+      if (!res || res.status !== 'success' || !res.dietPlan) {
+        showAiFailure(res, '식단', () => btnAiDietPlan.click());
+        return;
+      }
       if (res && res.dietPlan) {
         if (res.isAiGenerated) {
           setInputValue('inputCurrentDietPlan', res.dietPlan);
@@ -3760,7 +3690,7 @@ function isFeedbackRecordCompleted(fb) {
   const cleanStatus = status.toLowerCase().replace(/\s+/g, '');
 
   // ★[핵심 방어: 4단계] 상태가 'AI초안', '초안', '대기', '미완료' 등인 경우 텍스트 존재 여부와 무관하게 무조건 미완료(false) 반환!
-  const draftOrPendingStatuses = ['ai초안', '초안', '초안대기', '대기', '미완료', 'pending', 'draft'];
+  const draftOrPendingStatuses = ['ai초안', 'ai실패', '초안', '초안대기', '대기', '미완료', 'pending', 'draft'];
   if (draftOrPendingStatuses.includes(cleanStatus)) {
     return false;
   }
@@ -3890,9 +3820,10 @@ function renderFeedbackTable(feedbacks) {
     const rawStatus = String(getField(fb, '피드백 상태', '피드백상태', '완료 여부', '완료여부', '진행상태', '상태') || '').trim();
     const cleanStatus = rawStatus.toLowerCase().replace(/\s+/g, '');
     const isDraft = (cleanStatus === 'ai초안' || cleanStatus === '초안' || cleanStatus === '초안대기');
+    const isAiFailed = cleanStatus === 'ai실패';
 
     html += `
-      <tr class="${isCompleted ? 'table-light-subtle is-done' : (isDraft ? 'table-info-subtle is-draft' : 'is-todo')}">
+      <tr class="${isCompleted ? 'table-light-subtle is-done' : (isAiFailed ? 'table-danger-subtle is-failed' : (isDraft ? 'table-info-subtle is-draft' : 'is-todo'))}">
         <td class="cv3-c-date text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
         <td class="cv3-c-name text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
         <td class="cv3-c-weight text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
@@ -3905,6 +3836,7 @@ function renderFeedbackTable(feedbacks) {
         <td class="cv3-c-summary small ${summary === '미작성' ? 'is-empty' : ''}" data-label="피드백 요약" style="min-width: 200px; max-width: 320px;">
           <div class="feedback-text-cell" title="${escapeHtml(summary)}">
             ${isDraft ? '<span class="badge bg-info text-white me-1" style="font-size: 0.68rem;">AI초안</span>' : ''}
+            ${isAiFailed ? '<span class="badge bg-danger text-white me-1" style="font-size: 0.68rem;">AI실패</span>' : ''}
             ${escapeHtml(summary)}
           </div>
         </td>
@@ -4025,25 +3957,14 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   const currentEx = getField(targetFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
   const currentDiet = getField(targetFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
 
-  let initialExScore = 0;
-  if (currentEx !== '' && currentEx !== null && currentEx !== undefined && currentEx !== '-' && !isNaN(parseFloat(currentEx))) {
-    initialExScore = Math.max(0, Math.min(5, parseFloat(currentEx)));
-  } else {
-    // 시트에 점수 열이 비어있다면 제출한 운동 내용을 파악하여 미운동(안함/휴식/X 등)이면 0점, 수행했으면 4점 기본
-    const rawExText = String(rawExercise || '').trim().toLowerCase();
-    const isNoEx = !rawExText || rawExText.includes('기록된 운동 내용이 없습니다') || rawExText.includes('안함') || rawExText.includes('휴식') || rawExText === 'x' || rawExText.includes('쉬었') || rawExText.includes('못했');
-    initialExScore = isNoEx ? 0 : 4;
-  }
-
-  let initialDietScore = 5;
-  if (currentDiet !== '' && currentDiet !== null && currentDiet !== undefined && currentDiet !== '-' && !isNaN(parseFloat(currentDiet))) {
-    initialDietScore = Math.max(0, Math.min(5, parseFloat(currentDiet)));
-  }
+  // 점수가 비어 있으면 빈칸 유지 (운동 4점/식단 5점 등 기본값 추정 금지)
+  const initialExScore = normalizeScore(currentEx);
+  const initialDietScore = normalizeScore(currentDiet);
 
   setInputValue('dfModalInputExScore', initialExScore);
   setInputValue('dfModalInputDietScore', initialDietScore);
-  setElementText('dfModalExScore', `${initialExScore}점`);
-  setElementText('dfModalDietScore', `${initialDietScore}점`);
+  setElementText('dfModalExScore', formatScoreLabel(initialExScore));
+  setElementText('dfModalDietScore', formatScoreLabel(initialDietScore));
 
   // 4. 피드백 요약 / 문제점 / 보완점 필드 세팅
   let summaryVal = getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', '요약') || '';
@@ -4123,12 +4044,13 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   const rawStatus = String(getField(targetFb, '피드백 상태', '피드백상태', '완료 여부', '완료여부', '진행상태', '상태') || '').trim();
   const cleanStatus = rawStatus.toLowerCase().replace(/\s+/g, '');
   const isDraft = (cleanStatus === 'ai초안' || cleanStatus === '초안' || cleanStatus === '초안대기');
+  const isAiFailed = cleanStatus === 'ai실패';
   const isCompleted = isFeedbackRecordCompleted(targetFb);
   const statusNoticeEl = document.getElementById('dfModalStatusNotice');
   const btnRunAi = document.getElementById('btnRunAiDailyFeedback');
 
   if (btnRunAi) {
-    if (isCompleted || isDraft) {
+    if (isCompleted || isDraft || isAiFailed) {
       btnRunAi.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>🤖 AI 피드백 재생성';
     } else {
       btnRunAi.innerHTML = '<i class="bi bi-robot me-1"></i>🤖 피드백 하기 (AI 분석/재생성)';
@@ -4138,6 +4060,8 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   if (statusNoticeEl) {
     if (isCompleted) {
       statusNoticeEl.innerHTML = `<span class="text-success fw-bold">✅ 피드백 완료 상태:</span> 이미 저장된 내용이 표시 중입니다. 필요 시 우측 <strong>[🤖 AI 피드백 재생성]</strong>을 통해 새로운 피드백으로 다시 덮어쓸 수 있습니다.`;
+    } else if (isAiFailed) {
+      statusNoticeEl.innerHTML = `<span class="text-danger fw-bold">⚠️ AI 초안 생성 실패:</span> 회원 제출 후 AI 초안을 만들지 못했습니다. 우측 <strong>[🤖 AI 피드백 재생성]</strong>으로 다시 만들어 주세요.`;
     } else if (isDraft) {
       statusNoticeEl.innerHTML = `<span class="text-primary fw-bold">🤖 AI 초안 대기 상태:</span> 백그라운드에서 작성된 AI 초안입니다. 우측 <strong>[🤖 AI 피드백 재생성]</strong>으로 다시 생성하거나 검토 후 저장해 주세요.`;
     } else {
@@ -4235,6 +4159,7 @@ async function runAiDailyFeedbackForCurrentModal() {
   let aiData = null;
   let directRes = null;
   let gasElapsedSec = 0;
+  let gasFailure = null;
   let gasModelName = 'AI';
 
   try {
@@ -4261,20 +4186,9 @@ async function runAiDailyFeedbackForCurrentModal() {
 
     const curExScoreRaw = getField(targetFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
     const curDietScoreRaw = getField(targetFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
-    const rawExText = String(getField(targetFb, '운동내용', '운동 내용', '오늘의 운동', '운동', 'exerciseContent') || '').toLowerCase();
-    const isNoEx = !rawExText || rawExText.includes('기록된 운동 내용이 없습니다') || rawExText.includes('안함') || rawExText.includes('휴식') || rawExText === 'x' || rawExText.includes('쉬었') || rawExText.includes('못했') || rawExText.includes('없음');
-
-    let defaultExScore = 0;
-    if (curExScoreRaw !== '' && curExScoreRaw !== null && curExScoreRaw !== undefined && !isNaN(parseFloat(curExScoreRaw))) {
-      defaultExScore = Math.max(0, Math.min(5, parseFloat(curExScoreRaw)));
-    } else {
-      defaultExScore = isNoEx ? 0 : 4;
-    }
-
-    let defaultDietScore = 5;
-    if (curDietScoreRaw !== '' && curDietScoreRaw !== null && curDietScoreRaw !== undefined && !isNaN(parseFloat(curDietScoreRaw))) {
-      defaultDietScore = Math.max(0, Math.min(5, parseFloat(curDietScoreRaw)));
-    }
+    // 점수는 회원 제출값만 사용 (비어 있으면 빈칸, AI에게 점수를 정하게 하지 않음)
+    const curExScore = normalizeScore(curExScoreRaw);
+    const curDietScore = normalizeScore(curDietScoreRaw);
 
     const prompt = `
 당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
@@ -4300,9 +4214,7 @@ ${weightHistorySummary}
   "문제점_분석": "오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석 (없을 경우 '특이사항 없음')",
   "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
   "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
-  "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)",
-  "운동_실행률_점수": ${defaultExScore},
-  "식단_실행률_점수": ${defaultDietScore}
+  "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)"
 }
 `;
 
@@ -4318,19 +4230,17 @@ ${weightHistorySummary}
         if (directRes && directRes.text) {
           const rawJson = cleanAndParseAiJson(directRes.text);
           if (rawJson) {
-            aiData = {
-              "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '오늘도 성실하게 일지를 기록해 주셔서 감사합니다!'),
-              "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '특이사항 없음'),
-              "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '현재의 페이스를 안정적으로 유지해 주세요.'),
+            // 누락 항목에 기본 문장을 채우지 않음 (요약이 없으면 실패로 보고 GAS 경유로 재시도)
+            const directData = {
+              "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '').trim(),
+              "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '').trim(),
+              "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '').trim(),
               "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
               "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
-              "운동_실행률_점수": (curExScoreRaw !== '' && curExScoreRaw !== null && curExScoreRaw !== undefined && !isNaN(parseFloat(curExScoreRaw)))
-                ? Math.max(0, Math.min(5, parseFloat(curExScoreRaw)))
-                : (Number.isFinite(parseFloat(rawJson['운동_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['운동_실행률_점수']))) : defaultExScore),
-              "식단_실행률_점수": (curDietScoreRaw !== '' && curDietScoreRaw !== null && curDietScoreRaw !== undefined && !isNaN(parseFloat(curDietScoreRaw)))
-                ? Math.max(0, Math.min(5, parseFloat(curDietScoreRaw)))
-                : (Number.isFinite(parseFloat(rawJson['식단_실행률_점수'])) ? Math.max(0, Math.min(5, parseFloat(rawJson['식단_실행률_점수']))) : defaultDietScore)
+              "운동_실행률_점수": curExScore,
+              "식단_실행률_점수": curDietScore
             };
+            if (directData.피드백_요약) aiData = directData;
           }
         }
       } catch (e) {
@@ -4358,7 +4268,7 @@ ${weightHistorySummary}
         feedback: cleanTargetFb,
         recentFeedbacks: recentFeedbacks,
         guidelines: AppState.guidelines
-      });
+      }, { retry: () => runAiDailyFeedbackForCurrentModal() });
       gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
       if (res && res.debug && res.debug.model) gasModelName = res.debug.model;
 
@@ -4369,6 +4279,8 @@ ${weightHistorySummary}
       }
       if (res && res.status === 'success' && res.data) {
         aiData = res.data;
+      } else {
+        gasFailure = res;
       }
     }
   } finally {
@@ -4388,16 +4300,17 @@ ${weightHistorySummary}
     AppState.currentFeedbackContext.aiData = aiData;
 
     // [3] 모달 입력칸들을 새로 생성된 AI 결과로 완벽 덮어쓰기
-    const exScoreVal = aiData.운동_실행률_점수 !== undefined ? aiData.운동_실행률_점수 : 4;
-    const dietScoreVal = aiData.식단_실행률_점수 !== undefined ? aiData.식단_실행률_점수 : 5;
+    // 점수: 회원 제출값만 사용 (비어 있으면 빈칸 유지)
+    const exScoreVal = normalizeScore(aiData.운동_실행률_점수);
+    const dietScoreVal = normalizeScore(aiData.식단_실행률_점수);
 
     setInputValue('dfModalInputExScore', exScoreVal);
     setInputValue('dfModalInputDietScore', dietScoreVal);
-    setElementText('dfModalExScore', `${exScoreVal}점`);
-    setElementText('dfModalDietScore', `${dietScoreVal}점`);
+    setElementText('dfModalExScore', formatScoreLabel(exScoreVal));
+    setElementText('dfModalDietScore', formatScoreLabel(dietScoreVal));
 
     const summaryVal = aiData.피드백_요약 || '';
-    const problemVal = aiData.문제점_분석 || '특이사항 없음';
+    const problemVal = aiData.문제점_분석 || '';
     const solutionVal = aiData.보완점_및_개선방안 || '';
 
     setInputValue('dfModalSummary', summaryVal);
@@ -4488,7 +4401,11 @@ ${weightHistorySummary}
       showToast(`✓ [GAS 백엔드 ${gasElapsedSec}초] AI 데일리 피드백 생성 완료 (${gasModelName})`, 'success', 5000);
     }
   } else {
-    showToast('AI 피드백 분석에 실패했습니다. 다시 시도해 주세요.', 'warning');
+    // [실패는 실패로] 입력칸은 그대로 두고 실패 사유 + [다시 시도]
+    if (statusNoticeEl) {
+      statusNoticeEl.innerHTML = `<span class="text-danger fw-bold">⚠️ AI 피드백 생성 실패:</span> 입력칸은 바뀌지 않았습니다. 잠시 후 <strong>[🤖 AI 피드백 재생성]</strong>을 다시 눌러 주세요.`;
+    }
+    showAiFailure(gasFailure || { message: 'AI 피드백 생성에 실패했습니다.' }, '데일리 피드백', () => runAiDailyFeedbackForCurrentModal());
   }
 }
 
@@ -4520,8 +4437,9 @@ function initDailyFeedbackModalActions() {
 
       const exScoreInput = getInputValue('dfModalInputExScore');
       const dietScoreInput = getInputValue('dfModalInputDietScore');
-      const exScoreToSave = exScoreInput !== '' ? parseFloat(exScoreInput) : 4;
-      const dietScoreToSave = dietScoreInput !== '' ? parseFloat(dietScoreInput) : 5;
+      // 비어 있으면 빈칸 그대로 저장 (기본 점수 추정 금지)
+      const exScoreToSave = normalizeScore(exScoreInput);
+      const dietScoreToSave = normalizeScore(dietScoreInput);
 
       // 수정 제안 내용 (모달 표시 보존용)
       const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
@@ -4781,9 +4699,10 @@ function getUnreadAiDraftItems() {
 
     const status = String(getField(fb, '피드백 상태', '피드백상태', 'status') || '').trim();
     const summary = getField(fb, '피드백_요약', '피드백 요약', 'feedbackSummary', 'summary') || '';
+    const isAiFailed = status === 'AI실패';
     const isAiDraft = (status === 'AI초안' || (summary && String(summary).trim().length > 0));
 
-    if (isAiDraft) {
+    if (isAiDraft || isAiFailed) {
       const memberName = getMemberName(fb);
       const date = getFeedbackDate(fb) || '-';
       const key = `${memberName}_${date}`;
@@ -4805,7 +4724,8 @@ function getUnreadAiDraftItems() {
           memberName,
           memberKey,
           date,
-          summary
+          summary,
+          isFailed: isAiFailed
         });
       }
     }
@@ -4916,13 +4836,20 @@ function updateGlobalNotificationBadges() {
               <span class="fw-bold text-dark"><i class="bi bi-robot text-warning me-1"></i>${escapeHtml(item.memberName)}</span>
               <span class="badge bg-primary-subtle text-primary border border-primary-subtle small">${escapeHtml(item.date)}</span>
             </div>
+            ${item.isFailed ? `
+            <div class="small text-dark mb-1">
+              <span class="badge bg-danger me-1">AI실패</span><strong>${escapeHtml(item.memberName)}</strong> 회원의 <strong>${escapeHtml(item.date)}</strong> 피드백 AI 초안 생성에 실패했습니다.
+            </div>
+            <div class="text-end mt-1">
+              <span class="badge bg-danger text-white small px-2 py-1"><i class="bi bi-arrow-repeat me-1"></i>열어서 재생성 &rarr;</span>
+            </div>` : `
             <div class="small text-dark mb-1">
               🤖 <strong>${escapeHtml(item.memberName)}</strong> 회원의 <strong>${escapeHtml(item.date)}</strong> 피드백 AI 초안이 작성되었습니다.
             </div>
             ${item.summary ? `<div class="small text-muted text-truncate" style="max-width: 320px;">${escapeHtml(item.summary)}</div>` : ''}
             <div class="text-end mt-1">
               <span class="badge bg-primary text-white small px-2 py-1"><i class="bi bi-pencil-square me-1"></i>초안 확인/수정 &rarr;</span>
-            </div>
+            </div>`}
           </li>
         `;
       });
@@ -4986,6 +4913,7 @@ function updateGlobalNotificationBadges() {
       });
       pendingItems.forEach(item => {
         const isDraft = item.status === 'AI초안';
+        const isFailed = item.status === 'AI실패';
         pendingListHtml += `
           <li class="dropdown-item p-2 px-3 border-bottom cursor-pointer hover-bg-light notification-item"
               style="cursor: pointer;"
@@ -4994,6 +4922,7 @@ function updateGlobalNotificationBadges() {
               <span class="fw-bold text-dark"><i class="bi bi-person-fill text-primary me-1"></i>${escapeHtml(item.memberName)}</span>
               <div class="d-flex align-items-center gap-1">
                 ${isDraft ? '<span class="badge bg-info-subtle text-info-emphasis border border-info-subtle small">AI초안</span>' : ''}
+                ${isFailed ? '<span class="badge bg-danger-subtle text-danger border border-danger-subtle small">AI실패</span>' : ''}
                 <span class="badge bg-warning-subtle text-warning-emphasis border border-warning-subtle small">${escapeHtml(item.date)}</span>
               </div>
             </div>
@@ -5149,7 +5078,7 @@ function initComprehensiveFeedbackActions() {
         feedbacks: userFbs,
         startDate: sDate || '프로그램 시작일',
         endDate: eDate || '오늘'
-      });
+      }, { retry: () => btnGenerate.click() });
       hideLoadingOverlay();
 
       if (res && res.status === 'cancelled') {
@@ -5157,6 +5086,10 @@ function initComprehensiveFeedbackActions() {
         return;
       }
 
+      if (!res || res.status !== 'success' || !res.comprehensiveFeedback) {
+        showAiFailure(res, '종합 피드백', () => btnGenerate.click());
+        return;
+      }
       if (res && res.comprehensiveFeedback) {
         setInputValue('compResultText', res.comprehensiveFeedback);
         if (res.isAiGenerated) {
@@ -5294,6 +5227,15 @@ function updateApiStatusUI() {
     return;
   }
 
+  if (AppState.dataSource === 'offline') {
+    badge.className = `${baseClass} bg-danger-subtle text-danger border-danger-subtle`;
+    badge.innerHTML = '<span class="status-dot bg-danger me-1"></span> 서버 응답이 늦어요 · <u>다시 시도</u>';
+    badge.title = '구글 시트 서버에서 데이터를 받지 못했습니다. 클릭하면 다시 불러옵니다.';
+    badge.style.cursor = 'pointer';
+    badge.onclick = () => retryInitialLoad();
+    return;
+  }
+
   if (AppState.isOnline) {
     badge.className = `${baseClass} bg-success-subtle text-success border-success-subtle`;
     const syncedAt = AppState.lastSyncedAt ? ` · ${fmtTime(AppState.lastSyncedAt)} 동기화` : '';
@@ -5301,7 +5243,7 @@ function updateApiStatusUI() {
     badge.title = AppState.lastSyncedAt ? `구글 시트 최신 데이터 (${fmtDateTime(AppState.lastSyncedAt)} 수신)` : '구글 시트와 연결되었습니다.';
   } else {
     badge.className = `${baseClass} bg-secondary-subtle text-secondary border-secondary-subtle`;
-    badge.innerHTML = '<span class="status-dot bg-secondary me-1"></span> Mock 모드 (테스트/데모)';
+    badge.innerHTML = '<span class="status-dot bg-secondary me-1"></span> 미리보기 모드 (시트 미연동 · 저장 안 됨)';
     badge.title = '';
   }
 }
@@ -5397,14 +5339,36 @@ function getMemberKey(m) {
   return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '이름', 'name') || '').trim();
 }
 
+// 점수 정규화: 숫자면 0~5, 비어 있거나 숫자가 아니면 빈 문자열 (기본 점수 추정 금지)
+function normalizeScore(raw) {
+  if (raw === '' || raw === null || raw === undefined || raw === '-') return '';
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.min(5, n)) : '';
+}
+
+function formatScoreLabel(score) {
+  return score === '' ? '-' : `${score}점`;
+}
+
 function getMemberId(m) {
   if (!m) return '-';
   return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '-').trim();
 }
 
-// 회원 전용 링크(view.html?id=...) 생성용 회원번호 (view.js의 getMemberNo와 동일 규칙, 없으면 빈 문자열)
+// 회원 전용 링크(view.html?id=...) 생성용 회원번호 (view.js·서버와 동일 규칙, 없으면 빈 문자열)
+// 회원번호 열 이름 (공백·대소문자만 무시하고 열 이름이 정확히 같을 때만 인정 - 서버 MEMBER_NO_HEADERS와 동일)
+const MEMBER_NO_HEADERS = ['회원번호', '회원ID', 'memberId', '고유번호'];
+
 function getMemberNo(m) {
-  return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').trim();
+  if (!m || typeof m !== 'object') return '';
+  const keys = Object.keys(m);
+  for (const header of MEMBER_NO_HEADERS) {
+    const wanted = header.replace(/[\s\r\n]+/g, '').toLowerCase();
+    const key = keys.find(k => String(k).replace(/[\s\r\n]+/g, '').toLowerCase() === wanted);
+    const val = key !== undefined ? String(m[key] === null || m[key] === undefined ? '' : m[key]).trim() : '';
+    if (val) return val;
+  }
+  return '';
 }
 
 function getMemberName(m) {
@@ -5596,7 +5560,11 @@ function showToast(msg, type = 'info') {
     danger: 'bg-danger'
   };
 
-  toastEl.className = `toast align-items-center border-0 position-fixed bottom-0 end-0 m-3 shadow-lg text-white ${bgClasses[type] || 'bg-primary'}`;
+  // 노란 경고 토스트는 흰 글씨가 잘 안 보이므로 어두운 글씨 사용
+  const textClass = type === 'warning' ? '' : 'text-white';
+  toastEl.className = `toast align-items-center border-0 position-fixed bottom-0 end-0 m-3 shadow-lg ${textClass} ${bgClasses[type] || 'bg-primary'}`;
+  const closeBtn = toastEl.querySelector('.btn-close');
+  if (closeBtn) closeBtn.classList.toggle('btn-close-white', type !== 'warning');
   const body = document.getElementById('appGlobalToastBody');
   if (body) body.innerHTML = `<i class="bi bi-info-circle-fill me-2 fs-5"></i> ${escapeHtml(msg)}`;
 
@@ -5604,6 +5572,45 @@ function showToast(msg, type = 'info') {
     const toast = new bootstrap.Toast(toastEl, { delay: 3500 });
     toast.show();
   }
+}
+
+/**
+ * [다시 시도] 버튼이 있는 실패 안내 토스트 (서버 응답 지연·AI 생성 실패 공통)
+ */
+function showRetryToast(msg, onRetry) {
+  showToast(msg, 'warning');
+  const toastEl = document.getElementById('appGlobalToast');
+  const body = document.getElementById('appGlobalToastBody');
+  if (!toastEl || !body || typeof onRetry !== 'function') return;
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'btn btn-sm btn-dark ms-3 flex-shrink-0';
+  btn.textContent = '다시 시도';
+  btn.addEventListener('click', () => {
+    if (window.bootstrap) bootstrap.Toast.getOrCreateInstance(toastEl).hide();
+    onRetry();
+  });
+  body.appendChild(btn);
+  if (window.bootstrap) {
+    // 버튼을 누를 시간이 있도록 기본보다 길게 표시
+    const toast = bootstrap.Toast.getOrCreateInstance(toastEl);
+    toast._config.delay = 12000;
+    toast.show();
+  }
+}
+
+/**
+ * AI 생성 실패 공통 표시: 입력칸은 그대로 두고 실패 사유 + [다시 시도]
+ */
+function showAiFailure(res, label, onRetry) {
+  if (res && res.code === 'network') return; // postToGasBackend에서 이미 안내함
+  const reason = (res && res.message) ? res.message : `${label} 생성에 실패했습니다.`;
+  if (res && res.debug) console.warn(`[${label} AI 실패 디버그]`, res.debug);
+  if (res && res.code === 'preview_mode') {
+    showToast(reason, 'warning');
+    return;
+  }
+  showRetryToast(`⚠️ ${reason}`, onRetry);
 }
 
 function escapeHtml(str) {
@@ -5626,7 +5633,12 @@ function copyMemberViewLink() {
     showToast('선택된 회원이 없습니다. 좌측 목록에서 회원을 먼저 선택해 주세요.', 'warning');
     return;
   }
-  const memberId = getMemberNo(mem) || getMemberName(mem);
+  // [회원 식별 원칙] 회원 페이지는 회원번호 정확 일치로만 열리므로 이름 링크는 만들지 않음
+  const memberId = getMemberNo(mem);
+  if (!memberId) {
+    showToast('이 회원은 회원번호가 비어 있어 전용 링크를 만들 수 없습니다. Members 시트에 회원번호를 먼저 입력해 주세요.', 'warning');
+    return;
+  }
   const gasUrl = (AppState.gasUrl || localStorage.getItem(STORAGE_GAS_URL_KEY) || DEFAULT_GAS_API_URL || '').trim();
 
   let currentPath = window.location.pathname;

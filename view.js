@@ -795,56 +795,6 @@ async function fetchMemberViewWithRetry(apiUrl, body) {
 }
 
 /**
- * [배포 전환기 전용] 구버전 GAS(getAll 공개 응답)로 회원 화면 표시
- * - 데이터는 메모리에서만 사용하고 브라우저에 저장하지 않음
- * - 휴대폰 뒷 4자리는 등록된 번호와 정확히 일치할 때만 통과 (비상 비밀번호 없음)
- */
-async function loadLegacyMemberView(gasUrl, targetId, hasRenderedFromCache) {
-  let data = null;
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 38000);
-    const res = await fetch(`${gasUrl}${gasUrl.includes('?') ? '&' : '?'}action=getAll&t=${Date.now()}`, { signal: controller.signal });
-    clearTimeout(timeoutId);
-    const json = await res.json();
-    if (json && json.status === 'success' && json.data) data = json.data;
-  } catch (e) {
-    console.warn('[회원 뷰어] 구버전 GAS 조회 실패:', e.message || e);
-  }
-
-  if (!data) {
-    if (!hasRenderedFromCache) {
-      showInvalidAccessScreen('', '구글 시트 서버 응답 지연', '잠시 후 아래 [다시 시도]를 누르시거나 다시 접속해 주세요.');
-    }
-    return;
-  }
-
-  const members = Array.isArray(data.members) ? data.members : [];
-  const matched = findMemberInList(members, targetId);
-  if (!matched) {
-    showInvalidAccessScreen(`
-      <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
-      <div class="text-secondary small mt-1">
-        등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
-      </div>
-    `);
-    return;
-  }
-
-  applyMemberData(matched, Array.isArray(data.feedbacks) ? data.feedbacks : [], false);
-  CurrentMemberState.isLegacyBackend = true;
-  if (hasRenderedFromCache) return;
-
-  try {
-    if (sessionStorage.getItem('legacy_member_auth_' + targetId) === 'true') {
-      unlockAndRenderMemberPage();
-      return;
-    }
-  } catch (e) {}
-  showMemberAuthModal();
-}
-
-/**
  * 회원 데이터 로드 (본인 캐시 우선 렌더링 + 서버 인증 기반 최신 동기화)
  */
 async function loadMemberPageData(targetId) {
@@ -865,6 +815,19 @@ async function loadMemberPageData(targetId) {
   CurrentMemberState.targetId = targetId;
   CurrentMemberState.gasUrl = gasUrl;
   purgeLegacyMemberViewStorage();
+
+  // [미리보기 전용] 시트 연동 URL이 없을 때만 샘플 데이터로 화면 미리보기 (인증·저장 없음)
+  if (!gasUrl) {
+    if (loadingScreen) loadingScreen.classList.add('d-none');
+    const previewMember = findMemberInList(VIEW_MOCK_DB.members, targetId);
+    if (previewMember) {
+      applyMemberData(previewMember, VIEW_MOCK_DB.feedbacks, true);
+      unlockAndRenderMemberPage();
+    } else {
+      showInvalidAccessScreen('', '미리보기 회원 없음', '구글 시트 연동 URL이 설정되지 않았습니다. 담당 코치님께 받은 링크로 다시 접속해 주세요.');
+    }
+    return;
+  }
 
   // -------------------------------------------------------------------------
   // [1단계: 인증된 본인 캐시가 있으면 즉시 렌더링]
@@ -915,20 +878,13 @@ async function loadMemberPageData(targetId) {
     return;
   }
 
-  // [배포 전환기 호환] GAS가 아직 구버전(getMemberView 미지원)이면 기존 방식으로 동작하여 접속 장애 방지
-  if (res && res.status === 'error' && !res.code && /지원하지 않는 action/.test(String(res.message || ''))) {
-    console.warn('[회원 뷰어] GAS 구버전 감지 -> 기존 방식(getAll)으로 임시 동작합니다. GAS 재배포가 필요합니다.');
-    await loadLegacyMemberView(gasUrl, targetId, hasRenderedFromCache);
-    return;
-  }
-
   if (res && res.code === 'not_found') {
     clearMemberSession(targetId);
     console.warn(`[회원 뷰어] 시트 내 회원 매칭 실패: ${targetId}`);
     showInvalidAccessScreen(`
       <div><strong>입력된 회원 식별값:</strong> <code>${escapeHtml(targetId)}</code></div>
       <div class="text-secondary small mt-1">
-        등록된 회원 정보와 일치하지 않습니다. 본인의 회원번호나 성함을 확인해 주세요.
+        등록된 회원 정보와 일치하지 않습니다. 담당 코치님께 받은 회원 전용 링크(회원번호)로 다시 접속해 주세요.
       </div>
     `);
     return;
@@ -958,126 +914,37 @@ async function loadMemberPageData(targetId) {
     return;
   }
 
-  // 캐시도 없고 시트 연결도 안 된 첫 접속의 경우:
-  const mockMatched = findMemberInList(VIEW_MOCK_DB.members, targetId);
-  if (mockMatched) {
-    // Mock DB에 존재하는 테스트 회원인 경우에만 Mock 표시
-    applyMemberData(mockMatched, VIEW_MOCK_DB.feedbacks, true);
-    checkMemberAuthAndDisplay();
-  } else {
-    // 실존 회원이지만 첫 접속 시 구글 서버가 지연된 경우: 에러가 아닌 친절한 재연결 안내 제공
-    showInvalidAccessScreen(`
-      <div class="alert alert-warning border text-start mb-3">
-        <div class="fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>구글 시트 서버 응답 지연</div>
-        <div class="small">
-          회원님의 코칭 데이터를 구글 시트에서 불러오는 도중 통신 지연이 발생했습니다.<br>
-          잠시 후 아래 <strong>[🔄 다시 시도]</strong> 버튼을 눌러주시면 즉시 정상 연결됩니다.
-        </div>
+  // [실패는 실패로] 캐시가 없는 첫 접속에서 서버가 지연되면 샘플(Mock) 화면 대신 재시도 안내
+  showInvalidAccessScreen(`
+    <div class="alert alert-warning border text-start mb-3">
+      <div class="fw-bold mb-1"><i class="bi bi-clock-history me-1"></i>구글 시트 서버 응답 지연</div>
+      <div class="small">
+        회원님의 코칭 데이터를 구글 시트에서 불러오는 도중 통신 지연이 발생했습니다.<br>
+        잠시 후 아래 <strong>[🔄 다시 시도]</strong> 버튼을 눌러주시면 즉시 정상 연결됩니다.
       </div>
-      <div class="text-muted small mb-2">
-        확인 대상 회원 식별값: <code>${escapeHtml(targetId)}</code>
-      </div>
-    `, '구글 시트 서버 응답 지연', `
-      코치님께서 회원님의 데이터를 정상 등록하셨으나, 구글 서버의 응답이 일시적으로 지연되고 있습니다.<br>
-      <span class="small text-secondary">아래 [다시 시도]를 누르시거나 잠시 후 다시 접속해 주세요.</span>
-    `);
-  }
+    </div>
+    <div class="text-muted small mb-2">
+      확인 대상 회원 식별값: <code>${escapeHtml(targetId)}</code>
+    </div>
+  `, '구글 시트 서버 응답 지연', `
+    코치님께서 회원님의 데이터를 정상 등록하셨으나, 구글 서버의 응답이 일시적으로 지연되고 있습니다.<br>
+    <span class="small text-secondary">아래 [다시 시도]를 누르시거나 잠시 후 다시 접속해 주세요.</span>
+  `);
 }
 
 
 
 /**
- * 회원 목록에서 targetId와 일치하는 회원 검색 (초강력 스마트 매칭)
- * 1. 등록된 회원번호 열 직접 매칭 (M001, M002 등)
- * 2. 시트 행 순번 자동 매칭: 시트에 회원번호 열이 비어있어도 1번째 회원은 M001, M1, 1 매칭!
- * 3. 이름 100% 일치 및 괄호/특수문자 제거 이름 매칭 (김민수)
- * 4. 전화번호 뒷 4자리 매칭
+ * 회원 목록에서 targetId와 일치하는 회원 검색
+ * - [회원 식별 원칙] '회원번호' 열 값과 정확히 일치하는 회원만 인정 (서버 memberViewFindMember와 동일 규칙)
+ * - 아무 칸 일치·숫자만 일치·행 순번·이름·휴대폰 매칭 금지, 같은 회원번호가 2명 이상이면 매칭하지 않음
  */
 function findMemberInList(members, targetId) {
   if (!members || !Array.isArray(members) || members.length === 0) return null;
-  const cleanTargetId = String(targetId || '').replace(/[\s\r\n]+/g, '').toLowerCase();
-  if (!cleanTargetId) return null;
-
-  // 0순위: 행(Row)의 어떤 셀이라도 cleanTargetId와 일치하는 값이 있는지 전수 검사
-  // (열 이름이 'No.', 'ID', '번호', '순번' 등 무엇이든 'M000' 값이 들어있는 행을 100% 매칭)
-  for (let i = 0; i < members.length; i++) {
-    const m = members[i];
-    if (m && typeof m === 'object') {
-      const vals = Object.values(m);
-      for (let j = 0; j < vals.length; j++) {
-        const v = vals[j];
-        if (v !== undefined && v !== null && String(v).trim() !== '') {
-          const cleanV = String(v).replace(/[\s\r\n]+/g, '').toLowerCase();
-          if (cleanV === cleanTargetId) {
-            console.log(`[회원 뷰어] 셀 직접 일치 매칭 성공: ${cleanTargetId}`);
-            return m;
-          }
-        }
-      }
-    }
-  }
-
-  // 1순위: 회원번호 열 또는 키 직접 일치
-
-  for (let i = 0; i < members.length; i++) {
-    const m = members[i];
-    const no = String(findValByKeywords(m, ['회원번호']) ||
-                      findValByKeywords(m, ['고유번호']) ||
-                      getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').replace(/[\s\r\n]+/g, '').toLowerCase();
-    if (no && no === cleanTargetId) return m;
-
-    // 만약 M001 <-> 1 형태의 숫자 일치
-    const targetDigits = cleanTargetId.replace(/[^0-9]/g, '');
-    const noDigits = no.replace(/[^0-9]/g, '');
-    if (targetDigits && noDigits && targetDigits === noDigits && (cleanTargetId.startsWith('m') || no.startsWith('m'))) {
-      return m;
-    }
-  }
-
-  // 2순위: 시트 순번(Row Index) 매칭 (시트에 회원번호 열이 없는 경우 대비)
-  // 예: targetId가 'M001', 'M1', '1' 이면 1번째 회원(index 0) 매칭!
-  const targetNumMatch = cleanTargetId.match(/^m?0*([1-9][0-9]*)$/i);
-  if (targetNumMatch) {
-    const seqNum = parseInt(targetNumMatch[1], 10);
-    const targetIdx = seqNum - 1;
-    if (targetIdx >= 0 && targetIdx < members.length) {
-      console.log(`[회원 뷰어] 순번 기반 회원 매칭 성공: index ${targetIdx} (targetId: ${cleanTargetId})`);
-      return members[targetIdx];
-    }
-  }
-
-  // 3순위: 이름 매칭 (완전 일치 또는 괄호 제거 순수 이름 일치)
-  for (let i = 0; i < members.length; i++) {
-    const m = members[i];
-    const rawName = String(findValByKeywords(m, ['이름'], ['코치']) ||
-                           findValByKeywords(m, ['성명']) ||
-                           findValByKeywords(m, ['성함']) ||
-                           getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름', '성함') || '').replace(/[\s\r\n]+/g, '').toLowerCase();
-    if (!rawName) continue;
-
-    if (rawName === cleanTargetId) return m;
-
-    // 괄호 제거 (예: '김민수(일반반)' -> '김민수')
-    const pureName = rawName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
-    const pureTarget = cleanTargetId.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
-    if (pureName && pureTarget && (pureName === pureTarget || pureName.includes(pureTarget) || pureTarget.includes(pureName))) {
-      return m;
-    }
-  }
-
-  // 4순위: 전화번호 뒷 4자리 매칭 (혹시 01012345678이나 5678로 URL에 들어온 경우)
-  if (cleanTargetId.length >= 4) {
-    const targetLast4 = cleanTargetId.slice(-4);
-    for (let i = 0; i < members.length; i++) {
-      const m = members[i];
-      const phoneLast4 = getMemberPhoneLast4(m);
-      if (phoneLast4 && phoneLast4 !== '0000' && phoneLast4 === targetLast4) {
-        return m;
-      }
-    }
-  }
-
-  return null;
+  const target = String(targetId || '').trim();
+  if (!target) return null;
+  const matches = members.filter(m => getMemberNo(m) === target);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 
@@ -1086,36 +953,13 @@ function findMemberInList(members, targetId) {
  */
 function filterFeedbacksForMember(feedbacks, member) {
   if (!feedbacks || !Array.isArray(feedbacks) || !member) return [];
-
-  const memberName = getMemberName(member);
+  // [미리보기 전용] 실제 회원 피드백은 서버(memberViewFilterFeedbacks)에서 걸러서 내려옴
+  const memberName = getMemberName(member).trim();
   const memberNo = getMemberNo(member);
-  const memberPhone = getMemberPhoneLast4(member);
-  const cleanMemberName = memberName.replace(/\s+/g, '').toLowerCase();
-  const cleanMemberNo = memberNo.replace(/\s+/g, '').toLowerCase();
-
   return feedbacks.filter(f => {
-    const rawFName = extractFeedbackName(f);
-    const rawFNo = extractFeedbackMemberNo(f);
-    const fName = rawFName.replace(/\s+/g, '').toLowerCase();
-    const fNo = rawFNo.replace(/\s+/g, '').toLowerCase();
-    const fPhone = String(getField(f, '연락처', '전화번호', '휴대폰', '핸드폰', 'phone') || '').replace(/[^0-9]/g, '');
-
-    // 1. 회원번호 일치
-    if (cleanMemberNo && fNo && (fNo === cleanMemberNo || fNo.includes(cleanMemberNo))) return true;
-    
-    // 2. 이름 일치 (괄호 및 안내문구 제거 후 순수 한글/영문 이름 비교)
-    if (cleanMemberName && fName) {
-      const pureFName = fName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
-      const pureMemName = cleanMemberName.split('(')[0].replace(/[^가-힣a-zA-Z0-9]/g, '');
-      if (fName === cleanMemberName || pureFName === pureMemName || fName.includes(pureMemName) || pureMemName.includes(pureFName)) {
-        return true;
-      }
-    }
-
-    // 3. 휴대폰 뒷 4자리 일치
-    if (memberPhone && memberPhone !== '0000' && fPhone && fPhone.slice(-4) === memberPhone) return true;
-
-    return false;
+    const fNo = String(extractFeedbackMemberNo(f) || '').trim();
+    if (memberNo && fNo) return fNo === memberNo;
+    return !!memberName && String(extractFeedbackName(f) || '').trim() === memberName;
   });
 }
 
@@ -1168,42 +1012,8 @@ function showMemberAuthModal() {
 }
 
 /**
- * [오프라인 Mock 전용] 인증 모달 표시 (실제 회원은 서버 인증 흐름 사용)
- */
-function checkMemberAuthAndDisplay() {
-  if (!CurrentMemberState.member) {
-    showInvalidAccessScreen();
-    return;
-  }
-  showMemberAuthModal();
-}
-
-/**
- * 휴대폰 번호 뒷 4자리 추출 헬퍼 (구글 폼 긴 질문 헤더 100% 자동 감지)
- * - 번호 미등록 시 빈 문자열 반환 (비상 비밀번호 없음)
- */
-function getMemberPhoneLast4(member) {
-  if (!member) return '';
-
-  // 스마트 키워드 스캔: '연락처', '전화번호', '휴대폰', '핸드폰', '전화'
-  let rawPhone = findValByKeywords(member, ['연락처']) ||
-                 findValByKeywords(member, ['전화번호']) ||
-                 findValByKeywords(member, ['휴대폰']) ||
-                 findValByKeywords(member, ['핸드폰']) ||
-                 findValByKeywords(member, ['전화']) ||
-                 findValByKeywords(member, ['phone']) ||
-                 findValByKeywords(member, ['mobile']) ||
-                 findValByKeywords(member, ['tel']) ||
-                 getField(member, '연락처', '전화번호', '휴대폰', '핸드폰', 'phone', 'tel', 'mobile', '연락처(휴대폰)');
-
-  const digits = String(rawPhone || '').replace(/[^0-9]/g, '');
-  return digits.length >= 4 ? digits.slice(-4) : '';
-}
-
-/**
  * 회원 로그인 검증 실행
- * - 실제 회원: GAS 서버에서 휴대폰 뒷 4자리 검증 후 본인 데이터 수신
- * - 오프라인 Mock 회원: 샘플 데이터의 휴대폰 뒷 4자리로 로컬 검증
+ * - 휴대폰 뒷 4자리는 GAS 서버에서만 검증 (브라우저에서 비교하지 않음)
  */
 async function handleMemberAuthLogin() {
   const inputEl = document.getElementById('memberPinInput');
@@ -1237,21 +1047,7 @@ async function handleMemberAuthLogin() {
     unlockAndRenderMemberPage();
   };
 
-  // [오프라인 Mock 모드 / 구버전 GAS 전환기] 로컬 검증 (등록 번호와 정확히 일치할 때만 통과)
-  if (CurrentMemberState.isUsingMock || CurrentMemberState.isLegacyBackend) {
-    const correctPin = getMemberPhoneLast4(CurrentMemberState.member);
-    if (correctPin && enteredPin === correctPin) {
-      if (CurrentMemberState.isLegacyBackend) {
-        try { sessionStorage.setItem('legacy_member_auth_' + CurrentMemberState.targetId, 'true'); } catch (e) {}
-      }
-      closeModalAndRender();
-    } else {
-      failAuth('비밀번호가 일치하지 않습니다. 등록하신 휴대폰 번호 뒤 4자리를 입력해 주세요.');
-    }
-    return;
-  }
-
-  // [실제 회원] 서버 검증
+  // 서버 검증
   const btnOriginalHtml = btnEl ? btnEl.innerHTML : '';
   if (btnEl) {
     btnEl.disabled = true;
@@ -2493,8 +2289,19 @@ function getMemberName(m) {
   return String(getField(m, '이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름') || '회원').trim();
 }
 
+// 회원번호 열 이름 (공백·대소문자만 무시하고 열 이름이 정확히 같을 때만 인정 - 서버 MEMBER_NO_HEADERS와 동일)
+const MEMBER_NO_HEADERS = ['회원번호', '회원ID', 'memberId', '고유번호'];
+
 function getMemberNo(m) {
-  return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '고유번호') || '').trim();
+  if (!m || typeof m !== 'object') return '';
+  const keys = Object.keys(m);
+  for (const header of MEMBER_NO_HEADERS) {
+    const wanted = header.replace(/[\s\r\n]+/g, '').toLowerCase();
+    const key = keys.find(k => String(k).replace(/[\s\r\n]+/g, '').toLowerCase() === wanted);
+    const val = key !== undefined ? String(m[key] === null || m[key] === undefined ? '' : m[key]).trim() : '';
+    if (val) return val;
+  }
+  return '';
 }
 
 function getMemberTag(m) {
@@ -2589,7 +2396,8 @@ function promptGasUrl() {
 // 모바일 기기에서도 즉시 열리는 완전한 회원 전용 링크 복사 함수
 function copyFullMemberLink() {
   const member = CurrentMemberState.member;
-  const memberId = member ? (getMemberNo(member) || getMemberName(member)) : (extractMemberIdSmartly() || 'M001');
+  // 회원 페이지는 회원번호 정확 일치로만 열리므로 회원번호(없으면 현재 접속 식별값)로만 링크 생성
+  const memberId = (member && getMemberNo(member)) || CurrentMemberState.targetId || extractMemberIdSmartly() || '';
   const gasUrl = (localStorage.getItem(STORAGE_GAS_URL_KEY) || DEFAULT_GAS_API_URL || '').trim();
 
   const baseUrl = window.location.origin + window.location.pathname;
@@ -2658,7 +2466,7 @@ function setMemberFieldExact(member, name, value) {
 }
 
 function canMemberSelfEdit() {
-  return !CurrentMemberState.isUsingMock && !CurrentMemberState.isLegacyBackend &&
+  return !CurrentMemberState.isUsingMock &&
     !!storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId);
 }
 
@@ -2771,7 +2579,7 @@ function applySelfEditResult(kind, res) {
   const f = SELF_EDIT_FIELDS[kind];
   const member = CurrentMemberState.member;
   // [다른 회원 오반영 차단] 서버가 처리한 회원과 현재 화면의 회원이 다르면 화면/저장본에 반영하지 않음
-  const currentKey = getMemberNo(member) || getMemberName(member);
+  const currentKey = getMemberNo(member);
   if (!res.memberKey || res.memberKey !== currentKey) {
     console.warn('[회원 셀프 수정] 응답 회원 불일치 - 반영 차단', { expected: currentKey, got: res.memberKey });
     return false;

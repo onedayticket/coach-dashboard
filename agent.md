@@ -108,8 +108,8 @@ coach-dashboard/
 ### 6.6 현재 코드에 남아 있는 정리 대상
 아래는 위 규칙과 어긋나는 기존 코드입니다. 해당 부분을 수정할 때 규칙에 맞게 옮기고, 같은 패턴을 새로 만들지 마십시오.
 - `app.js`의 브라우저 직통 모드 프롬프트(운동 루틴·식단·데일리 피드백 생성) → `gas_backend.js`로 일원화 대상
-- `app.js`의 `simulateMockAction`이 GAS 실패 시 만드는 Mock AI 응답, 서버 지연 시 Mock 모드로 전환하는 처리 → 실패 표시 + 재시도로 교체 대상
-- `gas_backend.js`의 `generateDailyFeedbackCore`, `handleAiComprehensiveFeedback`, 운동 루틴·식단 생성 핸들러가 AI 실패 시 고정 문장을 반환하는 처리 → 실패 반환으로 교체 대상
+- `gas_backend.js`의 `locateUniqueMemberRow`(코치 저장용)가 회원번호가 없을 때 이름으로 행을 찾는 처리 → 회원번호 전용으로 교체 대상
+- 폼 제출 피드백(Feedbacks)과 회원 연결이 이름 완전 일치에 의존 (폼에 회원번호 항목이 없음) → 폼에 회원번호 항목 추가 후 교체 대상
 
 ---
 
