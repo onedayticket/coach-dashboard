@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.10';
+const BACKEND_VERSION = '2026-10-24.11';
 
 /**
  * CORS 대응 (doOptions)
@@ -1895,9 +1895,20 @@ const DAILY_FEEDBACK_MAX_OUTPUT_TOKENS = 8192;
  * - 작성 규칙(분량·말투·쓸 내용)은 코드에 두지 않고 Guidelines 시트의 '데일리 피드백 지침'을 따름
  * - memberFeedbacks: 해당 회원의 피드백 목록 (공복 체중 기록만 사용)
  * - styleExamples: selectStyleExamplesForPrompt 결과 (말투 참고용)
+ * - options.onlyKeys: 출력 JSON 항목 제한 (기존 피드백 보충 시 ['잘한_점', '개선할_점'])
+ * - options.existingNote: 이미 작성되어 그대로 유지되는 코치 한마디 (참고용으로 전달)
  * @return {{prompt: string, systemInstruction: string, scores: {exercise, diet}}}
  */
-function buildDailyFeedbackPrompt(member, feedback, memberFeedbacks, guidelines, styleExamples) {
+const DAILY_FEEDBACK_OUTPUT_FIELDS = [
+  ['피드백_요약', '코치만 보는 칸: 오늘 기록의 요약'],
+  ['잘한_점', '회원에게 보이는 칸'],
+  ['개선할_점', '회원에게 보이는 칸'],
+  ['코치_한마디', '회원에게 보이는 칸'],
+  ['코치_확인_필요', '코치만 보는 칸: 코치가 직접 확인해야 할 사항. 없으면 빈 문자열']
+];
+
+function buildDailyFeedbackPrompt(member, feedback, memberFeedbacks, guidelines, styleExamples, options) {
+  const opts = options || {};
   const currentFeedback = feedback || {};
   const m = member || {};
   const feedbackGuideline = String((guidelines && guidelines.feedback) || '').trim();
@@ -1929,6 +1940,16 @@ ${examples.map((t, i) => `<예시 ${i + 1}>\n${t}`).join('\n\n')}
 [데일리 피드백 지침 (작성 규칙 - 분량·말투·쓸 내용은 이 지침을 따름)]
 ${feedbackGuideline}
 ` : '';
+  const existingNote = String(opts.existingNote || '').trim();
+  const existingNoteBlock = existingNote ? `
+[이미 회원에게 보낸 코치 한마디 (그대로 유지 - 다시 쓰지 않음)]
+${existingNote}
+※ 아래 항목은 이 코치 한마디와 내용이 겹치거나 어긋나지 않게 작성하십시오.
+` : '';
+  const outputFields = Array.isArray(opts.onlyKeys)
+    ? DAILY_FEEDBACK_OUTPUT_FIELDS.filter(([k]) => opts.onlyKeys.includes(k))
+    : DAILY_FEEDBACK_OUTPUT_FIELDS;
+  const outputJson = '{\n' + outputFields.map(([k, d]) => `  "${k}": "${d}"`).join(',\n') + '\n}';
 
   const prompt = `
 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 데일리 피드백 초안을 작성해 주세요.
@@ -1950,16 +1971,10 @@ ${describeScoresForPrompt(scores)}
 
 [공복 체중 기록 (날짜순)]
 ${weightLines}
-${exampleBlock}${guidelineBlock}
+${exampleBlock}${guidelineBlock}${existingNoteBlock}
 [출력 형식]
 아래 JSON 객체 하나만 출력하십시오. 다른 설명이나 마크다운은 쓰지 마십시오.
-{
-  "피드백_요약": "코치만 보는 칸: 오늘 기록의 요약",
-  "잘한_점": "회원에게 보이는 칸",
-  "개선할_점": "회원에게 보이는 칸",
-  "코치_한마디": "회원에게 보이는 칸",
-  "코치_확인_필요": "코치만 보는 칸: 코치가 직접 확인해야 할 사항. 없으면 빈 문자열"
-}
+${outputJson}
 `;
 
   return {
@@ -1994,7 +2009,50 @@ function buildDailyFeedbackPromptFromPayload(ss, payload) {
   const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
   const feedback = payload.feedback || {};
   const styleExamples = Array.isArray(payload._styleExamples) ? payload._styleExamples : loadStyleExamplesFromSheet(ss, feedback);
-  return buildDailyFeedbackPrompt(payload.member || {}, feedback, payload.recentFeedbacks || [], guidelines, styleExamples);
+  return buildDailyFeedbackPrompt(payload.member || {}, feedback, payload.recentFeedbacks || [], guidelines, styleExamples, payload._promptOptions);
+}
+
+/**
+ * AI 응답 문자열에서 JSON 객체 하나를 꺼냄 (```json 감싸기·문자열 안 줄바꿈·끝 쉼표 보정), 해석 불가 시 예외
+ */
+function parseAiJsonObject(text) {
+  let str = text.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const firstBrace = str.indexOf('{');
+  const lastBrace = str.lastIndexOf('}');
+  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+    str = str.substring(firstBrace, lastBrace + 1);
+  }
+  let rawJson = null;
+  try {
+    rawJson = JSON.parse(str);
+  } catch (e1) {
+    let inString = false;
+    let escaped = false;
+    let out = '';
+    for (let i = 0; i < str.length; i++) {
+      const c = str[i];
+      if (c === '"' && !escaped) {
+        inString = !inString;
+        out += c;
+      } else if (c === '\\' && inString) {
+        escaped = !escaped;
+        out += c;
+      } else {
+        if (inString) {
+          if (c === '\n') out += '\\n';
+          else if (c === '\r') out += '\\r';
+          else if (c === '\t') out += '\\t';
+          else out += c;
+        } else {
+          out += c;
+        }
+        escaped = false;
+      }
+    }
+    out = out.replace(/,\s*([\}\]])/g, '$1');
+    rawJson = JSON.parse(out);
+  }
+  return rawJson;
 }
 
 /**
@@ -2013,43 +2071,7 @@ function generateDailyFeedbackCore(ss, payload) {
   let parsed = null;
   if (aiResult.text) {
     try {
-      let str = aiResult.text.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const firstBrace = str.indexOf('{');
-      const lastBrace = str.lastIndexOf('}');
-      if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-        str = str.substring(firstBrace, lastBrace + 1);
-      }
-      let rawJson = null;
-      try {
-        rawJson = JSON.parse(str);
-      } catch (e1) {
-        let inString = false;
-        let escaped = false;
-        let out = '';
-        for (let i = 0; i < str.length; i++) {
-          const c = str[i];
-          if (c === '"' && !escaped) {
-            inString = !inString;
-            out += c;
-          } else if (c === '\\' && inString) {
-            escaped = !escaped;
-            out += c;
-          } else {
-            if (inString) {
-              if (c === '\n') out += '\\n';
-              else if (c === '\r') out += '\\r';
-              else if (c === '\t') out += '\\t';
-              else out += c;
-            } else {
-              out += c;
-            }
-            escaped = false;
-          }
-        }
-        out = out.replace(/,\s*([\}\]])/g, '$1');
-        rawJson = JSON.parse(out);
-      }
-
+      const rawJson = parseAiJsonObject(aiResult.text);
       if (rawJson) {
         // 누락 항목에 기본 문장을 채우지 않음 (빈 값 유지)
         const pick = (names) => {
@@ -2605,6 +2627,7 @@ function onOpen() {
       .addItem('🧮 빈 점수 다시 계산', 'fillMissingFeedbackScores')
       .addItem('📋 점수 답변값 점검', 'inspectScoreAnswers')
       .addItem('🧹 피드백 열 정리 (1회)', 'cleanupFeedbackColumns')
+      .addItem('✍️ 기존 피드백 잘한 점·개선할 점 채우기', 'backfillFeedbackGoodImprove')
       .addSeparator()
       .addItem('🔍 feedbacks 시트 헤더/데이터 진단', 'debugInspectFeedbacksSheet')
       .addSeparator()
@@ -2910,6 +2933,179 @@ function cleanupFeedbackColumns() {
   Logger.log('[cleanupFeedbackColumns] ' + done);
   ui.alert('피드백 열 정리', done, ui.ButtonSet.OK);
   return { status: 'success', backupName: backupName };
+}
+
+/**
+ * [시트 메뉴] 기존 피드백 잘한 점·개선할 점 채우기
+ * - 대상: 잘한 점·개선할 점이 둘 다 비어 있고, 코치가 쓴 내용(코치 한마디·피드백 코멘트·요약) 또는 '완료' 상태가 있는 행
+ * - AI로 잘한 점·개선할 점만 만들어 기록. 코치 한마디·피드백 코멘트·피드백 상태는 건드리지 않음
+ * - 이미 쓴 코치 한마디(없으면 예전 형식 피드백 코멘트)는 겹치지 않도록 AI에게 참고로 전달
+ * - 실행 시간 제한(6분) 때문에 4분마다 끊고, 남은 행은 1분 뒤 자동으로 이어서 처리
+ * - AI 실패 행은 비워 둔 채 건너뜀 (메뉴를 다시 실행하면 재시도)
+ */
+const PARTS_BACKFILL_STATE_KEY = 'FEEDBACK_PARTS_BACKFILL_STATE';
+const PARTS_BACKFILL_HANDLER = 'continueFeedbackPartsBackfill';
+const PARTS_BACKFILL_RUN_BUDGET_MS = 240000;
+const PARTS_BACKFILL_KEYS = ['잘한_점', '개선할_점'];
+
+// 예전 형식 피드백 코멘트에서 회원에게 보낸 코치 글만 (새 형식 [잘한 점]… 이면 빈 값, [문제점 분석] 블록 제외)
+function legacyCoachNoteFromComment(comment) {
+  const text = String(comment || '');
+  if (/\[(잘한 점|개선할 점|코치 한마디)\]/.test(text)) return '';
+  return text.replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '').trim();
+}
+
+function getExistingCoachNote(fb) {
+  return getFeedbackPart(fb, FEEDBACK_MEMBER_PARTS[2]) ||
+    legacyCoachNoteFromComment(getFeedbackPart(fb, { header: '피드백 코멘트', aliases: [] }));
+}
+
+function isFeedbackPartsBackfillTarget(fb) {
+  if (getFeedbackPart(fb, FEEDBACK_MEMBER_PARTS[0]) || getFeedbackPart(fb, FEEDBACK_MEMBER_PARTS[1])) return false;
+  const status = getFeedbackPart(fb, { header: '피드백 상태', aliases: [] });
+  return status === '완료' || !!getExistingCoachNote(fb) || !!getFeedbackPart(fb, { header: '피드백_요약', aliases: [] });
+}
+
+// 잘한 점·개선할 점만 AI로 생성 (프롬프트는 buildDailyFeedbackPrompt 공용, 출력 항목만 제한)
+function generateFeedbackPartsBackfill(ss, payload) {
+  const built = buildDailyFeedbackPromptFromPayload(ss, payload);
+  const aiResult = callGemini(built.prompt, built.systemInstruction, payload, { maxOutputTokens: built.maxOutputTokens });
+  if (!aiResult.text) return { ok: false, message: (aiResult.debug && aiResult.debug.errorMessage) || 'AI 응답 없음' };
+  if (aiResult.debug && aiResult.debug.isTruncated) return { ok: false, message: 'AI 응답이 최대 길이에서 잘렸습니다.' };
+  let rawJson = null;
+  try {
+    rawJson = parseAiJsonObject(aiResult.text);
+  } catch (e) {
+    return { ok: false, message: 'AI 응답 형식을 해석하지 못했습니다.' };
+  }
+  const pick = (names) => {
+    for (let i = 0; i < names.length; i++) {
+      const v = rawJson && rawJson[names[i]];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+    return '';
+  };
+  const good = pick(['잘한_점', '잘한 점', '잘한점']);
+  const improve = pick(['개선할_점', '개선할 점', '개선할점']);
+  if (!good && !improve) return { ok: false, message: 'AI 응답에 잘한 점·개선할 점이 없습니다.' };
+  return { ok: true, good: good, improve: improve };
+}
+
+function deletePartsBackfillTriggers() {
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (t.getHandlerFunction() === PARTS_BACKFILL_HANDLER) ScriptApp.deleteTrigger(t);
+  });
+}
+
+function backfillFeedbackGoodImprove() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!sheet) {
+    ui.alert('잘한 점·개선할 점 채우기', 'Feedbacks 시트를 찾을 수 없습니다.', ui.ButtonSet.OK);
+    return;
+  }
+  const count = getSheetDataWithHeaders(sheet).filter(isFeedbackPartsBackfillTarget).length;
+  if (count === 0) {
+    ui.alert('잘한 점·개선할 점 채우기', '채울 행이 없습니다. (잘한 점·개선할 점이 비어 있는 기존 피드백 없음)', ui.ButtonSet.OK);
+    return;
+  }
+  const msg = `잘한 점·개선할 점이 비어 있는 기존 피드백 ${count}건에 AI로 두 칸만 채웁니다.\n\n` +
+    `- 코치 한마디·피드백 코멘트·피드백 상태는 바꾸지 않습니다.\n` +
+    `- 4분마다 끊고 1분 뒤 자동으로 이어서 처리합니다 (창을 닫아도 계속 진행).\n` +
+    `- AI가 실패한 행은 비워 둡니다. 끝난 뒤 메뉴를 다시 실행하면 재시도합니다.\n\n진행할까요?`;
+  if (ui.alert('✍️ 잘한 점·개선할 점 채우기', msg, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+
+  PropertiesService.getScriptProperties().setProperty(PARTS_BACKFILL_STATE_KEY, JSON.stringify({ failed: [], filled: 0, skipped: 0 }));
+  const result = runFeedbackPartsBackfill();
+  ui.alert('잘한 점·개선할 점 채우기', result.message, ui.ButtonSet.OK);
+}
+
+// 시간 트리거로 이어서 실행
+function continueFeedbackPartsBackfill() {
+  runFeedbackPartsBackfill();
+}
+
+function runFeedbackPartsBackfill() {
+  const startMs = new Date().getTime();
+  deletePartsBackfillTriggers();
+  const props = PropertiesService.getScriptProperties();
+  let state = { failed: [], filled: 0, skipped: 0 };
+  try {
+    state = Object.assign(state, JSON.parse(props.getProperty(PARTS_BACKFILL_STATE_KEY) || '{}'));
+  } catch (e) {}
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+  const guidelines = getGuidelinesData(ss.getSheetByName('Guidelines') || findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
+  const allFeedbacks = getSheetDataWithHeaders(sheet);
+  const allMembers = memberSheet ? getSheetDataWithHeaders(memberSheet) : [];
+  const targets = allFeedbacks.filter(f => isFeedbackPartsBackfillTarget(f) && !state.failed.includes(f._rowNumber));
+  const colMap = getHeaderColumnMap(sheet);
+
+  let index = 0;
+  for (; index < targets.length; index++) {
+    if (new Date().getTime() - startMs > PARTS_BACKFILL_RUN_BUDGET_MS) break;
+    const fb = targets[index];
+    const row = fb._rowNumber;
+    const name = getFeedbackRowName(fb);
+    const date = getFeedbackRowDate(fb);
+    // [정확 매칭] 회원 프로필·체중 기록은 이름(앞뒤 공백 제외) 완전 일치 (폼 제출 트리거와 동일)
+    const member = allMembers.find(m => String(memberViewGetName(m) || '').trim() === name) || { '이름': name };
+    const res = generateFeedbackPartsBackfill(ss, {
+      member: member,
+      feedback: fb,
+      recentFeedbacks: allFeedbacks.filter(f => getFeedbackRowName(f) === name),
+      guidelines: guidelines,
+      _styleExamples: selectStyleExamplesForPrompt(allFeedbacks, fb),
+      _promptOptions: { onlyKeys: PARTS_BACKFILL_KEYS, existingNote: getExistingCoachNote(fb) }
+    });
+    if (!res.ok) {
+      state.failed.push(row);
+      Logger.log(`[잘한 점·개선할 점 채우기] Row ${row} 실패: ${res.message}`);
+      continue;
+    }
+
+    // AI 생성 동안 행이 바뀌었는지(정렬·코치 저장) 다시 확인한 뒤 같은 행·두 칸 모두 빈 경우에만 기록
+    const lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try {
+      const lastCol = sheet.getLastColumn();
+      const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+      const vals = sheet.getRange(row, 1, 1, lastCol).getValues()[0];
+      const now = {};
+      headers.forEach((h, i) => { if (String(h).trim()) now[String(h).trim()] = vals[i]; });
+      const sameRow = getFeedbackRowName(now) === name && getFeedbackRowDate(now) === date;
+      const stillEmpty = !getFeedbackPart(now, FEEDBACK_MEMBER_PARTS[0]) && !getFeedbackPart(now, FEEDBACK_MEMBER_PARTS[1]);
+      if (sameRow && stillEmpty) {
+        writeFeedbackPart(sheet, colMap, row, FEEDBACK_MEMBER_PARTS[0], res.good);
+        writeFeedbackPart(sheet, colMap, row, FEEDBACK_MEMBER_PARTS[1], res.improve);
+        SpreadsheetApp.flush();
+        state.filled++;
+      } else {
+        state.skipped++;
+        Logger.log(`[잘한 점·개선할 점 채우기] Row ${row} 건너뜀 (${sameRow ? '그사이 내용이 채워짐' : '행 위치가 바뀜'})`);
+      }
+    } finally {
+      lock.releaseLock();
+    }
+    Utilities.sleep(600);
+  }
+
+  const remaining = targets.length - index;
+  let message;
+  if (remaining > 0) {
+    props.setProperty(PARTS_BACKFILL_STATE_KEY, JSON.stringify(state));
+    ScriptApp.newTrigger(PARTS_BACKFILL_HANDLER).timeBased().after(60 * 1000).create();
+    message = `지금까지 ${state.filled}건 채움, 실패 ${state.failed.length}건. 남은 ${remaining}건은 1분 뒤 자동으로 이어서 처리합니다.`;
+  } else {
+    props.deleteProperty(PARTS_BACKFILL_STATE_KEY);
+    message = `완료: ${state.filled}건 채움, 실패 ${state.failed.length}건, 건너뜀 ${state.skipped}건.` +
+      (state.failed.length ? `\n실패 행: ${state.failed.join(', ')} (메뉴를 다시 실행하면 재시도)` : '');
+  }
+  Logger.log('[잘한 점·개선할 점 채우기] ' + message);
+  return { message: message, remaining: remaining };
 }
 
 /**

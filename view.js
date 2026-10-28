@@ -560,15 +560,17 @@ function getExactFeedbackField(fb, headers) {
   return '';
 }
 
-// [{label, text}] - 내용 있는 칸만, 예전 형식이면 [{label: '코치 피드백', text: 피드백 코멘트}]
+// [{label, text}] - 내용 있는 칸만. 코치 한마디가 비어 있으면 예전 형식 피드백 코멘트를 대신 표시
 function extractFeedbackMemberParts(fb) {
   if (!fb) return [];
-  const parts = FEEDBACK_MEMBER_PARTS.map(p => ({ label: p.label, text: getExactFeedbackField(fb, p.headers) })).filter(p => p.text);
-  if (parts.length > 0) return parts;
-  const legacy = getExactFeedbackField(fb, ['피드백 코멘트'])
-    .replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '')
-    .trim();
-  return legacy ? [{ label: '코치 피드백', text: legacy }] : [];
+  const parts = FEEDBACK_MEMBER_PARTS.map(p => ({ label: p.label, text: getExactFeedbackField(fb, p.headers) }));
+  if (!parts[2].text) {
+    const comment = getExactFeedbackField(fb, ['피드백 코멘트']);
+    const legacy = /\[(잘한 점|개선할 점|코치 한마디)\]/.test(comment) ? ''
+      : comment.replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '').trim();
+    if (legacy) parts[2] = { label: (parts[0].text || parts[1].text) ? parts[2].label : '코치 피드백', text: legacy };
+  }
+  return parts.filter(p => p.text);
 }
 
 function renderFeedbackPartsHtml(parts) {

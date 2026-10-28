@@ -637,7 +637,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.10';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.11';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -3620,11 +3620,13 @@ function renderFeedbackTable(feedbacks) {
     const summary = String(getField(fb, '피드백_요약', '피드백 요약', '피드백요약', 'summary', 'feedbackSummary') || '').trim() || '미작성';
     const memberParts = FEEDBACK_MEMBER_PARTS.map(p => getFeedbackPart(fb, p));
     const coachCheck = getFeedbackPart(fb, FEEDBACK_COACH_CHECK);
-    // 예전 기록(회원용 칸이 모두 비어 있음)은 저장된 피드백 코멘트를 코치 한마디 칸에 대신 표시
+    // 예전 기록은 코치 한마디가 비어 있으면 예전 형식 피드백 코멘트를 코치 한마디 칸에 대신 표시
     const savedComment = getFeedbackCommentText(fb);
-    const isLegacy = memberParts.every(v => !v) && !!savedComment;
-    const [good, improve, note] = isLegacy ? ['', '', savedComment] : memberParts;
-    const memberCommentForCopy = isLegacy ? savedComment : (composeMemberFeedbackComment(good, improve, note) || savedComment);
+    const legacyNote = memberParts[2] ? '' : legacyCoachNoteFromComment(savedComment);
+    const isLegacy = !!legacyNote && !memberParts[0] && !memberParts[1];
+    const [good, improve] = memberParts;
+    const note = memberParts[2] || legacyNote;
+    const memberCommentForCopy = composeMemberFeedbackComment(good, improve, note) || savedComment;
     const partCell = (cls, label, text, tone) => `
         <td class="${cls} small ${text ? '' : 'is-empty'}" data-label="${label}" style="min-width: 180px; max-width: 280px;">
           <div class="feedback-text-cell ${text ? tone : 'text-muted'}" title="${escapeHtml(text || '미작성')}">${escapeHtml(text || '미작성')}</div>
@@ -3779,9 +3781,8 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   // 4. 피드백 요약(코치용) / 잘한 점·개선할 점·코치 한마디(회원용) / 코치 확인 필요(코치용) 세팅
   const summaryVal = String(getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', 'summary', 'feedbackSummary') || '').trim();
   const memberPartVals = FEEDBACK_MEMBER_PARTS.map(p => getFeedbackPart(targetFb, p));
-  // 예전 형식 기록(회원용 칸이 모두 비어 있음)은 저장된 피드백 코멘트를 코치 한마디 칸에 불러옴
-  const legacyComment = memberPartVals.every(v => !v) ? getFeedbackCommentText(targetFb) : '';
-  if (legacyComment) memberPartVals[2] = legacyComment;
+  // 코치 한마디가 비어 있으면 예전 형식 피드백 코멘트를 코치 한마디 칸에 불러옴
+  if (!memberPartVals[2]) memberPartVals[2] = legacyCoachNoteFromComment(getFeedbackCommentText(targetFb));
 
   setInputValue('dfModalSummary', summaryVal);
   FEEDBACK_MEMBER_PARTS.forEach((p, i) => setInputValue(p.inputId, memberPartVals[i]));
@@ -4979,6 +4980,13 @@ function isCoachWrittenFeedbackColumn(key) {
 
 function getFeedbackCommentText(fb) {
   return String(getField(fb, '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', '코치 피드백', '코치피드백', 'feedbackComment', 'coachComment') || '').trim();
+}
+
+// 예전 형식 피드백 코멘트에서 회원에게 보낸 코치 글만 (새 형식 [잘한 점]… 이면 빈 값, [문제점 분석] 블록 제외) - gas_backend.js와 동일
+function legacyCoachNoteFromComment(comment) {
+  const text = String(comment || '');
+  if (/\[(잘한 점|개선할 점|코치 한마디)\]/.test(text)) return '';
+  return text.replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '').trim();
 }
 
 // 회원용 최종본 = [잘한 점] + [개선할 점] + [코치 한마디] (빈 칸은 제목째 생략) - gas_backend.js composeMemberFeedbackComment와 동일 형식
