@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.8';
+const BACKEND_VERSION = '2026-10-24.9';
 
 /**
  * CORS 대응 (doOptions)
@@ -1645,6 +1645,136 @@ function normalizeScoreValue(raw) {
 }
 
 /**
+ * ==============================================================================
+ * [점수 계산 - AI가 아니라 코드가 계산] 폼 답변 -> 운동_실행률_점수 / 식단_실행률_점수
+ * - 운동 점수 = (시간 점수 + 강도 점수) / 2
+ *   · 시간: ~30분 1 / 30~40분 2 / 40~50분 3 / 50~60분 4 / 60분 이상 5
+ *   · 강도(1~10 직접 입력): 1~3 → 1 / 4~5 → 2 / 6~7 → 3 / 8 → 4 / 9~10 → 5
+ *   · '오늘 운동 하셨나요?'가 '아니오'면 0점, '오늘은 계획된 쉬는 날이에요'면 빈칸
+ * - 식단 점수 = '식단 대비 수행률(5점 만점)' 답변 숫자 그대로 (0~5 밖이면 빈칸)
+ * - 해석하지 못한 답변은 추측하지 않고 빈칸 + 사유(warnings)
+ * ==============================================================================
+ */
+const SCORE_ANSWER_KEYS = {
+  didExercise: { inc: ['운동', '하셨'], exc: ['시간', '강도', '점수', '실행률', '내용', '힘들', '궁금'] },
+  minutes: { inc: ['운동', '시간'], exc: ['점수', '실행률'] },
+  intensity: { inc: ['운동', '강도'], exc: ['점수', '실행률'] },
+  diet: { inc: ['식단', '수행률'], exc: ['점수', '실행률'] }
+};
+const EXERCISE_SCORE_HEADERS = ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore'];
+const DIET_SCORE_HEADERS = ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore'];
+
+function getScoreAnswer(feedback, kind) {
+  const spec = SCORE_ANSWER_KEYS[kind];
+  const val = memberViewFindVal(feedback || {}, spec.inc, spec.exc);
+  return (val === null || val === undefined) ? '' : String(val).trim();
+}
+
+// 운동 시간 답변 -> 1~5 (예: '~30 분', '30분 ~ 40분', '60분 이상', '45분', '1시간'), 해석 불가 시 null
+function scoreExerciseMinutes(raw) {
+  const s = String(raw === null || raw === undefined ? '' : raw).replace(/\s+/g, '');
+  if (!s) return null;
+  const nums = [];
+  const re = /(\d+(?:\.\d+)?)(시간|분)?/g;
+  let m;
+  while ((m = re.exec(s)) !== null) nums.push({ n: parseFloat(m[1]), unit: m[2] || '' });
+  if (nums.length === 0 || nums.length > 2) return null;
+  // 단위가 없는 앞 숫자는 뒤 숫자의 단위를 따름 (예: '30~40분'), 모두 없으면 분
+  const lastUnit = nums[nums.length - 1].unit || '분';
+  const minutes = nums.map(x => (x.unit || lastUnit) === '시간' ? x.n * 60 : x.n);
+  const bucket = (min) => min < 30 ? 1 : min < 40 ? 2 : min < 50 ? 3 : min < 60 ? 4 : 5;
+  // '~30분'·'30분 미만/이하'는 상한값 바로 아래 구간, 범위는 하한값 구간, 단일 값·'이상'은 그 값의 구간
+  const isUpperOnly = nums.length === 1 && (/^~/.test(s) || /미만|이하/.test(s));
+  return bucket(isUpperOnly ? minutes[0] - 0.001 : minutes[0]);
+}
+
+// 운동 강도(1~10 직접 입력) -> 1~5, 해석 불가 시 null (예: '7', '7점', '7/10' 허용, '6~7' 등 숫자 2개 이상은 불가)
+function scoreExerciseIntensity(raw) {
+  const s = String(raw === null || raw === undefined ? '' : raw).replace(/\s+/g, '').replace(/\/10(?:점)?$/, '');
+  const nums = s.match(/\d+(?:\.\d+)?/g);
+  if (!nums || nums.length !== 1) return null;
+  const n = parseFloat(nums[0]);
+  if (!(n > 0 && n <= 10)) return null;
+  return n <= 3 ? 1 : n <= 5 ? 2 : n <= 7 ? 3 : n <= 8 ? 4 : 5;
+}
+
+// 식단 수행률(5점 만점) -> 0~5, 해석 불가·범위 밖이면 null (예: '3.7', '4점', '4/5' 허용)
+function scoreDietAnswer(raw) {
+  const s = String(raw === null || raw === undefined ? '' : raw).replace(/\s+/g, '').replace(/\/5(?:점)?$/, '');
+  const nums = s.match(/\d+(?:\.\d+)?/g);
+  if (!nums || nums.length !== 1) return null;
+  const n = parseFloat(nums[0]);
+  return (n >= 0 && n <= 5) ? n : null;
+}
+
+/**
+ * 폼 답변으로 두 점수 계산 (시트 저장값은 보지 않음)
+ * @return {{exercise: number|'', diet: number|'', detail: {exerciseStatus: string, timeScore: number|null, intensityScore: number|null, warnings: string[]}}}
+ */
+function computeFeedbackScores(feedback) {
+  const detail = { exerciseStatus: '', timeScore: null, intensityScore: null, warnings: [] };
+  let exercise = '';
+
+  const did = getScoreAnswer(feedback, 'didExercise').replace(/\s+/g, '');
+  if (did.includes('쉬는')) {
+    detail.exerciseStatus = 'rest';
+  } else if (/^(아니|안했|no)/i.test(did)) {
+    detail.exerciseStatus = 'no';
+    exercise = 0;
+  } else {
+    detail.exerciseStatus = did ? 'yes' : 'unknown';
+    const minutesRaw = getScoreAnswer(feedback, 'minutes');
+    const intensityRaw = getScoreAnswer(feedback, 'intensity');
+    detail.timeScore = scoreExerciseMinutes(minutesRaw);
+    detail.intensityScore = scoreExerciseIntensity(intensityRaw);
+    if (detail.timeScore === null) detail.warnings.push(`운동 시간 답변 해석 불가: '${minutesRaw}'`);
+    if (detail.intensityScore === null) detail.warnings.push(`운동 강도 답변 해석 불가: '${intensityRaw}'`);
+    if (detail.timeScore !== null && detail.intensityScore !== null) {
+      exercise = (detail.timeScore + detail.intensityScore) / 2;
+    }
+  }
+
+  const dietRaw = getScoreAnswer(feedback, 'diet');
+  const dietScore = scoreDietAnswer(dietRaw);
+  if (dietScore === null) detail.warnings.push(`식단 수행률 답변 해석 불가: '${dietRaw}'`);
+
+  return { exercise: exercise, diet: dietScore === null ? '' : dietScore, detail: detail };
+}
+
+/**
+ * 피드백에 쓸 최종 점수: 시트에 저장된 점수(코치 수정값 포함)가 있으면 그 값, 없으면 computeFeedbackScores 계산값
+ */
+function resolveFeedbackScores(feedback) {
+  const computed = computeFeedbackScores(feedback);
+  const storedEx = normalizeScoreValue(getGasField(feedback || {}, EXERCISE_SCORE_HEADERS));
+  const storedDiet = normalizeScoreValue(getGasField(feedback || {}, DIET_SCORE_HEADERS));
+  return {
+    exercise: storedEx !== '' ? storedEx : computed.exercise,
+    diet: storedDiet !== '' ? storedDiet : computed.diet,
+    exerciseFromSheet: storedEx !== '',
+    dietFromSheet: storedDiet !== '',
+    detail: computed.detail
+  };
+}
+
+// 프롬프트용 점수 문장 (확정값)
+function describeScoresForPrompt(scores) {
+  const d = scores.detail || {};
+  let ex;
+  if (scores.exercise === '') {
+    ex = d.exerciseStatus === 'rest' ? '해당 없음 (오늘은 계획된 쉬는 날)' : '기록 없음';
+  } else if (!scores.exerciseFromSheet && d.exerciseStatus === 'no') {
+    ex = '0점 (오늘 운동하지 않음)';
+  } else if (!scores.exerciseFromSheet && d.timeScore !== null && d.intensityScore !== null) {
+    ex = `${scores.exercise}점 (운동 시간 ${d.timeScore}점 + 운동 강도 ${d.intensityScore}점의 평균, 5점 만점)`;
+  } else {
+    ex = `${scores.exercise}점 (5점 만점)`;
+  }
+  const diet = scores.diet === '' ? '기록 없음' : `${scores.diet}점 (5점 만점)`;
+  return `- 운동 점수: ${ex}\n- 식단 점수: ${diet}`;
+}
+
+/**
  * 데일리 피드백 프롬프트에 넣을 '최근 기록' 범위: 오늘(현재 피드백 날짜) 이전 기록 중 최근 N건
  * (나중에 날짜 기준(예: 7일)으로 바꿀 때 selectRecentFeedbacksForPrompt만 수정)
  */
@@ -1672,14 +1802,15 @@ function buildDailyFeedbackPrompt(member, feedback, recentFeedbacks, guidelines)
 
   const curDate = getFeedbackRowDate(currentFeedback) || '오늘';
   const curWeight = getGasField(currentFeedback, ['공복 몸무게', '공복몸무게', '체중', 'weight']) || '-';
-  const displayScore = (v) => (v !== '' && v !== null && v !== undefined) ? v : '-';
+  const displayScore = (v) => (v !== '' && v !== null && v !== undefined) ? v + '점' : '-';
+  // [점수는 코드가 계산] 시트 저장값 우선, 없으면 폼 답변으로 계산 (AI에게는 확정값으로만 전달)
+  const scores = resolveFeedbackScores(currentFeedback);
 
-  // 최근 체중 추이 텍스트 요약 (오늘 이전 기록만, 운동_실행률_점수·식단_실행률_점수 동의어 반영)
+  // 최근 체중 추이 텍스트 요약 (오늘 이전 기록만, 점수는 같은 규칙으로 계산)
   let weightHistorySummary = selectRecentFeedbacksForPrompt(currentFeedback, recentFeedbacks).map(f => {
     const fWeight = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
-    const fExScore = getGasField(f, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']);
-    const fDietScore = getGasField(f, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']);
-    return `${getFeedbackRowDate(f)}: ${fWeight}kg (운동: ${displayScore(fExScore)}점, 식단: ${displayScore(fDietScore)}점)`;
+    const fScores = resolveFeedbackScores(f);
+    return `${getFeedbackRowDate(f)}: ${fWeight}kg (운동: ${displayScore(fScores.exercise)}, 식단: ${displayScore(fScores.diet)})`;
   }).join('\n');
   if (!weightHistorySummary) {
     weightHistorySummary = `이전 기록 없음 (오늘 ${curDate}: ${curWeight}kg)`;
@@ -1708,6 +1839,9 @@ ${memberFullProfile}
 [오늘 피드백]
 ${feedbackFullData}
 
+[오늘 점수 (코드가 계산한 확정값 - 다시 계산하거나 바꾸지 마십시오)]
+${describeScoresForPrompt(scores)}
+
 [누적 피드백 및 체중 변화 추이 (최근)]
 ${weightHistorySummary}
 
@@ -1728,7 +1862,8 @@ ${weightHistorySummary}
 
   return {
     prompt: prompt,
-    systemInstruction: '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.'
+    systemInstruction: '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.',
+    scores: { exercise: scores.exercise, diet: scores.diet }
   };
 }
 
@@ -1747,7 +1882,9 @@ function handleBuildAiPrompt(ss, payload) {
   if (!built) {
     return createJsonResponse({ status: 'error', code: 'bad_request', message: '알 수 없는 프롬프트 종류입니다: ' + payload.kind });
   }
-  return createJsonResponse({ status: 'success', prompt: built.prompt, systemInstruction: built.systemInstruction });
+  const res = { status: 'success', prompt: built.prompt, systemInstruction: built.systemInstruction };
+  if (built.scores) res.scores = built.scores;
+  return createJsonResponse(res);
 }
 
 /**
@@ -1761,11 +1898,10 @@ function generateDailyFeedbackCore(ss, payload) {
   const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
   const currentFeedback = payload.feedback || {};
 
-  // [점수는 회원 제출값만 사용] 비어 있으면 빈칸 유지 (운동 4점/식단 5점 등 기본값 추정 금지, AI에게도 맡기지 않음)
-  const curExScore = normalizeScoreValue(getGasField(currentFeedback, ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore']));
-  const curDietScore = normalizeScoreValue(getGasField(currentFeedback, ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore']));
-
+  // [점수는 코드가 계산] buildDailyFeedbackPrompt가 resolveFeedbackScores로 정한 확정값 사용 (AI 응답의 점수는 받지 않음)
   const built = buildDailyFeedbackPrompt(payload.member || {}, currentFeedback, payload.recentFeedbacks || [], guidelines);
+  const curExScore = built.scores.exercise;
+  const curDietScore = built.scores.diet;
   const aiResult = callGemini(built.prompt, built.systemInstruction, payload);
 
   let parsed = null;
@@ -1829,6 +1965,7 @@ function generateDailyFeedbackCore(ss, payload) {
   if (!parsed || !parsed.피드백_요약) {
     const failure = buildAiFailureResponse(aiResult.debug, aiResult.text ? 'AI 응답 형식을 해석하지 못했습니다.' : '');
     failure.data = null;
+    failure.scores = built.scores;
     return failure;
   }
 
@@ -1863,13 +2000,11 @@ function toIsoDateOrEmpty(raw) {
 }
 
 function formatFeedbackForComprehensive(f) {
-  const scoreOf = (keys) => {
-    const v = normalizeScoreValue(getGasField(f, keys));
-    return v === '' ? '-' : v + '점';
-  };
+  const scores = resolveFeedbackScores(f);
+  const scoreLabel = (v) => v === '' ? '-' : v + '점';
   const weight = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
   const lines = [
-    `■ ${getFeedbackRowDate(f) || '날짜 미상'} | 공복 체중: ${weight !== '' && weight !== null && weight !== undefined ? weight + 'kg' : '-'} | 운동 점수: ${scoreOf(['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore'])} | 식단 점수: ${scoreOf(['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore'])}`
+    `■ ${getFeedbackRowDate(f) || '날짜 미상'} | 공복 체중: ${weight !== '' && weight !== null && weight !== undefined ? weight + 'kg' : '-'} | 운동 점수: ${scoreLabel(scores.exercise)} | 식단 점수: ${scoreLabel(scores.diet)}`
   ];
   const addLine = (label, value) => {
     const clipped = clipForPrompt(value);
@@ -2232,6 +2367,11 @@ function onFormSubmitHandler(e) {
 
     Logger.log(`[onFormSubmitHandler 시작] Row ${targetRow} 회원 '${memberName}' (시트: ${feedbackSheet.getName()}) AI 초안 자동 생성 개시`);
 
+    // [점수는 코드가 계산] AI 호출 전에 운동/식단 점수를 먼저 기록 (AI가 실패해도 점수는 남음)
+    const colMap = getHeaderColumnMap(feedbackSheet);
+    writeFeedbackScores(feedbackSheet, colMap, targetRow, resolveFeedbackScores(currentFeedback));
+    SpreadsheetApp.flush();
+
     // 2. Members 시트에서 해당 회원의 사전 설문 프로필 조회
     let memberProfile = { '이름': memberName };
     if (memberSheet) {
@@ -2265,7 +2405,6 @@ function onFormSubmitHandler(e) {
 
     const aiRes = generateDailyFeedbackCore(ss, aiPayload);
     const draftData = aiRes.data;
-    const colMap = getHeaderColumnMap(feedbackSheet);
 
     if (!draftData) {
       // [실패는 실패로] 내용 칸에는 아무것도 쓰지 않고 '피드백 상태'에만 AI실패 기록 (코치 대시보드에서 재생성)
@@ -2282,22 +2421,7 @@ function onFormSubmitHandler(e) {
     }
 
     // 6. Feedbacks 시트에 각 열을 안전하게 생성/확보(getOrAddColumn)하고 초안 데이터 기록
-
-    // (1) 운동_실행률_점수
-    if (draftData.운동_실행률_점수 !== undefined && draftData.운동_실행률_점수 !== null && draftData.운동_실행률_점수 !== '') {
-      const exScoreCol = getOrAddColumn(feedbackSheet, colMap, '운동_실행률_점수', [
-        '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
-      ]);
-      feedbackSheet.getRange(targetRow, exScoreCol).setValue(draftData.운동_실행률_점수);
-    }
-
-    // (2) 식단_실행률_점수
-    if (draftData.식단_실행률_점수 !== undefined && draftData.식단_실행률_점수 !== null && draftData.식단_실행률_점수 !== '') {
-      const dietScoreCol = getOrAddColumn(feedbackSheet, colMap, '식단_실행률_점수', [
-        '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
-      ]);
-      feedbackSheet.getRange(targetRow, dietScoreCol).setValue(draftData.식단_실행률_점수);
-    }
+    // (점수는 위에서 AI 호출 전에 이미 기록)
 
     // (3) 피드백_요약
     const summaryCol = getOrAddColumn(feedbackSheet, colMap, '피드백_요약', [
@@ -2384,6 +2508,8 @@ function onOpen() {
       .addSeparator()
       .addItem('🧪 마지막 추가된 행 AI 초안 생성 테스트', 'testGenerateDraftForLatestRow')
       .addItem('📝 미처리 피드백 전체 AI 초안 일괄 생성', 'processPendingAiDrafts')
+      .addItem('🧮 빈 점수 다시 계산', 'fillMissingFeedbackScores')
+      .addItem('📋 점수 답변값 점검', 'inspectScoreAnswers')
       .addSeparator()
       .addItem('🔍 feedbacks 시트 헤더/데이터 진단', 'debugInspectFeedbacksSheet')
       .addSeparator()
@@ -2444,6 +2570,132 @@ function debugInspectFeedbacksSheet() {
       Logger.log(`Col ${idx + 1} [${headers[idx]}]: "${val}"`);
     });
   }
+}
+
+// 계산된 점수를 피드백 행에 기록 (빈 점수는 쓰지 않음, 열이 없으면 맨 오른쪽에 추가)
+function writeFeedbackScores(sheet, colMap, row, scores) {
+  if (scores.exercise !== '') {
+    const exScoreCol = getOrAddColumn(sheet, colMap, '운동_실행률_점수', [
+      '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
+    ]);
+    sheet.getRange(row, exScoreCol).setValue(scores.exercise);
+  }
+  if (scores.diet !== '') {
+    const dietScoreCol = getOrAddColumn(sheet, colMap, '식단_실행률_점수', [
+      '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
+    ]);
+    sheet.getRange(row, dietScoreCol).setValue(scores.diet);
+  }
+  if (scores.detail && scores.detail.warnings.length > 0) {
+    Logger.log(`[점수 계산] Row ${row}: ${scores.detail.warnings.join(' / ')}`);
+  }
+}
+
+/**
+ * [시트 메뉴] 빈 점수 다시 계산 - 운동/식단 점수 칸이 빈 행만 폼 답변으로 계산해 채움 (이미 있는 값은 그대로)
+ */
+function fillMissingFeedbackScores() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!sheet || sheet.getLastRow() < 2) {
+    Logger.log('[fillMissingFeedbackScores] 피드백 데이터가 없습니다.');
+    return;
+  }
+
+  const counts = { ex: 0, diet: 0, rest: 0, exFail: 0, dietFail: 0 };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const rows = getSheetDataWithHeaders(sheet);
+    const colMap = getHeaderColumnMap(sheet);
+    const exCol = getOrAddColumn(sheet, colMap, '운동_실행률_점수', [
+      '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
+    ]);
+    const dietCol = getOrAddColumn(sheet, colMap, '식단_실행률_점수', [
+      '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
+    ]);
+    const lastRow = sheet.getLastRow();
+    const exVals = sheet.getRange(2, exCol, lastRow - 1, 1).getValues();
+    const dietVals = sheet.getRange(2, dietCol, lastRow - 1, 1).getValues();
+    const isBlank = (v) => v === '' || v === null || v === undefined || String(v).trim() === '';
+
+    rows.forEach(r => {
+      const i = r._rowNumber - 2;
+      const exBlank = isBlank(exVals[i] && exVals[i][0]);
+      const dietBlank = isBlank(dietVals[i] && dietVals[i][0]);
+      if (!exBlank && !dietBlank) return;
+
+      const c = computeFeedbackScores(r);
+      if (exBlank) {
+        if (c.exercise !== '') {
+          sheet.getRange(r._rowNumber, exCol).setValue(c.exercise);
+          counts.ex++;
+        } else if (c.detail.exerciseStatus === 'rest') {
+          counts.rest++;
+        } else {
+          counts.exFail++;
+        }
+      }
+      if (dietBlank) {
+        if (c.diet !== '') {
+          sheet.getRange(r._rowNumber, dietCol).setValue(c.diet);
+          counts.diet++;
+        } else {
+          counts.dietFail++;
+        }
+      }
+      if (c.detail.warnings.length > 0) {
+        Logger.log(`[빈 점수 다시 계산] Row ${r._rowNumber}: ${c.detail.warnings.join(' / ')}`);
+      }
+    });
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+
+  const msg = `운동 점수 ${counts.ex}칸, 식단 점수 ${counts.diet}칸을 채웠습니다.\n` +
+    `- 쉬는 날이라 비워 둔 운동 점수: ${counts.rest}칸\n` +
+    `- 답변을 해석하지 못해 비워 둔 칸: 운동 ${counts.exFail} / 식단 ${counts.dietFail}\n` +
+    `(해석하지 못한 답변은 [실행 로그] 또는 '📋 점수 답변값 점검'에서 확인하세요)`;
+  Logger.log('[fillMissingFeedbackScores] ' + msg);
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('빈 점수 다시 계산', msg, ui.ButtonSet.OK);
+  } catch (e) {}
+}
+
+/**
+ * [시트 메뉴] 점수 답변값 점검 - 점수 계산에 쓰는 폼 답변의 서로 다른 값과 건수, 계산 결과만 표시 (이름 등 개인정보 미포함)
+ */
+function inspectScoreAnswers() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!sheet) return;
+  const rows = getSheetDataWithHeaders(sheet);
+  const sections = [
+    { kind: 'didExercise', label: '오늘 운동 하셨나요?', map: (v) => v.replace(/\s+/g, '').includes('쉬는') ? '빈칸(쉬는 날)' : /^(아니|안했|no)/i.test(v.replace(/\s+/g, '')) ? '0점' : '시간·강도로 계산' },
+    { kind: 'minutes', label: '운동 시간', map: (v) => { const s = scoreExerciseMinutes(v); return s === null ? '해석 불가' : s + '점'; } },
+    { kind: 'intensity', label: '운동 강도', map: (v) => { const s = scoreExerciseIntensity(v); return s === null ? '해석 불가' : s + '점'; } },
+    { kind: 'diet', label: '식단 수행률', map: (v) => { const s = scoreDietAnswer(v); return s === null ? '해석 불가' : s + '점'; } }
+  ];
+  const lines = [];
+  sections.forEach(sec => {
+    const tally = {};
+    rows.forEach(r => {
+      const v = getScoreAnswer(r, sec.kind);
+      tally[v] = (tally[v] || 0) + 1;
+    });
+    lines.push(`■ ${sec.label}`);
+    Object.keys(tally).sort().forEach(v => {
+      lines.push(`  '${v || '(빈칸)'}' → ${v ? sec.map(v) : '-'} (${tally[v]}건)`);
+    });
+  });
+  const text = lines.join('\n');
+  Logger.log('=== 점수 답변값 점검 ===\n' + text);
+  try {
+    const ui = SpreadsheetApp.getUi();
+    ui.alert('점수 답변값 점검', text.length > 1800 ? text.slice(0, 1800) + '\n…(나머지는 실행 로그 확인)' : text, ui.ButtonSet.OK);
+  } catch (e) {}
 }
 
 /**
@@ -2818,7 +3070,7 @@ function memberViewPhoneLast4(m) {
     memberViewFindVal(m, ['전화']) || memberViewFindVal(m, ['phone']) ||
     memberViewFindVal(m, ['mobile']) || memberViewFindVal(m, ['tel']) ||
     memberViewGetField(m, ['연락처', '전화번호', '휴대폰', '핸드폰', 'phone', 'tel', 'mobile', '연락처(휴대폰)']);
-  const digits = String(raw || '').replace(/[^0-9]/g, '');
+  const digits = String(raw === null || raw === undefined ? '' : raw).replace(/[^0-9]/g, '');
   return digits.length >= 4 ? digits.slice(-4) : '';
 }
 

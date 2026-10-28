@@ -631,7 +631,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.8';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.9';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -1240,7 +1240,7 @@ function hasBrowserGeminiKey() {
 async function requestAiPromptFromGas(kind, fields) {
   const res = await postToGasBackend({ action: 'buildAiPrompt', kind, ...fields }, { silent: true });
   if (res && res.status === 'success' && res.prompt) {
-    return { prompt: res.prompt, systemInstruction: res.systemInstruction || '' };
+    return { prompt: res.prompt, systemInstruction: res.systemInstruction || '', scores: res.scores || null };
   }
   if (res && res.status !== 'cancelled') console.warn('[AI 프롬프트 수신 실패 -> GAS 생성으로 진행]', res && res.message);
   return null;
@@ -4013,11 +4013,7 @@ async function runAiDailyFeedbackForCurrentModal() {
       if (!excludeCommentKeys.includes(k)) cleanTargetFb[k] = targetFb[k];
     });
 
-    const curExScoreRaw = getField(targetFb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
-    const curDietScoreRaw = getField(targetFb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
-    // 점수는 회원 제출값만 사용 (비어 있으면 빈칸, AI에게 점수를 정하게 하지 않음)
-    const curExScore = normalizeScore(curExScoreRaw);
-    const curDietScore = normalizeScore(curDietScoreRaw);
+    // 점수는 GAS computeFeedbackScores 결과만 사용 (브라우저에서 계산하지 않음, AI에게 정하게 하지 않음)
 
     // 1. 브라우저 직통 스트리밍 (브라우저 전용 키가 있을 때만, 프롬프트는 GAS buildDailyFeedbackPrompt에서 받아옴)
     const builtPrompt = hasBrowserGeminiKey()
@@ -4041,8 +4037,8 @@ async function runAiDailyFeedbackForCurrentModal() {
               "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '').trim(),
               "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
               "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
-              "운동_실행률_점수": curExScore,
-              "식단_실행률_점수": curDietScore
+              "운동_실행률_점수": normalizeScore(builtPrompt.scores && builtPrompt.scores.exercise),
+              "식단_실행률_점수": normalizeScore(builtPrompt.scores && builtPrompt.scores.diet)
             };
             if (directData.피드백_요약) aiData = directData;
           }
