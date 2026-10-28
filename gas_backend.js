@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.11';
+const BACKEND_VERSION = '2026-10-24.12';
 
 /**
  * CORS 대응 (doOptions)
@@ -3382,13 +3382,27 @@ function handleGetMemberView(ss, payload) {
     status: 'success',
     data: {
       member: memberViewSanitize(member, ['지침']),
-      // 피드백 요약·코치 확인 필요는 코치 전용 (회원에게 보내지 않음)
-      feedbacks: myFeedbacks.map(f => memberViewSanitize(f, ['문제점', '수정제안', '피드백요약', '코치확인필요'])),
+      // 피드백 요약·코치 확인 필요는 코치 전용, 코치가 완료하지 않은 피드백 내용(AI초안 등)은 회원에게 보내지 않음
+      feedbacks: myFeedbacks.map(f => hideUnreviewedFeedbackForMember(memberViewSanitize(f, ['문제점', '수정제안', '피드백요약', '코치확인필요']))),
       feedbackTotal: allFeedbacks.length,
       regenRemaining: getMemberRegenRemaining(memberKey)
     },
     memberToken: issueMemberToken(memberKey, phoneLast4)
   });
+}
+
+// 회원에게 보이는 코치 작성 칸 - 피드백 상태가 '완료'일 때만 보냄 (회원이 제출한 기록·점수는 항상 보냄)
+const MEMBER_HIDDEN_UNTIL_DONE_HEADERS = ['피드백 코멘트', '피드백 내용', '코치 피드백', '코치 코멘트', 'AI초안_생성일시']
+  .concat(FEEDBACK_MEMBER_PARTS.map(p => p.header), FEEDBACK_MEMBER_PARTS[2].aliases)
+  .map(normalizeHeaderName);
+
+function hideUnreviewedFeedbackForMember(fb) {
+  if (getFeedbackPart(fb, { header: '피드백 상태', aliases: [] }) === '완료') return fb;
+  const out = {};
+  Object.keys(fb || {}).forEach(k => {
+    if (!MEMBER_HIDDEN_UNTIL_DONE_HEADERS.includes(normalizeHeaderName(k))) out[k] = fb[k];
+  });
+  return out;
 }
 
 // 회원 화면에 불필요한 코치 전용/개인 연락처 열 제거
