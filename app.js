@@ -4201,10 +4201,42 @@ function initDailyFeedbackModalActions() {
     el.addEventListener('input', () => {
       autoGrowTextarea(el);
       if (el.id === FEEDBACK_COACH_CHECK.inputId) updateCoachCheckVisibility();
+      // 맨 끝에서 입력 중이면 늘어난 줄이 키패드 뒤로 숨지 않게 따라 내려감
+      if (el.selectionEnd === el.value.length) keepModalFieldAboveKeyboard(el);
+    });
+    el.addEventListener('focus', () => {
+      // 키패드가 다 올라온 뒤 위치를 다시 맞춤
+      setTimeout(() => keepModalFieldAboveKeyboard(el), 350);
     });
   });
   const dfModalEl = document.getElementById('dailyFeedbackModal');
   if (dfModalEl) dfModalEl.addEventListener('shown.bs.modal', autoGrowFeedbackModalFields);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', () => {
+      const active = document.activeElement;
+      if (active && active.matches('#dailyFeedbackModal textarea.df-autogrow')) keepModalFieldAboveKeyboard(active);
+      else updateKeyboardInset();
+    });
+  }
+}
+
+// [모바일 키패드] 키패드에 가려진 높이를 --cv-kb-inset 으로 넘겨 모달 아래 여백을 확보
+function updateKeyboardInset() {
+  const vv = window.visualViewport;
+  const inset = vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0;
+  document.documentElement.style.setProperty('--cv-kb-inset', inset + 'px');
+  return vv;
+}
+
+// [모바일 키패드] 입력 중인 칸의 아래쪽이 키패드 위 보이는 영역 안에 오도록 모달을 스크롤
+function keepModalFieldAboveKeyboard(el) {
+  if (!el || window.innerWidth >= 992) return;
+  const vv = updateKeyboardInset();
+  const scroller = el.closest('.modal');
+  if (!vv || !scroller) return;
+  const visibleBottom = vv.offsetTop + vv.height - 16;
+  const overflow = el.getBoundingClientRect().bottom - visibleBottom;
+  if (overflow > 0) scroller.scrollTop += overflow;
 }
 
 /**

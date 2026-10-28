@@ -616,6 +616,13 @@ body.cv3 {
     padding-bottom: calc(10px + var(--cv-safe-bottom));
   }
 
+  /* 키패드가 열려 입력 중일 때: 고정 하단 버튼 바가 입력칸을 덮지 않게 풀고, 키패드 높이만큼 아래 여백 확보 */
+  .cv3 .modal:has(.modal-body textarea:focus) .modal-footer { position: static; }
+  .cv3 .modal:has(.modal-body textarea:focus) .modal-dialog {
+    margin-bottom: calc(8px + var(--cv-kb-inset, 0px));
+  }
+  .cv3 .modal-body textarea { scroll-margin-bottom: 24px; }
+
   .cv3 .cv3-fb-table .feedback-text-cell { resize: none; }
 
   /* 미작성 칸은 숨기고, 요약까지 비어 있으면 한 줄 안내만 */
