@@ -554,15 +554,17 @@ body.cv3 {
   }
 
   .cv3 .cv3-c-summary,
-  .cv3 .cv3-c-problem,
-  .cv3 .cv3-c-solution {
+  .cv3 .cv3-c-good,
+  .cv3 .cv3-c-improve,
+  .cv3 .cv3-c-note {
     order: 5;
     flex: 1 1 100%;
   }
 
   .cv3 .cv3-c-summary::before,
-  .cv3 .cv3-c-problem::before,
-  .cv3 .cv3-c-solution::before {
+  .cv3 .cv3-c-good::before,
+  .cv3 .cv3-c-improve::before,
+  .cv3 .cv3-c-note::before {
     content: attr(data-label);
     display: block;
     font-size: 0.7rem;
@@ -617,8 +619,9 @@ body.cv3 {
   .cv3 .cv3-fb-table .feedback-text-cell { resize: none; }
 
   /* 미작성 칸은 숨기고, 요약까지 비어 있으면 한 줄 안내만 */
-  .cv3 .cv3-c-problem.is-empty,
-  .cv3 .cv3-c-solution.is-empty { display: none !important; }
+  .cv3 .cv3-c-good.is-empty,
+  .cv3 .cv3-c-improve.is-empty,
+  .cv3 .cv3-c-note.is-empty { display: none !important; }
 
   .cv3 .cv3-c-summary.is-empty::before { display: none; }
 

@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-10-24.9';
+const BACKEND_VERSION = '2026-10-24.10';
 
 /**
  * CORS 대응 (doOptions)
@@ -148,7 +148,7 @@ function doGet(e) {
  *   4. updateFeedbackComment: 특정 날짜 피드백 코멘트 저장
  *   5. generateWorkoutRoutine: AI 운동 루틴 생성 (지침서 + 수정제안지침 최우선 반영)
  *   6. generateDietPlan: AI 식단 생성 (지침서 + 수정제안지침 최우선 반영)
- *   7. generateDailyFeedback: AI 데일리 피드백 코멘트 & 운동/식단 수정 제안 도출 (체중 추이 분석 + 근거 제시)
+ *   7. generateDailyFeedback: AI 데일리 피드백 초안 (요약·잘한 점·개선할 점·코치 한마디·코치 확인 필요)
  *   - buildAiPrompt: 코치 브라우저 직통 스트리밍용 프롬프트만 조립해 반환 (workout/diet/daily)
  *   8. generateComprehensiveFeedback: AI 기간별 종합 피드백 요약 및 자립 방안 생성
  */
@@ -916,15 +916,24 @@ function handleUpdateFeedbackComment(ss, payload) {
     });
   }
 
-  // 1. [방어 로직] 피드백 코멘트 저장 (열이 없으면 시트 마지막에 자동 추가)
-  if (comment) {
+  // 0. 회원용 칸(잘한 점·개선할 점·코치 한마디)과 코치 확인 필요 저장 (이름 정확 일치 열만, 빈 값도 그대로 저장)
+  const hasMemberParts = FEEDBACK_MEMBER_PARTS.some(p => payload[p.key] !== undefined);
+  FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => {
+    writeFeedbackPart(sheet, colMap, targetRow, p, payload[p.key]);
+  });
+
+  // 1. [방어 로직] 피드백 코멘트 저장 (회원용 칸이 전달되면 서버가 합쳐서 회원용 최종본 생성)
+  const finalComment = hasMemberParts
+    ? composeMemberFeedbackComment(payload[FEEDBACK_MEMBER_PARTS[0].key], payload[FEEDBACK_MEMBER_PARTS[1].key], payload[FEEDBACK_MEMBER_PARTS[2].key])
+    : comment;
+  if (finalComment || hasMemberParts) {
     const commentCol = getOrAddColumn(sheet, colMap, '피드백 코멘트', [
       '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용',
       '코치 피드백', '코치피드백', '코칭 코멘트', '코칭코멘트',
       '코치 코멘트', '코치코멘트', '코칭 내용', '코칭내용',
       '코치답변', '코치 답변', '답변', 'feedbackComment', 'coachComment'
     ]);
-    sheet.getRange(targetRow, commentCol).setValue(comment);
+    sheet.getRange(targetRow, commentCol).setValue(finalComment);
   }
 
   // 2. [방어 로직] 운동_실행률_점수 저장 (열이 없으면 시트 마지막에 자동 추가)
@@ -954,41 +963,7 @@ function handleUpdateFeedbackComment(ss, payload) {
     sheet.getRange(targetRow, summaryCol).setValue(summaryVal);
   }
 
-  // 5. [방어 로직] 문제점_분석 저장 (열이 없으면 시트 마지막에 자동 추가)
-  const problemVal = payload.문제점_분석 !== undefined ? payload.문제점_분석 : (payload.problemAnalysis || payload.problem || '');
-  if (problemVal) {
-    const problemCol = getOrAddColumn(sheet, colMap, '문제점_분석', [
-      '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problemAnalysis', 'problem'
-    ]);
-    sheet.getRange(targetRow, problemCol).setValue(problemVal);
-  }
-
-  // 6. [방어 로직] 보완점_및_개선방안 저장 (열이 없으면 시트 마지막에 자동 추가)
-  const solutionVal = payload.보완점_및_개선방안 !== undefined ? payload.보완점_및_개선방안 : (payload.improvementSolution || payload.solution || '');
-  if (solutionVal) {
-    const solutionCol = getOrAddColumn(sheet, colMap, '보완점_및_개선방안', [
-      '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'improvementSolution', 'solution'
-    ]);
-    sheet.getRange(targetRow, solutionCol).setValue(solutionVal);
-  }
-
-  // 6-1. [모달 표시 보존용] 운동_수정_제안 저장 (Feedbacks 시트 모달 표시용으로만 기록, Members 시트에는 자동 반영 안 됨)
-  const exProposalVal = payload.운동_수정_제안 !== undefined ? payload.운동_수정_제안 : (payload.exerciseProposal || '');
-  if (exProposalVal !== undefined && exProposalVal !== null && exProposalVal !== '') {
-    const exProposalCol = getOrAddColumn(sheet, colMap, '운동_수정_제안', [
-      '운동_수정_제안', '운동 수정 제안', '운동수정제안', '운동수정', 'exerciseProposal'
-    ]);
-    sheet.getRange(targetRow, exProposalCol).setValue(exProposalVal);
-  }
-
-  // 6-2. [모달 표시 보존용] 식단_수정_제안 저장 (Feedbacks 시트 모달 표시용으로만 기록, Members 시트에는 자동 반영 안 됨)
-  const dietProposalVal = payload.식단_수정_제안 !== undefined ? payload.식단_수정_제안 : (payload.dietProposal || '');
-  if (dietProposalVal !== undefined && dietProposalVal !== null && dietProposalVal !== '') {
-    const dietProposalCol = getOrAddColumn(sheet, colMap, '식단_수정_제안', [
-      '식단_수정_제안', '식단 수정 제안', '식단수정제안', '식단수정', 'dietProposal'
-    ]);
-    sheet.getRange(targetRow, dietProposalCol).setValue(dietProposalVal);
-  }
+  // (문제점_분석·운동/식단 수정 제안·보완점_및_개선방안은 더 이상 저장하지 않음 - 이전 화면이 보내도 무시)
 
   // 7. [방어 로직] 피드백 상태 컬럼 자동 업데이트 (열이 없으면 시트 마지막에 자동 추가)
   const statusCol = getOrAddColumn(sheet, colMap, '피드백 상태', [
@@ -999,6 +974,7 @@ function handleUpdateFeedbackComment(ss, payload) {
   return createJsonResponse({
     status: 'success',
     targetRow: targetRow,
+    comment: finalComment,
     message: `${dateStr} 일자의 피드백 코멘트가 시트 ${targetRow}행에 성공적으로 저장되었습니다.`
   });
 }
@@ -1171,8 +1147,9 @@ function diagnoseGeminiLatency() {
 
 /**
  * [Google 공식 권장 초고속 Flash 클러스터 직행] Gemini API 호출 엔진
+ * - options.maxOutputTokens: 최대 출력 토큰 (기본 4096, 데일리 피드백은 DAILY_FEEDBACK_MAX_OUTPUT_TOKENS)
  */
-function callGemini(prompt, systemInstruction, payload) {
+function callGemini(prompt, systemInstruction, payload, options) {
   const startGasTime = new Date().getTime();
   const apiKey = getEffectiveGeminiApiKey(payload);
   const keySource = (payload && payload.geminiApiKey && String(payload.geminiApiKey).trim().length > 0)
@@ -1246,7 +1223,7 @@ function callGemini(prompt, systemInstruction, payload) {
         temperature: 0.7,
         topK: 40,
         topP: 0.95,
-        maxOutputTokens: 4096
+        maxOutputTokens: (options && options.maxOutputTokens) || 4096
       }
     };
     if (systemInstruction) {
@@ -1775,95 +1752,221 @@ function describeScoresForPrompt(scores) {
 }
 
 /**
- * 데일리 피드백 프롬프트에 넣을 '최근 기록' 범위: 오늘(현재 피드백 날짜) 이전 기록 중 최근 N건
- * (나중에 날짜 기준(예: 7일)으로 바꿀 때 selectRecentFeedbacksForPrompt만 수정)
+ * ==============================================================================
+ * [데일리 피드백 출력 칸] 회원용(잘한 점·개선할 점·코치 한마디) / 코치 전용(코치 확인 필요)
+ * - 열은 이름 정확 일치(공백·밑줄 무시)로만 찾음 (폼 질문 열 오기록 방지)
+ * - '코치 한마디'는 이름 변경 전 열 '보완점_및_개선방안'도 같은 열로 인정
+ * ==============================================================================
  */
-const RECENT_FEEDBACK_WINDOW = 3;
+const FEEDBACK_MEMBER_PARTS = [
+  { key: '잘한_점', header: '잘한 점', aliases: [] },
+  { key: '개선할_점', header: '개선할 점', aliases: [] },
+  { key: '코치_한마디', header: '코치 한마디', aliases: ['보완점_및_개선방안'] }
+];
+const FEEDBACK_COACH_CHECK = { key: '코치_확인_필요', header: '코치 확인 필요', aliases: [] };
 
-function selectRecentFeedbacksForPrompt(currentFeedback, feedbacks) {
-  const curDate = getFeedbackRowDate(currentFeedback || {});
-  const curRow = currentFeedback && (currentFeedback._rowNumber || currentFeedback.rowNumber);
-  return (Array.isArray(feedbacks) ? feedbacks : [])
-    .map(f => ({ f: f, date: getFeedbackRowDate(f) }))
-    .filter(x => x.date && (curDate ? x.date < curDate : !(curRow && (x.f._rowNumber || x.f.rowNumber) === curRow)))
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(-RECENT_FEEDBACK_WINDOW)
-    .map(x => x.f);
+function normalizeHeaderName(name) {
+  return String(name === null || name === undefined ? '' : name).replace(/[\s_]+/g, '').toLowerCase();
+}
+
+function findFeedbackPartColumn(colMap, part) {
+  const wanted = [part.header].concat(part.aliases).map(normalizeHeaderName);
+  for (let i = 0; i < wanted.length; i++) {
+    const key = Object.keys(colMap).find(k => normalizeHeaderName(k) === wanted[i]);
+    if (key) return colMap[key];
+  }
+  return null;
+}
+
+function getFeedbackPart(fb, part) {
+  if (!fb || typeof fb !== 'object') return '';
+  const wanted = [part.header].concat(part.aliases).map(normalizeHeaderName);
+  const keys = Object.keys(fb);
+  for (let i = 0; i < wanted.length; i++) {
+    for (let j = 0; j < keys.length; j++) {
+      if (normalizeHeaderName(keys[j]) !== wanted[i]) continue;
+      const v = fb[keys[j]];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+  }
+  return '';
+}
+
+// 값이 undefined면 건너뜀, 빈 값은 열이 있을 때만 기록 (빈 값 때문에 새 열을 만들지 않음)
+function writeFeedbackPart(sheet, colMap, row, part, value) {
+  if (value === undefined) return;
+  const val = value === null ? '' : String(value);
+  let col = findFeedbackPartColumn(colMap, part);
+  if (!col) {
+    if (!val.trim()) return;
+    col = getOrAddExactColumn(sheet, colMap, part.header);
+  }
+  sheet.getRange(row, col).setValue(val);
+}
+
+// 회원용 최종본 = [잘한 점] + [개선할 점] + [코치 한마디] (빈 칸은 제목째 생략) - app.js composeMemberFeedbackComment와 동일 형식
+function composeMemberFeedbackComment(good, improve, note) {
+  return [['잘한 점', good], ['개선할 점', improve], ['코치 한마디', note]]
+    .map(([title, v]) => [title, String(v === null || v === undefined ? '' : v).trim()])
+    .filter(([, v]) => v)
+    .map(([title, v]) => `[${title}]\n${v}`)
+    .join('\n\n');
 }
 
 /**
- * [프롬프트 단일 출처] 데일리 피드백 프롬프트 - 코치 대시보드(직통/GAS)·폼 제출 트리거 공통
- * - recentFeedbacks: 해당 회원의 피드백 목록 (전체를 넘겨도 됨, 범위는 RECENT_FEEDBACK_WINDOW로 선택)
- * @return {{prompt: string, systemInstruction: string}}
+ * 데일리 피드백 프롬프트의 [공복 체중 기록]: 그 회원의 모든 공복 체중 기록 중 오늘(현재 피드백 날짜)까지
+ * (지난 날짜 피드백을 다시 만들 때 그 이후 기록이 섞이지 않도록 오늘 이후는 제외)
  */
-function buildDailyFeedbackPrompt(member, feedback, recentFeedbacks, guidelines) {
-  const currentFeedback = feedback || {};
-  const g = guidelines || {};
+function selectWeightHistoryForPrompt(currentFeedback, feedbacks) {
+  const cur = currentFeedback || {};
+  const curDate = getFeedbackRowDate(cur);
+  const curRow = cur._rowNumber || cur.rowNumber;
+  const weightOf = (f) => {
+    const w = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
+    return (w === '' || w === null || w === undefined) ? '' : String(w).trim();
+  };
+  const entries = (Array.isArray(feedbacks) ? feedbacks : [])
+    .filter(f => f !== cur && !(curRow && (f._rowNumber || f.rowNumber) === curRow))
+    .map(f => ({ date: getFeedbackRowDate(f), weight: weightOf(f), isToday: false }))
+    .filter(x => x.date && x.weight && (!curDate || x.date <= curDate));
+  if (weightOf(cur)) entries.push({ date: curDate || '오늘', weight: weightOf(cur), isToday: true });
+  return entries.sort((a, b) => a.date.localeCompare(b.date));
+}
 
-  const curDate = getFeedbackRowDate(currentFeedback) || '오늘';
-  const curWeight = getGasField(currentFeedback, ['공복 몸무게', '공복몸무게', '체중', 'weight']) || '-';
-  const displayScore = (v) => (v !== '' && v !== null && v !== undefined) ? v + '점' : '-';
+/**
+ * [최근 코치 피드백 예시] 피드백 상태가 '완료'인 최근 피드백 코멘트 (회원 구분 없이 최신순)
+ * - 말투 참고용. 예시 속 해당 회원 이름은 '회원님'으로 가림
+ */
+const STYLE_EXAMPLE_COUNT = 10;
+const STYLE_EXAMPLE_MAX_CHARS = 1500;
+
+function selectStyleExamplesForPrompt(feedbacks, currentFeedback) {
+  const curRow = currentFeedback && (currentFeedback._rowNumber || currentFeedback.rowNumber);
+  const statusOf = (f) => String(getFeedbackPart(f, { header: '피드백 상태', aliases: ['완료 여부', '진행상태'] }) || '').trim();
+  const commentOf = (f) => getFeedbackPart(f, { header: '피드백 코멘트', aliases: [] });
+  return (Array.isArray(feedbacks) ? feedbacks : [])
+    .filter(f => statusOf(f) === '완료' && commentOf(f) && !(curRow && (f._rowNumber || f.rowNumber) === curRow))
+    .map(f => ({ f: f, date: getFeedbackRowDate(f), row: f._rowNumber || f.rowNumber || 0 }))
+    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.row - a.row)
+    .slice(0, STYLE_EXAMPLE_COUNT)
+    .map(x => {
+      let text = commentOf(x.f);
+      const name = getFeedbackRowName(x.f);
+      if (name && name.length >= 2) text = text.split(name).join('회원님');
+      return text.length > STYLE_EXAMPLE_MAX_CHARS ? text.slice(0, STYLE_EXAMPLE_MAX_CHARS) + '…' : text;
+    });
+}
+
+// Feedbacks 시트에서 말투 예시 읽기 (시트를 못 읽으면 예시 없이 진행)
+function loadStyleExamplesFromSheet(ss, currentFeedback) {
+  try {
+    if (!ss) return [];
+    const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+    return selectStyleExamplesForPrompt(getSheetDataWithHeaders(sheet), currentFeedback);
+  } catch (e) {
+    Logger.log('[말투 예시 읽기 실패] ' + e.toString());
+    return [];
+  }
+}
+
+// 데일리 피드백 프롬프트의 [참여자 정보]에서 뺄 회원 열 (현재 처방은 따로, 셀프 수정 이력·코치 수정 지침은 제외)
+function isMemberKeyExcludedFromDailyProfile(key) {
+  const k = normalizeHeaderName(key);
+  const planHeaders = [];
+  Object.keys(MEMBER_PLAN_FIELDS).forEach(kind => {
+    const f = MEMBER_PLAN_FIELDS[kind];
+    planHeaders.push(f.current, f.request, f.previous, f.changedAt, f.note);
+  });
+  if (planHeaders.some(h => normalizeHeaderName(h) === k)) return true;
+  return k.includes('수정제안지침') || k.includes('수정지침');
+}
+
+// 오늘 기록에서 뺄 열 (코치·AI가 쓰는 칸과 점수 칸 - 점수는 [오늘 점수]로 따로 전달)
+const DAILY_FEEDBACK_EXCLUDED_HEADERS = [
+  '피드백 코멘트', '피드백 내용', '코치 피드백', '코치 코멘트', '피드백_요약', '피드백 상태', 'AI초안_생성일시',
+  '잘한 점', '개선할 점', '코치 한마디', '코치 확인 필요', '보완점_및_개선방안', '문제점_분석', '운동_수정_제안', '식단_수정_제안',
+  '운동_실행률_점수', '식단_실행률_점수'
+].map(normalizeHeaderName);
+
+const DAILY_FEEDBACK_MAX_OUTPUT_TOKENS = 8192;
+
+/**
+ * [프롬프트 단일 출처] 데일리 피드백 프롬프트 - 코치 대시보드(직통/GAS)·폼 제출 트리거 공통
+ * - 작성 규칙(분량·말투·쓸 내용)은 코드에 두지 않고 Guidelines 시트의 '데일리 피드백 지침'을 따름
+ * - memberFeedbacks: 해당 회원의 피드백 목록 (공복 체중 기록만 사용)
+ * - styleExamples: selectStyleExamplesForPrompt 결과 (말투 참고용)
+ * @return {{prompt: string, systemInstruction: string, scores: {exercise, diet}}}
+ */
+function buildDailyFeedbackPrompt(member, feedback, memberFeedbacks, guidelines, styleExamples) {
+  const currentFeedback = feedback || {};
+  const m = member || {};
+  const feedbackGuideline = String((guidelines && guidelines.feedback) || '').trim();
   // [점수는 코드가 계산] 시트 저장값 우선, 없으면 폼 답변으로 계산 (AI에게는 확정값으로만 전달)
   const scores = resolveFeedbackScores(currentFeedback);
 
-  // 최근 체중 추이 텍스트 요약 (오늘 이전 기록만, 점수는 같은 규칙으로 계산)
-  let weightHistorySummary = selectRecentFeedbacksForPrompt(currentFeedback, recentFeedbacks).map(f => {
-    const fWeight = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
-    const fScores = resolveFeedbackScores(f);
-    return `${getFeedbackRowDate(f)}: ${fWeight}kg (운동: ${displayScore(fScores.exercise)}, 식단: ${displayScore(fScores.diet)})`;
-  }).join('\n');
-  if (!weightHistorySummary) {
-    weightHistorySummary = `이전 기록 없음 (오늘 ${curDate}: ${curWeight}kg)`;
-  }
+  const profile = {};
+  Object.keys(m).forEach(k => {
+    if (!isMemberKeyExcludedFromDailyProfile(k)) profile[k] = m[k];
+  });
+  const currentRoutine = String(getFeedbackPart(m, { header: MEMBER_PLAN_FIELDS.exercise.current, aliases: [] }) || '').trim();
+  const currentDiet = String(getFeedbackPart(m, { header: MEMBER_PLAN_FIELDS.diet.current, aliases: [] }) || '').trim();
 
-  // [요구사항 1 & 2] 하드코딩 필드 추출 제거 & 전체 키-값 동적 매핑
-  // (이전 피드백 코멘트 필드는 제외하여 신규 생성/재생성 시 기존 내용에 편향되지 않고 순수한 회원 일지 기준으로 분석)
-  const cleanFeedbackForAi = {};
-  const feedbackExcludeKeys = ['피드백 코멘트', '피드백코멘트', '피드백_요약', '피드백요약', '코치 피드백', '코치피드백', '코치 코멘트', '코치코멘트', '문제점_분석', '문제점분석', '보완점_및_개선방안', '보완점및개선방안', '운동_수정_제안', '식단_수정_제안', '피드백 상태', '피드백상태'];
+  const todayRecord = {};
   Object.keys(currentFeedback).forEach(k => {
-    if (!feedbackExcludeKeys.includes(k)) {
-      cleanFeedbackForAi[k] = currentFeedback[k];
-    }
+    if (!DAILY_FEEDBACK_EXCLUDED_HEADERS.includes(normalizeHeaderName(k))) todayRecord[k] = currentFeedback[k];
   });
 
-  const memberFullProfile = formatObjectAsFullProfile(member || {});
-  const feedbackFullData = formatObjectAsFullProfile(cleanFeedbackForAi);
+  const weightLines = selectWeightHistoryForPrompt(currentFeedback, memberFeedbacks)
+    .map(x => `- ${x.date}: ${x.weight}kg${x.isToday ? ' (오늘)' : ''}`).join('\n') || '- 기록 없음';
+
+  const examples = (Array.isArray(styleExamples) ? styleExamples : []).filter(Boolean);
+  const exampleBlock = examples.length > 0 ? `
+[최근 코치 피드백 예시 (다른 회원 포함, 최신순)]
+※ 아래 예시는 코치의 말투와 문체만 참고하십시오. 예시의 내용(사실·수치·조언)은 절대 가져오지 마십시오.
+${examples.map((t, i) => `<예시 ${i + 1}>\n${t}`).join('\n\n')}
+` : '';
+  const guidelineBlock = feedbackGuideline ? `
+[데일리 피드백 지침 (작성 규칙 - 분량·말투·쓸 내용은 이 지침을 따름)]
+${feedbackGuideline}
+` : '';
 
   const prompt = `
-당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 헤드 코치입니다.
-아래 참여자의 전체 사전 프로필과 오늘 데일리 피드백 제출 데이터, 그리고 누적된 최근 체중 추이를 분석하여 피드백 결과를 도출해 주세요.
+'4주 온라인 운동/식단 습관화 코칭 프로그램'의 데일리 피드백 초안을 작성해 주세요.
 
 [참여자 정보]
-${memberFullProfile}
+${formatObjectAsFullProfile(profile)}
 
-[오늘 피드백]
-${feedbackFullData}
+[현재 처방]
+- 현재 제안 운동 루틴:
+${currentRoutine || '(없음)'}
+- 현재 제안 식단:
+${currentDiet || '(없음)'}
+
+[오늘 기록]
+${formatObjectAsFullProfile(todayRecord)}
 
 [오늘 점수 (코드가 계산한 확정값 - 다시 계산하거나 바꾸지 마십시오)]
 ${describeScoresForPrompt(scores)}
 
-[누적 피드백 및 체중 변화 추이 (최근)]
-${weightHistorySummary}
-
-[코칭 지침서 (DB)]
-- 피드백 지침서: ${g.feedback || '24시간 내 피드백, 칭찬(Positive Reinforcement) 선행 후 1가지 실행 가능한 개선안 제안'}
-- 동기부여 지침서: ${g.motivation || '한 끼 실패가 4주의 실패는 아님을 강조, 자책감 방지 및 회복탄력성'}
-
-[요청 사항]
-반드시 아래 JSON 형식으로만 응답해 주세요. 다른 설명이나 마크다운 없이 순수 JSON만 출력하십시오:
+[공복 체중 기록 (날짜순)]
+${weightLines}
+${exampleBlock}${guidelineBlock}
+[출력 형식]
+아래 JSON 객체 하나만 출력하십시오. 다른 설명이나 마크다운은 쓰지 마십시오.
 {
-  "피드백_요약": "오늘 수행한 운동과 식단에 대한 전반적인 칭찬과 요약 (피드백 지침서 반영)",
-  "문제점_분석": "오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석 (없을 경우 '특이사항 없음')",
-  "보완점_및_개선방안": "문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지 (동기부여 지침서 반영)",
-  "운동_수정_제안": "운동 계획 수정이 필요한 경우 구체적인 대체 루틴 제안 (불필요시 빈 문자열)",
-  "식단_수정_제안": "식단 수정이 필요한 경우 구체적인 대체 식단 제안 (불필요시 빈 문자열)"
+  "피드백_요약": "코치만 보는 칸: 오늘 기록의 요약",
+  "잘한_점": "회원에게 보이는 칸",
+  "개선할_점": "회원에게 보이는 칸",
+  "코치_한마디": "회원에게 보이는 칸",
+  "코치_확인_필요": "코치만 보는 칸: 코치가 직접 확인해야 할 사항. 없으면 빈 문자열"
 }
 `;
 
   return {
     prompt: prompt,
-    systemInstruction: '당신은 냉철한 데이터 분석력과 따뜻한 공감력을 겸비한 코칭 전문가입니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.',
-    scores: { exercise: scores.exercise, diet: scores.diet }
+    systemInstruction: '당신은 온라인 습관화 코칭 프로그램에서 코치의 데일리 피드백 초안을 작성합니다. 작성 규칙(분량·말투·쓸 내용)은 [데일리 피드백 지침]을 따릅니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.',
+    scores: { exercise: scores.exercise, diet: scores.diet },
+    maxOutputTokens: DAILY_FEEDBACK_MAX_OUTPUT_TOKENS
   };
 }
 
@@ -1875,34 +1978,37 @@ function handleBuildAiPrompt(ss, payload) {
   let built = null;
   if (payload.kind === 'workout') built = buildWorkoutPromptFromPayload(ss, payload);
   else if (payload.kind === 'diet') built = buildDietPromptFromPayload(ss, payload);
-  else if (payload.kind === 'daily') {
-    const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
-    built = buildDailyFeedbackPrompt(payload.member || {}, payload.feedback || {}, payload.recentFeedbacks || [], guidelines);
-  }
+  else if (payload.kind === 'daily') built = buildDailyFeedbackPromptFromPayload(ss, payload);
   if (!built) {
     return createJsonResponse({ status: 'error', code: 'bad_request', message: '알 수 없는 프롬프트 종류입니다: ' + payload.kind });
   }
   const res = { status: 'success', prompt: built.prompt, systemInstruction: built.systemInstruction };
   if (built.scores) res.scores = built.scores;
+  if (built.maxOutputTokens) res.maxOutputTokens = built.maxOutputTokens;
   return createJsonResponse(res);
+}
+
+// 요청 payload에서 데일리 피드백 프롬프트 재료(지침서·회원 피드백·말투 예시)를 모아 buildDailyFeedbackPrompt 호출
+// - 말투 예시는 다른 회원 데이터이므로 브라우저에서 받지 않고 서버가 시트에서 직접 읽음 (폼 트리거는 이미 읽은 목록 전달)
+function buildDailyFeedbackPromptFromPayload(ss, payload) {
+  const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
+  const feedback = payload.feedback || {};
+  const styleExamples = Array.isArray(payload._styleExamples) ? payload._styleExamples : loadStyleExamplesFromSheet(ss, feedback);
+  return buildDailyFeedbackPrompt(payload.member || {}, feedback, payload.recentFeedbacks || [], guidelines, styleExamples);
 }
 
 /**
  * 7. [AI] 데일리 피드백 도출 (공통 생성 코어)
  * - 웹앱 API 요청(handleAiDailyFeedback) 및 구글 폼 제출 트리거(onFormSubmitHandler) 양쪽에서 공통 사용
- * - 피드백 지침서 & 동기부여 지침서 기반
- * - 최근 최소 3일 이상의 누적 체중 변화 추이 및 식단/운동 분석
- * - 계획 수정 필요 시 'AI 운동 수정 제안' 및 'AI 식단 수정 제안' 도출 (명확한 '근거' 제시)
+ * - 출력: 피드백_요약(코치용), 잘한_점·개선할_점·코치_한마디(회원용), 코치_확인_필요(코치용) + 코드 계산 점수
+ * - 응답이 최대 길이에서 잘리면 실패로 처리
  */
 function generateDailyFeedbackCore(ss, payload) {
-  const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
-  const currentFeedback = payload.feedback || {};
-
+  const built = buildDailyFeedbackPromptFromPayload(ss, payload);
   // [점수는 코드가 계산] buildDailyFeedbackPrompt가 resolveFeedbackScores로 정한 확정값 사용 (AI 응답의 점수는 받지 않음)
-  const built = buildDailyFeedbackPrompt(payload.member || {}, currentFeedback, payload.recentFeedbacks || [], guidelines);
   const curExScore = built.scores.exercise;
   const curDietScore = built.scores.diet;
-  const aiResult = callGemini(built.prompt, built.systemInstruction, payload);
+  const aiResult = callGemini(built.prompt, built.systemInstruction, payload, { maxOutputTokens: built.maxOutputTokens });
 
   let parsed = null;
   if (aiResult.text) {
@@ -1946,12 +2052,23 @@ function generateDailyFeedbackCore(ss, payload) {
 
       if (rawJson) {
         // 누락 항목에 기본 문장을 채우지 않음 (빈 값 유지)
+        const pick = (names) => {
+          for (let i = 0; i < names.length; i++) {
+            const v = rawJson[names[i]];
+            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+          }
+          return '';
+        };
+        const good = pick(['잘한_점', '잘한 점', '잘한점']);
+        const improve = pick(['개선할_점', '개선할 점', '개선할점']);
+        const note = pick(['코치_한마디', '코치 한마디', '코치한마디']);
         parsed = {
-          "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '').trim(),
-          "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '').trim(),
-          "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '').trim(),
-          "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
-          "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
+          "피드백_요약": pick(['피드백_요약', '피드백 요약', '피드백요약', '요약']),
+          "잘한_점": good,
+          "개선할_점": improve,
+          "코치_한마디": note,
+          "코치_확인_필요": pick(['코치_확인_필요', '코치 확인 필요', '코치확인필요']),
+          "피드백_코멘트": composeMemberFeedbackComment(good, improve, note),
           "운동_실행률_점수": curExScore,
           "식단_실행률_점수": curDietScore
         };
@@ -1962,8 +2079,11 @@ function generateDailyFeedbackCore(ss, payload) {
   }
 
   // [실패는 실패로] AI 호출 실패·JSON 해석 실패·요약 누락 시 고정 템플릿을 만들지 않고 data:null + 사유 반환
-  if (!parsed || !parsed.피드백_요약) {
-    const failure = buildAiFailureResponse(aiResult.debug, aiResult.text ? 'AI 응답 형식을 해석하지 못했습니다.' : '');
+  // 응답이 최대 길이에서 잘린 경우도 실패 (잘린 문장을 저장하지 않음)
+  const isTruncated = !!(aiResult.debug && aiResult.debug.isTruncated);
+  if (isTruncated || !parsed || !parsed.피드백_요약 || !parsed.피드백_코멘트) {
+    const reason = isTruncated ? 'AI 응답이 최대 길이에서 잘렸습니다.' : (aiResult.text ? 'AI 응답 형식을 해석하지 못했습니다.' : '');
+    const failure = buildAiFailureResponse(isTruncated ? Object.assign({}, aiResult.debug, { errorMessage: reason }) : aiResult.debug, reason);
     failure.data = null;
     failure.scores = built.scores;
     return failure;
@@ -2119,7 +2239,7 @@ function setupInitialSheets() {
     fbSheet.appendRow([
       '피드백번호', '날짜', '이름', '공복 몸무게', '운동 점수', '식단 점수',
       '운동 내용', '식단 내용', '회원 일기/코멘트', '피드백 코멘트',
-      '운동_실행률_점수', '식단_실행률_점수', '피드백_요약', '문제점_분석', '보완점_및_개선방안', '피드백 상태'
+      '운동_실행률_점수', '식단_실행률_점수', '피드백_요약', '잘한 점', '개선할 점', '코치 한마디', '코치 확인 필요', '피드백 상태'
     ]);
     fbSheet.appendRow([
       'FB01', '2026-10-08', '김민수', 82.5, 8, 7,
@@ -2389,10 +2509,10 @@ function onFormSubmitHandler(e) {
     const exactTargetName = String(memberName).trim();
     const memberFeedbacks = allFeedbacks.filter(f => getFeedbackRowName(f) === exactTargetName);
 
-    // 최근 기록 범위(오늘 이전 RECENT_FEEDBACK_WINDOW건) 선택은 buildDailyFeedbackPrompt에서 공통 처리
+    // 공복 체중 기록은 이 회원의 전체 피드백에서, 말투 예시는 전체 피드백(회원 구분 없음)에서 buildDailyFeedbackPrompt가 선택
     const recentFeedbacks = memberFeedbacks;
 
-    // 4. Guidelines 시트에서 피드백 & 동기부여 지침서 가져오기
+    // 4. Guidelines 시트에서 데일리 피드백 지침 가져오기
     const guidelines = getGuidelinesData(guidelineSheet);
 
     // 5. AI 피드백 생성 코어 호출 (callGemini 기반 JSON 도출)
@@ -2400,7 +2520,8 @@ function onFormSubmitHandler(e) {
       member: memberProfile,
       feedback: currentFeedback,
       recentFeedbacks: recentFeedbacks,
-      guidelines: guidelines
+      guidelines: guidelines,
+      _styleExamples: selectStyleExamplesForPrompt(allFeedbacks, currentFeedback)
     };
 
     const aiRes = generateDailyFeedbackCore(ss, aiPayload);
@@ -2420,51 +2541,24 @@ function onFormSubmitHandler(e) {
       return { status: 'error', code: 'ai_failed', row: targetRow, message: aiRes.message || 'AI 초안 데이터 도출 실패' };
     }
 
-    // 6. Feedbacks 시트에 각 열을 안전하게 생성/확보(getOrAddColumn)하고 초안 데이터 기록
-    // (점수는 위에서 AI 호출 전에 이미 기록)
+    // 6. Feedbacks 시트에 초안 기록 (점수는 위에서 AI 호출 전에 이미 기록)
 
-    // (3) 피드백_요약
+    // (1) 피드백_요약 (코치용)
     const summaryCol = getOrAddColumn(feedbackSheet, colMap, '피드백_요약', [
       '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary'
     ]);
     feedbackSheet.getRange(targetRow, summaryCol).setValue(draftData.피드백_요약 || '');
 
-    // (4) 문제점_분석
-    const problemCol = getOrAddColumn(feedbackSheet, colMap, '문제점_분석', [
-      '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problemAnalysis', 'problem'
-    ]);
-    feedbackSheet.getRange(targetRow, problemCol).setValue(draftData.문제점_분석 || '');
+    // (2) 잘한 점 / 개선할 점 / 코치 한마디 (회원용) + 코치 확인 필요 (코치용) - 이름 정확 일치 열에만 기록
+    FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => {
+      writeFeedbackPart(feedbackSheet, colMap, targetRow, p, draftData[p.key] || '');
+    });
 
-    // (5) 보완점_및_개선방안
-    const solutionCol = getOrAddColumn(feedbackSheet, colMap, '보완점_및_개선방안', [
-      '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution'
-    ]);
-    feedbackSheet.getRange(targetRow, solutionCol).setValue(draftData.보완점_및_개선방안 || '');
-
-    // (6) 운동_수정_제안 (모달 표시용으로 Feedbacks 시트에만 기록, Members 시트에는 절대 자동 반영 안 함)
-    const exPropCol = getOrAddColumn(feedbackSheet, colMap, '운동_수정_제안', [
-      '운동_수정_제안', '운동 수정 제안', '운동수정제안', '운동수정', 'exerciseProposal'
-    ]);
-    feedbackSheet.getRange(targetRow, exPropCol).setValue(draftData.운동_수정_제안 || '');
-
-    // (7) 식단_수정_제안 (모달 표시용으로 Feedbacks 시트에만 기록, Members 시트에는 절대 자동 반영 안 함)
-    const dietPropCol = getOrAddColumn(feedbackSheet, colMap, '식단_수정_제안', [
-      '식단_수정_제안', '식단 수정 제안', '식단수정제안', '식단수정', 'dietProposal'
-    ]);
-    feedbackSheet.getRange(targetRow, dietPropCol).setValue(draftData.식단_수정_제안 || '');
-
-    // (8) 피드백 코멘트 (통합 텍스트)
-    let combined = draftData.피드백_요약 || '';
-    if (draftData.문제점_분석 && draftData.문제점_분석 !== '특이사항 없음') {
-      combined += `\n\n[문제점 분석]\n${draftData.문제점_분석}`;
-    }
-    if (draftData.보완점_및_개선방안) {
-      combined += `\n\n[보완점 및 개선방안]\n${draftData.보완점_및_개선방안}`;
-    }
+    // (3) 피드백 코멘트 = 회원용 최종본 (빈 칸은 제목째 생략)
     const commentCol = getOrAddColumn(feedbackSheet, colMap, '피드백 코멘트', [
       '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', '코치 피드백', '코치피드백'
     ]);
-    feedbackSheet.getRange(targetRow, commentCol).setValue(combined.trim());
+    feedbackSheet.getRange(targetRow, commentCol).setValue(draftData.피드백_코멘트 || '');
 
     // (9) ★핵심: 피드백 상태 컬럼에 'AI초안' 기록
     const statusCol = getOrAddColumn(feedbackSheet, colMap, '피드백 상태', [
@@ -2510,6 +2604,7 @@ function onOpen() {
       .addItem('📝 미처리 피드백 전체 AI 초안 일괄 생성', 'processPendingAiDrafts')
       .addItem('🧮 빈 점수 다시 계산', 'fillMissingFeedbackScores')
       .addItem('📋 점수 답변값 점검', 'inspectScoreAnswers')
+      .addItem('🧹 피드백 열 정리 (1회)', 'cleanupFeedbackColumns')
       .addSeparator()
       .addItem('🔍 feedbacks 시트 헤더/데이터 진단', 'debugInspectFeedbacksSheet')
       .addSeparator()
@@ -2696,6 +2791,125 @@ function inspectScoreAnswers() {
     const ui = SpreadsheetApp.getUi();
     ui.alert('점수 답변값 점검', text.length > 1800 ? text.slice(0, 1800) + '\n…(나머지는 실행 로그 확인)' : text, ui.ButtonSet.OK);
   } catch (e) {}
+}
+
+/**
+ * [시트 메뉴] 피드백 열 정리 (1회 실행, 코치 요청에 따른 열 삭제·이름 변경 예외 - 실행 전 확인 창 + 시트 백업)
+ * - 이름 변경: '보완점_및_개선방안' → '코치 한마디' (데이터 유지)
+ * - 추가: '잘한 점', '개선할 점', '코치 확인 필요' (맨 오른쪽)
+ * - 삭제: '문제점_분석', '운동_수정_제안', '식단_수정_제안' (이름 정확 일치, 연결된 구글 폼 질문과 같은 이름이면 삭제 안 함)
+ */
+const FEEDBACK_COLUMN_CLEANUP = {
+  rename: { from: '보완점_및_개선방안', to: '코치 한마디' },
+  add: ['잘한 점', '개선할 점', '코치 확인 필요'],
+  remove: ['문제점_분석', '운동_수정_제안', '식단_수정_제안']
+};
+
+function planFeedbackColumnCleanup(sheet) {
+  const lastCol = sheet.getLastColumn();
+  const lastRow = sheet.getLastRow();
+  const headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim()) : [];
+  const colOf = (name) => headers.findIndex(h => normalizeHeaderName(h) === normalizeHeaderName(name)) + 1;
+  const filledCount = (col) => {
+    if (lastRow < 2) return 0;
+    return sheet.getRange(2, col, lastRow - 1, 1).getValues().filter(r => String(r[0] === null || r[0] === undefined ? '' : r[0]).trim() !== '').length;
+  };
+
+  // 연결된 구글 폼 질문 제목 (폼 질문 열은 절대 삭제하지 않음)
+  let formTitles = null;
+  let formNote = '';
+  try {
+    const formUrl = sheet.getFormUrl ? sheet.getFormUrl() : null;
+    if (formUrl) {
+      formTitles = FormApp.openByUrl(formUrl).getItems().map(it => normalizeHeaderName(it.getTitle()));
+      formNote = '연결된 구글 폼 질문과 비교했습니다.';
+    } else {
+      formTitles = [];
+      formNote = '이 시트는 구글 폼에 연결되어 있지 않습니다.';
+    }
+  } catch (e) {
+    formTitles = null;
+    formNote = '⚠️ 연결된 구글 폼을 확인하지 못했습니다(' + String(e).slice(0, 80) + '). 삭제 대상은 스크립트가 만든 열 이름과 정확히 같은 열만입니다.';
+  }
+
+  const plan = { rename: null, add: [], remove: [], blocked: [], notes: [], formNote: formNote };
+  const fromCol = colOf(FEEDBACK_COLUMN_CLEANUP.rename.from);
+  const toCol = colOf(FEEDBACK_COLUMN_CLEANUP.rename.to);
+  if (fromCol && toCol) {
+    plan.notes.push(`'${FEEDBACK_COLUMN_CLEANUP.rename.from}'와 '${FEEDBACK_COLUMN_CLEANUP.rename.to}' 열이 모두 있어 이름 변경은 하지 않습니다. 시트에서 직접 정리해 주세요.`);
+  } else if (fromCol) {
+    plan.rename = { col: fromCol, filled: filledCount(fromCol) };
+  }
+  FEEDBACK_COLUMN_CLEANUP.add.forEach(name => {
+    if (!colOf(name) && !(name === FEEDBACK_COLUMN_CLEANUP.rename.to && plan.rename)) plan.add.push(name);
+  });
+  headers.forEach((h, i) => {
+    const n = normalizeHeaderName(h);
+    if (!FEEDBACK_COLUMN_CLEANUP.remove.some(r => normalizeHeaderName(r) === n)) return;
+    const item = { col: i + 1, name: h, filled: filledCount(i + 1) };
+    if (formTitles && formTitles.includes(n)) plan.blocked.push(item);
+    else plan.remove.push(item);
+  });
+  return plan;
+}
+
+function columnLetter(col) {
+  let s = '';
+  while (col > 0) {
+    const m = (col - 1) % 26;
+    s = String.fromCharCode(65 + m) + s;
+    col = Math.floor((col - 1) / 26);
+  }
+  return s;
+}
+
+function cleanupFeedbackColumns() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ui = SpreadsheetApp.getUi();
+  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!sheet) {
+    ui.alert('피드백 열 정리', 'Feedbacks 시트를 찾을 수 없습니다.', ui.ButtonSet.OK);
+    return { status: 'error' };
+  }
+
+  const plan = planFeedbackColumnCleanup(sheet);
+  const blockedText = plan.blocked.length ? `\n\n[삭제하지 않음 - 구글 폼 질문 열]\n${plan.blocked.map(b => `- ${columnLetter(b.col)}열 '${b.name}'`).join('\n')}` : '';
+  const notesText = plan.notes.length ? `\n\n[참고]\n${plan.notes.join('\n')}` : '';
+  if (!plan.rename && plan.add.length === 0 && plan.remove.length === 0) {
+    ui.alert('피드백 열 정리', `이미 정리되어 있어 바꿀 열이 없습니다.${blockedText}${notesText}`, ui.ButtonSet.OK);
+    return { status: 'noop' };
+  }
+
+  const lines = [`'${sheet.getName()}' 시트의 열을 아래와 같이 바꿉니다. 실행 전에 시트 전체를 백업 시트로 복사합니다.`];
+  if (plan.rename) lines.push(`\n[이름 변경] ${columnLetter(plan.rename.col)}열 '${FEEDBACK_COLUMN_CLEANUP.rename.from}' → '${FEEDBACK_COLUMN_CLEANUP.rename.to}' (내용 ${plan.rename.filled}칸 그대로 유지)`);
+  if (plan.add.length) lines.push(`\n[추가 - 맨 오른쪽] ${plan.add.map(n => `'${n}'`).join(', ')}`);
+  if (plan.remove.length) lines.push(`\n[삭제]\n${plan.remove.map(r => `- ${columnLetter(r.col)}열 '${r.name}' (내용 있는 칸 ${r.filled}개)`).join('\n')}`);
+  lines.push(`\n${plan.formNote}${blockedText}${notesText}\n\n진행할까요?`);
+  if (ui.alert('🧹 피드백 열 정리', lines.join('\n'), ui.ButtonSet.YES_NO) !== ui.Button.YES) {
+    return { status: 'cancelled' };
+  }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  let backupName = '';
+  try {
+    // 1. 백업 (시트 통째로 복사)
+    backupName = `${sheet.getName()}_백업_${Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd-HHmm')}`;
+    sheet.copyTo(ss).setName(backupName);
+
+    // 2. 이름 변경 → 3. 삭제(오른쪽 열부터) → 4. 추가(맨 오른쪽)
+    if (plan.rename) sheet.getRange(1, plan.rename.col).setValue(FEEDBACK_COLUMN_CLEANUP.rename.to);
+    plan.remove.map(r => r.col).sort((a, b) => b - a).forEach(col => sheet.deleteColumn(col));
+    plan.add.forEach(name => sheet.getRange(1, sheet.getLastColumn() + 1).setValue(name));
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+
+  const done = `완료했습니다. 백업 시트: '${backupName}'\n- 이름 변경 ${plan.rename ? 1 : 0}개, 추가 ${plan.add.length}개, 삭제 ${plan.remove.length}개`;
+  Logger.log('[cleanupFeedbackColumns] ' + done);
+  ui.alert('피드백 열 정리', done, ui.ButtonSet.OK);
+  return { status: 'success', backupName: backupName };
 }
 
 /**
@@ -2902,7 +3116,7 @@ function createUnauthorizedResponse() {
  * ==============================================================================
  * [회원 마이페이지 전용 API] getMemberView
  * - 회원 식별(view.js와 동일한 매칭 규칙) -> 휴대폰 뒷 4자리 또는 회원 토큰 서버 검증
- * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처/문제점 분석 열 제외)
+ * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처/피드백 요약/코치 확인 필요 열 제외)
  * - 휴대폰 번호 미등록 회원은 인증 불가 (비상 비밀번호 없음)
  * ==============================================================================
  */
@@ -2972,7 +3186,8 @@ function handleGetMemberView(ss, payload) {
     status: 'success',
     data: {
       member: memberViewSanitize(member, ['지침']),
-      feedbacks: myFeedbacks.map(f => memberViewSanitize(f, ['문제점', '수정제안'])),
+      // 피드백 요약·코치 확인 필요는 코치 전용 (회원에게 보내지 않음)
+      feedbacks: myFeedbacks.map(f => memberViewSanitize(f, ['문제점', '수정제안', '피드백요약', '코치확인필요'])),
       feedbackTotal: allFeedbacks.length,
       regenRemaining: getMemberRegenRemaining(memberKey)
     },

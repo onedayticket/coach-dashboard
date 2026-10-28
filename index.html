@@ -17,8 +17,8 @@
   <!-- Pretendard (한글 UI 폰트) -->
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
   <!-- Custom CSS (style.css + v3 모바일 우선 디자인 레이어) -->
-  <link href="style.css?v=3.1.0" rel="stylesheet">
-  <link href="coach-v3.css?v=3.4.0" rel="stylesheet">
+  <link href="style.css?v=3.2.0" rel="stylesheet">
+  <link href="coach-v3.css?v=3.5.0" rel="stylesheet">
 </head>
 <body class="cv3" data-ctab="list">
 
@@ -594,9 +594,10 @@
                           <th style="width: 85px;">공복체중</th>
                           <th style="width: 85px;" class="text-center">운동 점수</th>
                           <th style="width: 85px;" class="text-center">식단 점수</th>
-                          <th style="min-width: 200px; max-width: 320px;">피드백 요약</th>
-                          <th style="min-width: 180px; max-width: 260px;">문제점 분석</th>
-                          <th style="min-width: 200px; max-width: 320px;">보완점 및 개선방안</th>
+                          <th style="min-width: 200px; max-width: 300px;">피드백 요약</th>
+                          <th style="min-width: 180px; max-width: 280px;">잘한 점</th>
+                          <th style="min-width: 180px; max-width: 280px;">개선할 점</th>
+                          <th style="min-width: 180px; max-width: 280px;">코치 한마디</th>
                           <th style="width: 120px;" class="text-center">액션 버튼</th>
                         </tr>
                       </thead>
@@ -874,85 +875,44 @@
               </div>
             </div>
 
-            <!-- 피드백 요약 -->
+            <!-- 코치 확인 필요 (코치 전용, 비어 있으면 숨김) -->
+            <div class="mb-2 d-none" id="dfModalCoachCheckWrap">
+              <div class="border border-2 border-danger rounded-3 p-2 bg-danger-subtle">
+                <label for="dfModalCoachCheck" class="form-label fw-bold text-danger small d-flex align-items-center justify-content-between mb-1">
+                  <span><i class="bi bi-exclamation-octagon-fill me-1"></i>코치 확인 필요</span>
+                  <small class="fw-normal">코치만 보는 칸</small>
+                </label>
+                <textarea class="form-control df-autogrow border-danger" id="dfModalCoachCheck" rows="1"></textarea>
+              </div>
+            </div>
+
+            <!-- 피드백 요약 (코치 전용) -->
             <div class="mb-2">
               <label for="dfModalSummary" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
-                <span><i class="bi bi-chat-heart text-primary me-1"></i>1. 피드백 요약 (칭찬 및 수행 내용 요약)</span>
-                <small class="text-muted fw-normal">피드백 지침서 반영</small>
+                <span><i class="bi bi-card-text text-primary me-1"></i>피드백 요약</span>
+                <small class="text-muted fw-normal">코치만 보는 칸</small>
               </label>
-              <textarea class="form-control" id="dfModalSummary" rows="3" placeholder="오늘 수행한 운동과 식단에 대한 전반적인 칭찬과 요약이 로드됩니다."></textarea>
+              <textarea class="form-control df-autogrow" id="dfModalSummary" rows="2"></textarea>
             </div>
 
-            <!-- 문제점 분석 -->
+            <!-- 회원에게 보이는 칸 -->
+            <div class="d-flex align-items-center justify-content-between mt-3 mb-1">
+              <span class="small fw-bold text-secondary"><i class="bi bi-person-check me-1"></i>회원에게 보이는 피드백</span>
+              <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" onclick="copyModalMemberComment()" title="회원에게 보낼 수 있도록 회원용 최종본 복사">
+                <i class="bi bi-clipboard me-1"></i>회원용 최종본 복사
+              </button>
+            </div>
             <div class="mb-2">
-              <label for="dfModalProblem" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
-                <span><i class="bi bi-exclamation-triangle-fill text-danger me-1"></i>2. 문제점 분석 (아쉬운 점 분석)</span>
-                <small class="text-muted fw-normal">없으면 '특이사항 없음'</small>
-              </label>
-              <textarea class="form-control" id="dfModalProblem" rows="2" placeholder="오늘 수행하지 못한 부분이나 식단에서 아쉬운 점 분석"></textarea>
+              <label for="dfModalGood" class="form-label fw-bold text-dark small mb-1"><i class="bi bi-hand-thumbs-up-fill text-success me-1"></i>잘한 점</label>
+              <textarea class="form-control df-autogrow" id="dfModalGood" rows="2"></textarea>
             </div>
-
-            <!-- 보완점 및 개선방안 -->
             <div class="mb-2">
-              <label for="dfModalSolution" class="form-label fw-bold text-dark small d-flex align-items-center justify-content-between mb-1">
-                <span><i class="bi bi-check-circle-fill text-success me-1"></i>3. 보완점 및 개선방안 (실천 솔루션)</span>
-                <button type="button" class="btn btn-sm btn-outline-success py-0 px-2 fw-semibold" onclick="copyModalSolution()" title="회원에게 보낼 수 있도록 내용 복사">
-                  <i class="bi bi-clipboard me-1"></i>복사
-                </button>
-              </label>
-              <textarea class="form-control" id="dfModalSolution" rows="3" placeholder="문제점을 해결하기 위한 구체적이고 실천 가능한 개선방안 1가지"></textarea>
+              <label for="dfModalImprove" class="form-label fw-bold text-dark small mb-1"><i class="bi bi-arrow-up-circle-fill text-warning-emphasis me-1"></i>개선할 점</label>
+              <textarea class="form-control df-autogrow" id="dfModalImprove" rows="2"></textarea>
             </div>
-
-            <!-- 호환성 유지용 숨김 필드 -->
-            <textarea class="d-none" id="dfModalFeedbackComment"></textarea>
-          </div>
-
-          <!-- 2. AI 체중 추이 분석 및 계획 수정 제안 (근거 제시 필수) -->
-          <div class="card border-warning-subtle bg-light p-3 rounded-3" id="dfModalProposalSection">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <h6 class="fw-bold text-dark mb-0 d-flex align-items-center">
-                <i class="bi bi-lightbulb-fill text-warning me-2 fs-5"></i>AI 데이터 추이 분석 및 수정 제안
-              </h6>
-              <span class="badge bg-warning text-dark fw-bold" id="dfModalNeedModifyBadge">수정 권장</span>
-            </div>
-
-            <!-- 명확한 근거 문장 -->
-            <div class="p-2 mb-3 bg-white rounded border border-warning-subtle">
-              <strong class="text-dark small d-block mb-1"><i class="bi bi-search text-primary me-1"></i>수정 제안 근거 (체중 추이 및 수행 분석):</strong>
-              <div class="text-secondary small" id="dfModalModificationReason">
-                "데일리 피드백에서 최근 3일간 공복 체중의 감량 정체 및 저녁 식단 후 붓기가 확인되어..."
-              </div>
-            </div>
-
-            <!-- AI 운동/식단 제안 내용 & 복사 편의 버튼 -->
-            <div class="row g-2">
-              <div class="col-md-6">
-                <div class="p-2 bg-white rounded border h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small fw-bold text-success"><i class="bi bi-activity me-1"></i>AI 운동 수정 제안</span>
-                    <button type="button" class="btn btn-outline-success btn-sm py-0 px-2 small" id="btnCopyAiExerciseProposal">
-                      <i class="bi bi-arrow-up-right me-1"></i>중단 지침칸에 복사
-                    </button>
-                  </div>
-                  <p class="small text-muted mb-0" id="dfModalAiExerciseProposal">제안 내용 없음</p>
-                </div>
-              </div>
-              <div class="col-md-6">
-                <div class="p-2 bg-white rounded border h-100">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small fw-bold text-warning-emphasis"><i class="bi bi-egg-fried me-1"></i>AI 식단 수정 제안</span>
-                    <button type="button" class="btn btn-outline-warning btn-sm py-0 px-2 small text-dark" id="btnCopyAiDietProposal">
-                      <i class="bi bi-arrow-up-right me-1"></i>중단 지침칸에 복사
-                    </button>
-                  </div>
-                  <p class="small text-muted mb-0" id="dfModalAiDietProposal">제안 내용 없음</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="form-text small text-muted mt-2">
-              <i class="bi bi-shield-exclamation text-danger me-1"></i>
-              <strong>중요 원칙:</strong> 위 'AI 운동/식단 수정 제안'은 자동으로 회원 DB에 반영되지 않습니다. 제안을 수용하기로 결정한 경우 상단의 <strong>[중단 지침칸에 복사]</strong>를 눌러 중단 영역의 '수정 제안 지침' 칸에 입력 후 그곳의 [저장] 버튼을 누를 때만 회원 DB(members sheet)에 최종 반영됩니다.
+            <div class="mb-2">
+              <label for="dfModalCoachNote" class="form-label fw-bold text-dark small mb-1"><i class="bi bi-chat-heart-fill text-primary me-1"></i>코치 한마디</label>
+              <textarea class="form-control df-autogrow" id="dfModalCoachNote" rows="2"></textarea>
             </div>
           </div>
 
@@ -1183,6 +1143,6 @@
   <!-- Chart.js 4.x CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Main Application Logic (app.js) -->
-  <script src="app.js?v=3.6.0"></script>
+  <script src="app.js?v=3.7.0"></script>
 </body>
 </html>

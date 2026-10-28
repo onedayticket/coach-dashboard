@@ -123,12 +123,14 @@ const MOCK_DB = {
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.0,
       '피드백_요약': '첫날 멋진 출발입니다! 밥 양 조절과 수분 2L 달성 훌륭합니다.',
-      '문제점_분석': '특이사항 없음',
-      '보완점_및_개선방안': '현재의 페이스를 안정적으로 유지해 주세요.',
+      '잘한 점': '첫날부터 밥 양 조절과 수분 2L를 모두 지키셨어요.',
+      '개선할 점': '',
+      '코치 한마디': '지금 페이스 그대로 이어가 봐요!',
       '운동 내용': '맨몸 스쿼트 4세트 + 런지 3세트 + 코어 스트레칭 15분',
       '식단 내용': '아침 그릭요거트, 점심 소불고기 백반(밥 반공기), 저녁 닭가슴살 샐러드',
       '회원 일기/코멘트': '첫날이라 긴장 반 설렘 반으로 시작했습니다. 물 2L 마시기 성공!',
-      '피드백 코멘트': '첫날 멋진 출발입니다! 밥 양 조절과 수분 2L 달성 훌륭합니다.'
+      '피드백 코멘트': '[잘한 점]\n첫날부터 밥 양 조절과 수분 2L를 모두 지키셨어요.\n\n[코치 한마디]\n지금 페이스 그대로 이어가 봐요!',
+      '피드백 상태': '완료'
     },
     {
       '피드백번호': 'FB02',
@@ -140,12 +142,14 @@ const MOCK_DB = {
       '운동_실행률_점수': 5.0,
       '식단_실행률_점수': 4.5,
       '피드백_요약': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!',
-      '문제점_분석': '특이사항 없음',
-      '보완점_및_개선방안': '충분한 수분 섭취와 함께 스트레칭을 병행해 주세요.',
+      '잘한 점': '야식 유혹을 이겨내셨어요.',
+      '개선할 점': '러닝 후 스트레칭을 5분만 더해 보세요.',
+      '코치 한마디': '오늘은 푹 주무세요!',
       '운동 내용': '인터벌 조깅 30분 (페이스 6:15)',
       '식단 내용': '아침 프로틴 쉐이크, 점심 서브웨이 로티세리(위트빵), 저녁 연어구이 샐러드',
       '회원 일기/코멘트': '러닝 후 땀 흘리니 상쾌하네요. 야식 유혹 참아냈습니다.',
-      '피드백 코멘트': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!'
+      '피드백 코멘트': '[잘한 점]\n야식 유혹을 이겨내셨어요.\n\n[개선할 점]\n러닝 후 스트레칭을 5분만 더해 보세요.\n\n[코치 한마디]\n오늘은 푹 주무세요!',
+      '피드백 상태': '완료'
     },
     {
       '피드백번호': 'FB03',
@@ -157,14 +161,14 @@ const MOCK_DB = {
       '운동_실행률_점수': 4.0,
       '식단_실행률_점수': 4.0,
       '피드백_요약': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
-      '문제점_분석': '바쁜 업무로 인해 메인 유산소 및 근력 운동을 건너뛰어 대사 자극이 다소 부족했습니다.',
-      '보완점_및_개선방안': '내일은 점심시간 10분 산책과 저녁 15분 홈트레이닝으로 가볍게 보충해 보세요.',
-      '운동_수정_제안': '야근이 잦은 날을 위한 15분 침대/매트 홈트 3종 (버드독, 브릿지, 플랭크)',
-      '식단_수정_제안': '피로 누적 시 비타민 B/C 보충 및 충분한 미온수 섭취',
+      '잘한 점': '야근 중에도 폼롤러 스트레칭 20분을 챙기셨어요.',
+      '개선할 점': '내일은 점심시간 10분 산책을 더해 보세요.',
+      '코치 한마디': '바쁜 날에도 끊기지 않은 게 제일 중요해요.',
+      '코치 확인 필요': '야근이 3일째 이어지고 있어 운동 루틴 조정이 필요한지 확인해 주세요.',
       '운동 내용': '야근으로 인해 취침 전 폼롤러 스트레칭 20분만 진행',
       '식단 내용': '점심 김치찌개 건더기 위주, 저녁 단호박+닭가슴살 소시지',
       '회원 일기/코멘트': '업무가 너무 바빠 운동을 제대로 못해 아쉽고 피곤합니다.',
-      '피드백 코멘트': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
+      '피드백 코멘트': '[잘한 점]\n야근 중에도 폼롤러 스트레칭 20분을 챙기셨어요.\n\n[개선할 점]\n내일은 점심시간 10분 산책을 더해 보세요.\n\n[코치 한마디]\n바쁜 날에도 끊기지 않은 게 제일 중요해요.',
       '피드백 상태': 'AI초안',
       'AI초안_생성일시': '2026-10-10 22:30:00'
     },
@@ -204,12 +208,14 @@ const MOCK_DB = {
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.0,
       '피드백_요약': '디저트 방어 성공 축하드립니다! 의지가 훌륭합니다.',
-      '문제점_분석': '특이사항 없음',
-      '보완점_및_개선방안': '식사 간격을 일정하게 유지하여 허기짐을 방지해 보세요.',
+      '잘한 점': '',
+      '개선할 점': '',
+      '코치 한마디': '',
       '운동 내용': '필라테스 코어 35분',
       '식단 내용': '아침 사과, 점심 일반식(구내식당), 저녁 샐러드',
       '회원 일기/코멘트': '디저트 카페 가자는 동료들 유혹 뿌리치고 아메리카노 마셨습니다.',
-      '피드백 코멘트': '디저트 방어 성공 축하드립니다!'
+      '피드백 코멘트': '디저트 방어 성공 축하드립니다! (이전 형식 피드백 예시)',
+      '피드백 상태': '완료'
     },
     {
       '피드백번호': 'FB07',
@@ -631,7 +637,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.9';
+const EXPECTED_BACKEND_VERSION = '2026-10-24.10';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -1240,7 +1246,7 @@ function hasBrowserGeminiKey() {
 async function requestAiPromptFromGas(kind, fields) {
   const res = await postToGasBackend({ action: 'buildAiPrompt', kind, ...fields }, { silent: true });
   if (res && res.status === 'success' && res.prompt) {
-    return { prompt: res.prompt, systemInstruction: res.systemInstruction || '', scores: res.scores || null };
+    return { prompt: res.prompt, systemInstruction: res.systemInstruction || '', scores: res.scores || null, maxOutputTokens: res.maxOutputTokens || null };
   }
   if (res && res.status !== 'cancelled') console.warn('[AI 프롬프트 수신 실패 -> GAS 생성으로 진행]', res && res.message);
   return null;
@@ -1290,7 +1296,8 @@ async function readGeminiSseStream(res, onChunk) {
   return { text, finishReason: finishReason || 'STOP', usage };
 }
 
-async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
+// options.maxOutputTokens: 최대 출력 토큰 (GAS buildAiPrompt가 내려준 값, 없으면 4096)
+async function callGeminiDirectlyFromBrowser(prompt, systemInstruction, options) {
   const apiKey = getBrowserGeminiKey();
   if (!apiKey) return { text: null, error: 'API 키 미등록' };
 
@@ -1364,7 +1371,7 @@ async function callGeminiDirectlyFromBrowser(prompt, systemInstruction) {
           temperature: 0.7,
           topK: 40,
           topP: 0.95,
-          maxOutputTokens: 4096
+          maxOutputTokens: (options && options.maxOutputTokens) || 4096
         }
       };
 
@@ -1490,14 +1497,9 @@ function simulateMockAction(payload) {
         fb['피드백_요약'] = payload.피드백_요약;
         fb['피드백요약'] = payload.피드백_요약;
       }
-      if (payload.문제점_분석) {
-        fb['문제점_분석'] = payload.문제점_분석;
-        fb['문제점분석'] = payload.문제점_분석;
-      }
-      if (payload.보완점_및_개선방안) {
-        fb['보완점_및_개선방안'] = payload.보완점_및_개선방안;
-        fb['보완점및개선방안'] = payload.보완점_및_개선방안;
-      }
+      FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => {
+        if (payload[p.key] !== undefined) setFeedbackPart(fb, p, payload[p.key]);
+      });
     }
     return { status: 'success', message: '피드백 코멘트가 저장되었습니다.' };
   }
@@ -3519,7 +3521,7 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
 
 /**
  * [피드백 완료 여부 지능형 판별기]
- * - 피드백 코멘트, 피드백 내용, 피드백 요약, 보완점/개선방안, 문제점 분석 등
+ * - 피드백 코멘트, 피드백 내용, 피드백 요약, 잘한 점·개선할 점·코치 한마디 등
  *   피드백 관련 셀에 실제 내용이 존재하면 즉시 '피드백 완료'로 판별하여 새로고침 시에도 완료 상태 유지!
  */
 function isFeedbackRecordCompleted(fb) {
@@ -3566,20 +3568,11 @@ function isFeedbackRecordCompleted(fb) {
     return true;
   }
 
-  // 4. 보완점 및 개선방안 셀에 유의미한 내용이 있는 경우
-  const solution = String(getField(fb, 
-    '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution'
-  ) || '').trim();
-  if (solution && !invalidTokens.includes(solution)) {
-    return true;
-  }
-
-  // 5. 문제점 분석 셀에 유의미한 내용이 있는 경우 ('특이사항 없음' 등 제외)
-  const problem = String(getField(fb, 
-    '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problem', 'problemAnalysis'
-  ) || '').trim();
-  const invalidProblemTokens = [...invalidTokens, '특이사항 없음', '특이사항없음', '특이사항'];
-  if (problem && !invalidProblemTokens.includes(problem)) {
+  // 4. 회원용 칸(잘한 점·개선할 점·코치 한마디)에 내용이 있는 경우
+  if (FEEDBACK_MEMBER_PARTS.some(p => {
+    const v = getFeedbackPart(fb, p);
+    return v && !invalidTokens.includes(v);
+  })) {
     return true;
   }
 
@@ -3593,7 +3586,7 @@ function renderFeedbackTable(feedbacks) {
   if (!feedbacks || feedbacks.length === 0) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="9" class="text-center py-4 text-muted small">
+        <td colspan="10" class="text-center py-4 text-muted small">
           제출된 데일리 피드백 기록이 없습니다.
         </td>
       </tr>
@@ -3623,42 +3616,21 @@ function renderFeedbackTable(feedbacks) {
     const rawDiet = getField(fb, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
     const dietScore = (rawDiet !== '' && rawDiet !== null && rawDiet !== undefined) ? rawDiet : '-';
     
-    // 2. 텍스트 추출 (fb['피드백_요약'], fb['문제점_분석'], fb['보완점_및_개선방안'] 우선 탐색)
-    let summary = getField(fb, '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary') || '';
-    let problem = getField(fb, '문제점_분석', '문제점 분석', '문제점분석', '문제점', 'problem', 'problemAnalysis') || '';
-    let solution = getField(fb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안', 'solution', 'improvementSolution') || '';
+    // 2. 텍스트 추출: 요약(코치용) + 회원용 칸 3개 + 코치 확인 필요
+    const summary = String(getField(fb, '피드백_요약', '피드백 요약', '피드백요약', 'summary', 'feedbackSummary') || '').trim() || '미작성';
+    const memberParts = FEEDBACK_MEMBER_PARTS.map(p => getFeedbackPart(fb, p));
+    const coachCheck = getFeedbackPart(fb, FEEDBACK_COACH_CHECK);
+    // 예전 기록(회원용 칸이 모두 비어 있음)은 저장된 피드백 코멘트를 코치 한마디 칸에 대신 표시
+    const savedComment = getFeedbackCommentText(fb);
+    const isLegacy = memberParts.every(v => !v) && !!savedComment;
+    const [good, improve, note] = isLegacy ? ['', '', savedComment] : memberParts;
+    const memberCommentForCopy = isLegacy ? savedComment : (composeMemberFeedbackComment(good, improve, note) || savedComment);
+    const partCell = (cls, label, text, tone) => `
+        <td class="${cls} small ${text ? '' : 'is-empty'}" data-label="${label}" style="min-width: 180px; max-width: 280px;">
+          <div class="feedback-text-cell ${text ? tone : 'text-muted'}" title="${escapeHtml(text || '미작성')}">${escapeHtml(text || '미작성')}</div>
+        </td>`;
 
-    // 레거시 코치 피드백 코멘트가 있는 경우 분리 파싱 보완
-    if (!summary) {
-      const legacyComment = getField(fb, 
-        '피드백 코멘트', '피드백코멘트', 
-        '피드백 내용', '피드백내용', 
-        '코치 피드백', '코치피드백', 
-        'feedbackComment', 'coachComment'
-      ) || '';
-      if (legacyComment) {
-        if (legacyComment.includes('[문제점 분석]') || legacyComment.includes('[보완점 및 개선방안]')) {
-          const parts = legacyComment.split(/\[문제점 분석\]|\[보완점 및 개선방안\]/);
-          summary = (parts[0] || '').trim();
-          if (!problem && legacyComment.includes('[문제점 분석]')) {
-            const probPart = legacyComment.split('[문제점 분석]')[1].split('[보완점 및 개선방안]')[0];
-            problem = (probPart || '').trim();
-          }
-          if (!solution && legacyComment.includes('[보완점 및 개선방안]')) {
-            const solPart = legacyComment.split('[보완점 및 개선방안]')[1];
-            solution = (solPart || '').trim();
-          }
-        } else {
-          summary = legacyComment.trim();
-        }
-      }
-    }
-
-    if (!summary) summary = '미작성';
-    if (!problem) problem = '미작성';
-    if (!solution) solution = '미작성';
-
-    // [핵심] 해당 셀에 내용이 있거나 코멘트/요약/보완점/문제점이 작성되어 있다면 피드백 완료로 판정
+    // [핵심] 상태가 완료이거나 코멘트/요약/회원용 칸이 작성되어 있다면 피드백 완료로 판정
     const isCompleted = isFeedbackRecordCompleted(fb);
     const rawStatus = String(getField(fb, '피드백 상태', '피드백상태', '완료 여부', '완료여부', '진행상태', '상태') || '').trim();
     const cleanStatus = rawStatus.toLowerCase().replace(/\s+/g, '');
@@ -3676,26 +3648,18 @@ function renderFeedbackTable(feedbacks) {
         <td class="cv3-c-diet text-nowrap text-center" data-label="식단">
           <span class="badge ${getScoreBadgeClass(dietScore)}">${dietScore !== '-' ? `${dietScore} 점` : '-'}</span>
         </td>
-        <td class="cv3-c-summary small ${summary === '미작성' ? 'is-empty' : ''}" data-label="피드백 요약" style="min-width: 200px; max-width: 320px;">
-          <div class="feedback-text-cell" title="${escapeHtml(summary)}">
-            ${isDraft ? '<span class="badge bg-info text-white me-1" style="font-size: 0.68rem;">AI초안</span>' : ''}
-            ${isAiFailed ? '<span class="badge bg-danger text-white me-1" style="font-size: 0.68rem;">AI실패</span>' : ''}
-            ${escapeHtml(summary)}
-          </div>
+        <td class="cv3-c-summary small ${summary === '미작성' ? 'is-empty' : ''}" data-label="피드백 요약" style="min-width: 200px; max-width: 300px;">
+          <div class="feedback-text-cell" title="${escapeHtml(summary)}">${isDraft ? '<span class="badge bg-info text-white me-1" style="font-size: 0.68rem;">AI초안</span>' : ''}${isAiFailed ? '<span class="badge bg-danger text-white me-1" style="font-size: 0.68rem;">AI실패</span>' : ''}${escapeHtml(summary)}</div>
+          ${coachCheck ? `<div class="feedback-text-cell coach-check-cell mt-1" title="${escapeHtml(coachCheck)}"><span class="badge bg-danger text-white me-1" style="font-size: 0.68rem;">확인 필요</span>${escapeHtml(coachCheck)}</div>` : ''}
         </td>
-        <td class="cv3-c-problem small ${problem === '미작성' ? 'is-empty' : ''}" data-label="문제점 분석" style="min-width: 180px; max-width: 260px;">
-          <div class="feedback-text-cell ${problem !== '미작성' && problem !== '특이사항 없음' ? 'problem-cell text-danger-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(problem)}">
-            ${escapeHtml(problem)}
-          </div>
-        </td>
-        <td class="cv3-c-solution small ${solution === '미작성' ? 'is-empty' : ''}" data-label="보완점 및 개선방안" style="min-width: 200px; max-width: 320px;">
-          <div class="feedback-text-cell ${solution !== '미작성' ? 'solution-cell text-success-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(solution)}">
-            ${escapeHtml(solution)}
-          </div>
-          ${solution !== '미작성' ? `
-            <button type="button" class="btn btn-sm btn-outline-success cv3-copy-btn mt-1 py-0 px-2" data-copy="${escapeHtml(solution)}"
-                    onclick="event.stopPropagation(); copyFeedbackSolution(this)" title="회원에게 보낼 수 있도록 내용 복사">
-              <i class="bi bi-clipboard me-1"></i>복사
+        ${partCell('cv3-c-good', '잘한 점', good, 'solution-cell text-success-emphasis fw-medium')}
+        ${partCell('cv3-c-improve', '개선할 점', improve, 'problem-cell text-warning-emphasis fw-medium')}
+        <td class="cv3-c-note small ${note ? '' : 'is-empty'}" data-label="${isLegacy ? '피드백 코멘트 (이전 형식)' : '코치 한마디'}" style="min-width: 180px; max-width: 280px;">
+          <div class="feedback-text-cell ${note ? 'solution-cell text-primary-emphasis fw-medium' : 'text-muted'}" title="${escapeHtml(note || '미작성')}">${escapeHtml(note || '미작성')}</div>
+          ${memberCommentForCopy ? `
+            <button type="button" class="btn btn-sm btn-outline-success cv3-copy-btn mt-1 py-0 px-2" data-copy="${escapeHtml(memberCommentForCopy)}"
+                    onclick="event.stopPropagation(); copyFeedbackMemberComment(this)" title="회원에게 보낼 수 있도록 회원용 최종본 복사">
+              <i class="bi bi-clipboard me-1"></i>회원용 복사
             </button>
           ` : ''}
         </td>
@@ -3783,7 +3747,10 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   // 2. [2단계] 회원 오늘 제출 설문 원본 박스 바인딩
   const rawExercise = getField(targetFb, '운동내용', '운동 내용', '오늘의 운동', '운동수행', '운동', 'exerciseContent') || '기록된 운동 내용이 없습니다.';
   const rawDiet = getField(targetFb, '식단내용', '식단 내용', '오늘의 식단', '식단기록', '식단', 'dietContent', 'mealContent') || '기록된 식단 내용이 없습니다.';
-  const rawMemo = getField(targetFb, '회원 일기/코멘트', '회원일기/코멘트', '회원 일기', '코치에게한마디', '하고싶은말', '코멘트', '메모', 'userComment') || '작성된 코멘트가 없습니다.';
+  // 회원 메모는 코치·AI가 쓰는 열(피드백 코멘트 등)을 뺀 회원 제출 칸에서만 찾음
+  const memberOnlyFb = {};
+  Object.keys(targetFb).forEach(k => { if (!isCoachWrittenFeedbackColumn(k)) memberOnlyFb[k] = targetFb[k]; });
+  const rawMemo = getField(memberOnlyFb, '회원 일기/코멘트', '회원일기/코멘트', '회원 일기', '코치에게한마디', '하고싶은말', '코멘트', '메모', 'userComment') || '작성된 코멘트가 없습니다.';
 
   setElementText('rawSubmissionExercise', rawExercise);
   setElementText('rawSubmissionDiet', rawDiet);
@@ -3809,79 +3776,18 @@ function openDailyFeedbackModal(targetDate, targetRowNumber) {
   setElementText('dfModalExScore', formatScoreLabel(initialExScore));
   setElementText('dfModalDietScore', formatScoreLabel(initialDietScore));
 
-  // 4. 피드백 요약 / 문제점 / 보완점 필드 세팅
-  let summaryVal = getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', '요약') || '';
-  let problemVal = getField(targetFb, '문제점_분석', '문제점 분석', '문제점분석', '문제점') || '';
-  let solutionVal = getField(targetFb, '보완점_및_개선방안', '보완점 및 개선방안', '보완점및개선방안', '보완점', '개선방안') || '';
-  const existingComment = getField(targetFb, 
-    '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', 
-    '코치 피드백', '코치피드백', '코칭 코멘트', '코칭코멘트', 
-    '코치 코멘트', '코치코멘트', '코칭 내용', '코칭내용', 
-    '코치답변', '코치 답변', '답변', 'feedbackComment', 'coachComment'
-  ) || '';
-
-  if (!summaryVal && existingComment) {
-    if (existingComment.includes('[문제점 분석]') || existingComment.includes('[보완점 및 개선방안]')) {
-      const parts = existingComment.split(/\[문제점 분석\]|\[보완점 및 개선방안\]/);
-      summaryVal = (parts[0] || '').trim();
-      if (!problemVal && existingComment.includes('[문제점 분석]')) {
-        problemVal = (existingComment.split('[문제점 분석]')[1].split('[보완점 및 개선방안]')[0] || '').trim();
-      }
-      if (!solutionVal && existingComment.includes('[보완점 및 개선방안]')) {
-        solutionVal = (existingComment.split('[보완점 및 개선방안]')[1] || '').trim();
-      }
-    } else {
-      summaryVal = existingComment.trim();
-    }
-  }
+  // 4. 피드백 요약(코치용) / 잘한 점·개선할 점·코치 한마디(회원용) / 코치 확인 필요(코치용) 세팅
+  const summaryVal = String(getField(targetFb, '피드백_요약', '피드백 요약', '피드백요약', 'summary', 'feedbackSummary') || '').trim();
+  const memberPartVals = FEEDBACK_MEMBER_PARTS.map(p => getFeedbackPart(targetFb, p));
+  // 예전 형식 기록(회원용 칸이 모두 비어 있음)은 저장된 피드백 코멘트를 코치 한마디 칸에 불러옴
+  const legacyComment = memberPartVals.every(v => !v) ? getFeedbackCommentText(targetFb) : '';
+  if (legacyComment) memberPartVals[2] = legacyComment;
 
   setInputValue('dfModalSummary', summaryVal);
-  setInputValue('dfModalProblem', problemVal || '특이사항 없음');
-  setInputValue('dfModalSolution', solutionVal);
-
-  // 통합 코멘트 숨김 필드
-  let fullComment = summaryVal;
-  if (problemVal && problemVal !== '특이사항 없음') {
-    fullComment += `\n\n[문제점 분석]\n${problemVal}`;
-  }
-  if (solutionVal) {
-    fullComment += `\n\n[보완점 및 개선방안]\n${solutionVal}`;
-  }
-  setInputValue('dfModalFeedbackComment', fullComment.trim());
-
-  // 5. 운동/식단 수정 제안 및 근거 표시
-  const exProposal = getField(targetFb, '운동_수정_제안', '운동 수정 제안', '운동수정제안', 'exerciseProposal') || '';
-  const dietProposal = getField(targetFb, '식단_수정_제안', '식단 수정 제안', '식단수정제안', 'dietProposal') || '';
-
-  const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
-  const dietProposalEl = document.getElementById('dfModalAiDietProposal');
-  const reasonEl = document.getElementById('dfModalModificationReason');
-  const badgeEl = document.getElementById('dfModalNeedModifyBadge');
-
-  if (exProposalEl) exProposalEl.textContent = exProposal || '제안 내용 없음';
-  if (dietProposalEl) dietProposalEl.textContent = dietProposal || '제안 내용 없음';
-
-  const hasProposal = Boolean((exProposal && exProposal.trim()) || (dietProposal && dietProposal.trim()));
-  if (badgeEl) {
-    if (hasProposal) {
-      badgeEl.className = 'badge bg-warning text-dark fw-bold';
-      badgeEl.textContent = '수정 권장';
-    } else {
-      badgeEl.className = 'badge bg-success-subtle text-success fw-bold';
-      badgeEl.textContent = '현재 루틴 유지';
-    }
-  }
-
-  if (reasonEl) {
-    if ((problemVal && problemVal !== '특이사항 없음' && problemVal !== '미작성') || solutionVal) {
-      reasonEl.innerHTML = `
-        ${problemVal && problemVal !== '특이사항 없음' && problemVal !== '미작성' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problemVal)}</div>` : ''}
-        ${solutionVal && solutionVal !== '미작성' ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(solutionVal)}</div>` : ''}
-      `;
-    } else {
-      reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
-    }
-  }
+  FEEDBACK_MEMBER_PARTS.forEach((p, i) => setInputValue(p.inputId, memberPartVals[i]));
+  setInputValue(FEEDBACK_COACH_CHECK.inputId, getFeedbackPart(targetFb, FEEDBACK_COACH_CHECK));
+  updateCoachCheckVisibility();
+  autoGrowFeedbackModalFields();
 
   // 6. 상태 배너 문구 동적 안내
   const rawStatus = String(getField(targetFb, '피드백 상태', '피드백상태', '완료 여부', '완료여부', '진행상태', '상태') || '').trim();
@@ -4008,9 +3914,8 @@ async function runAiDailyFeedbackForCurrentModal() {
   try {
     // [2] AI 프롬프트 구성 시 기존 코치 코멘트 필드는 제외 (순수 일지 데이터를 기준으로 새롭게 분석)
     const cleanTargetFb = {};
-    const excludeCommentKeys = ['피드백 코멘트', '피드백코멘트', '피드백_요약', '피드백요약', '코치 피드백', '코치피드백', '코치 코멘트', '코치코멘트', '문제점_분석', '문제점분석', '보완점_및_개선방안', '보완점및개선방안', '운동_수정_제안', '식단_수정_제안', '피드백 상태', '피드백상태'];
     Object.keys(targetFb).forEach(k => {
-      if (!excludeCommentKeys.includes(k)) cleanTargetFb[k] = targetFb[k];
+      if (!isCoachWrittenFeedbackColumn(k)) cleanTargetFb[k] = targetFb[k];
     });
 
     // 점수는 GAS computeFeedbackScores 결과만 사용 (브라우저에서 계산하지 않음, AI에게 정하게 하지 않음)
@@ -4021,26 +3926,39 @@ async function runAiDailyFeedbackForCurrentModal() {
       : null;
     if (builtPrompt) {
       try {
-        directRes = await callGeminiDirectlyFromBrowser(builtPrompt.prompt, builtPrompt.systemInstruction);
+        directRes = await callGeminiDirectlyFromBrowser(builtPrompt.prompt, builtPrompt.systemInstruction, { maxOutputTokens: builtPrompt.maxOutputTokens });
         if (directRes && directRes.isAborted) {
           hideLoadingOverlay();
           showToast('피드백 생성이 취소되었습니다.', 'info', 3000);
           return;
         }
+        // 최대 길이에서 잘린 응답은 쓰지 않고 GAS 경유로 다시 시도
+        if (directRes && directRes.text && directRes.isTruncated) {
+          console.warn('[브라우저 직통 응답이 최대 길이에서 잘림 -> GAS 백엔드로 재시도]');
+          directRes = { text: null, error: '응답 잘림(MAX_TOKENS)' };
+        }
         if (directRes && directRes.text) {
           const rawJson = cleanAndParseAiJson(directRes.text);
           if (rawJson) {
-            // 누락 항목에 기본 문장을 채우지 않음 (요약이 없으면 실패로 보고 GAS 경유로 재시도)
+            // 누락 항목에 기본 문장을 채우지 않음 (요약 또는 회원용 칸이 모두 비면 실패로 보고 GAS 경유로 재시도)
+            const pick = (...names) => {
+              for (const n of names) {
+                const v = rawJson[n];
+                if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+              }
+              return '';
+            };
             const directData = {
-              "피드백_요약": String(rawJson['피드백_요약'] || rawJson['피드백 요약'] || rawJson['피드백요약'] || rawJson['요약'] || rawJson['feedbackComment'] || '').trim(),
-              "문제점_분석": String(rawJson['문제점_분석'] || rawJson['문제점 분석'] || rawJson['문제점분석'] || rawJson['문제점'] || '').trim(),
-              "보완점_및_개선방안": String(rawJson['보완점_및_개선방안'] || rawJson['보완점 및 개선방안'] || rawJson['보완점및개선방안'] || rawJson['보완점'] || rawJson['개선방안'] || '').trim(),
-              "운동_수정_제안": String(rawJson['운동_수정_제안'] || rawJson['운동 수정 제안'] || rawJson['운동수정제안'] || ''),
-              "식단_수정_제안": String(rawJson['식단_수정_제안'] || rawJson['식단 수정 제안'] || rawJson['식단수정제안'] || ''),
+              "피드백_요약": pick('피드백_요약', '피드백 요약', '피드백요약', '요약'),
+              "잘한_점": pick('잘한_점', '잘한 점', '잘한점'),
+              "개선할_점": pick('개선할_점', '개선할 점', '개선할점'),
+              "코치_한마디": pick('코치_한마디', '코치 한마디', '코치한마디'),
+              "코치_확인_필요": pick('코치_확인_필요', '코치 확인 필요', '코치확인필요'),
               "운동_실행률_점수": normalizeScore(builtPrompt.scores && builtPrompt.scores.exercise),
               "식단_실행률_점수": normalizeScore(builtPrompt.scores && builtPrompt.scores.diet)
             };
-            if (directData.피드백_요약) aiData = directData;
+            const hasMemberPart = FEEDBACK_MEMBER_PARTS.some(p => directData[p.key]);
+            if (directData.피드백_요약 && hasMemberPart) aiData = directData;
           }
         }
       } catch (e) {
@@ -4110,82 +4028,19 @@ async function runAiDailyFeedbackForCurrentModal() {
     setElementText('dfModalDietScore', formatScoreLabel(dietScoreVal));
 
     const summaryVal = aiData.피드백_요약 || '';
-    const problemVal = aiData.문제점_분석 || '';
-    const solutionVal = aiData.보완점_및_개선방안 || '';
-
     setInputValue('dfModalSummary', summaryVal);
-    setInputValue('dfModalProblem', problemVal);
-    setInputValue('dfModalSolution', solutionVal);
-
-    let fullComment = summaryVal;
-    if (problemVal && problemVal !== '특이사항 없음') {
-      fullComment += `\n\n[문제점 분석]\n${problemVal}`;
-    }
-    if (solutionVal) {
-      fullComment += `\n\n[보완점 및 개선방안]\n${solutionVal}`;
-    }
-    setInputValue('dfModalFeedbackComment', fullComment.trim());
-
-    // 수정 제안 2개 및 근거 영역 갱신
-    const exProposal = aiData.운동_수정_제안 || '';
-    const dietProposal = aiData.식단_수정_제안 || '';
-
-    const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
-    const dietProposalEl = document.getElementById('dfModalAiDietProposal');
-    const reasonEl = document.getElementById('dfModalModificationReason');
-    const badgeEl = document.getElementById('dfModalNeedModifyBadge');
-
-    if (exProposalEl) exProposalEl.textContent = exProposal || '제안 내용 없음';
-    if (dietProposalEl) dietProposalEl.textContent = dietProposal || '제안 내용 없음';
-
-    const hasProposal = Boolean((exProposal && exProposal.trim()) || (dietProposal && dietProposal.trim()));
-    if (badgeEl) {
-      if (hasProposal) {
-        badgeEl.className = 'badge bg-warning text-dark fw-bold';
-        badgeEl.textContent = '수정 권장';
-      } else {
-        badgeEl.className = 'badge bg-success-subtle text-success fw-bold';
-        badgeEl.textContent = '현재 루틴 유지';
-      }
-    }
-
-    if (reasonEl) {
-      if ((problemVal && problemVal !== '특이사항 없음') || solutionVal) {
-        reasonEl.innerHTML = `
-          ${problemVal && problemVal !== '특이사항 없음' ? `<div class="mb-1"><strong class="text-danger-emphasis">[문제점 분석]</strong> ${escapeHtml(problemVal)}</div>` : ''}
-          ${solutionVal ? `<div><strong class="text-success-emphasis">[보완점 및 개선방안]</strong> ${escapeHtml(solutionVal)}</div>` : ''}
-        `;
-      } else {
-        reasonEl.textContent = '특이사항 없음 (현재 루틴 안정적 유지 권장)';
-      }
-    }
+    FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => setInputValue(p.inputId, aiData[p.key] || ''));
+    updateCoachCheckVisibility();
+    autoGrowFeedbackModalFields();
+    const memberComment = composeMemberFeedbackComment(aiData.잘한_점, aiData.개선할_점, aiData.코치_한마디);
 
     // [4] targetFb 및 AppState 피드백 객체에 새 피드백 데이터 즉시 덮어쓰기
     targetFb['운동_실행률_점수'] = exScoreVal;
-    targetFb['운동실행률점수'] = exScoreVal;
-    targetFb['운동 점수'] = exScoreVal;
-
     targetFb['식단_실행률_점수'] = dietScoreVal;
-    targetFb['식단실행률점수'] = dietScoreVal;
-    targetFb['식단 점수'] = dietScoreVal;
-
     targetFb['피드백_요약'] = summaryVal;
-    targetFb['피드백요약'] = summaryVal;
-
-    targetFb['문제점_분석'] = problemVal;
-    targetFb['문제점분석'] = problemVal;
-
-    targetFb['보완점_및_개선방안'] = solutionVal;
-    targetFb['보완점및개선방안'] = solutionVal;
-
-    targetFb['운동_수정_제안'] = exProposal;
-    targetFb['식단_수정_제안'] = dietProposal;
-
-    targetFb['피드백 코멘트'] = fullComment.trim();
-    targetFb['피드백코멘트'] = fullComment.trim();
-
+    FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => setFeedbackPart(targetFb, p, aiData[p.key] || ''));
+    targetFb['피드백 코멘트'] = memberComment;
     targetFb['피드백 상태'] = 'AI초안';
-    targetFb['피드백상태'] = 'AI초안';
 
     // [5] 대시보드 메인 화면의 피드백 일지 누적 테이블도 즉시 갱신 (덮어쓰기 시각적 확인)
     renderFeedbackTable(recentFeedbacks);
@@ -4230,10 +4085,10 @@ function initDailyFeedbackModalActions() {
       const memberId = getMemberId(mem);
       const memberPhone = getMemberPhone(mem);
 
-      // 모달 UI의 3개 분리 텍스트영역 및 2개 점수 입력값 직접 읽기
+      // 모달의 요약(코치용)·회원용 칸 3개·코치 확인 필요·점수 2개 직접 읽기
       const summaryToSave = getInputValue('dfModalSummary').trim();
-      const problemToSave = getInputValue('dfModalProblem').trim() || '특이사항 없음';
-      const solutionToSave = getInputValue('dfModalSolution').trim();
+      const partsToSave = {};
+      FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => { partsToSave[p.key] = getInputValue(p.inputId).trim(); });
 
       const exScoreInput = getInputValue('dfModalInputExScore');
       const dietScoreInput = getInputValue('dfModalInputDietScore');
@@ -4241,21 +4096,8 @@ function initDailyFeedbackModalActions() {
       const exScoreToSave = normalizeScore(exScoreInput);
       const dietScoreToSave = normalizeScore(dietScoreInput);
 
-      // 수정 제안 내용 (모달 표시 보존용)
-      const exProposalEl = document.getElementById('dfModalAiExerciseProposal');
-      const dietProposalEl = document.getElementById('dfModalAiDietProposal');
-      const exProposalToSave = (exProposalEl && exProposalEl.textContent !== '제안 내용 없음') ? exProposalEl.textContent.trim() : '';
-      const dietProposalToSave = (dietProposalEl && dietProposalEl.textContent !== '제안 내용 없음') ? dietProposalEl.textContent.trim() : '';
-
-      // 회원 전달용 통합 코멘트 생성
-      let combinedComment = summaryToSave;
-      if (problemToSave && problemToSave !== '특이사항 없음') {
-        combinedComment += `\n\n[문제점 분석]\n${problemToSave}`;
-      }
-      if (solutionToSave) {
-        combinedComment += `\n\n[보완점 및 개선방안]\n${solutionToSave}`;
-      }
-      combinedComment = combinedComment.trim();
+      // 회원용 최종본 (서버도 같은 규칙으로 합쳐 저장)
+      const combinedComment = composeMemberFeedbackComment(partsToSave.잘한_점, partsToSave.개선할_점, partsToSave.코치_한마디);
 
       showToast('피드백 코멘트를 구글 시트(Feedbacks)에 저장 중...', 'info');
 
@@ -4278,40 +4120,12 @@ function initDailyFeedbackModalActions() {
 
       if (targetFb) {
         targetFb['운동_실행률_점수'] = exScoreToSave;
-        targetFb['운동실행률점수'] = exScoreToSave;
-        targetFb['운동 점수'] = exScoreToSave;
-
         targetFb['식단_실행률_점수'] = dietScoreToSave;
-        targetFb['식단실행률점수'] = dietScoreToSave;
-        targetFb['식단 점수'] = dietScoreToSave;
-
         targetFb['피드백_요약'] = summaryToSave;
-        targetFb['피드백요약'] = summaryToSave;
-
-        targetFb['문제점_분석'] = problemToSave;
-        targetFb['문제점분석'] = problemToSave;
-
-        targetFb['보완점_및_개선방안'] = solutionToSave;
-        targetFb['보완점및개선방안'] = solutionToSave;
-
-        if (exProposalToSave) {
-          targetFb['운동_수정_제안'] = exProposalToSave;
-        }
-        if (dietProposalToSave) {
-          targetFb['식단_수정_제안'] = dietProposalToSave;
-        }
-
+        FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => setFeedbackPart(targetFb, p, partsToSave[p.key]));
         targetFb['피드백 코멘트'] = combinedComment;
-        targetFb['피드백코멘트'] = combinedComment;
-        targetFb['피드백 내용'] = combinedComment;
-        targetFb['피드백내용'] = combinedComment;
-        targetFb['feedbackComment'] = combinedComment;
-
         // [4단계] 코치가 저장을 완료한 경우에만 '완료' 상태로 업데이트
         targetFb['피드백 상태'] = '완료';
-        targetFb['피드백상태'] = '완료';
-        targetFb['피드백완료'] = '완료';
-        targetFb['피드백 완료'] = '완료';
       }
 
       const rowNumberToSave = (targetFb && (targetFb._rowNumber || targetFb.rowNumber))
@@ -4335,10 +4149,7 @@ function initDailyFeedbackModalActions() {
         exerciseScore: exScoreToSave,
         dietScore: dietScoreToSave,
         피드백_요약: summaryToSave,
-        문제점_분석: problemToSave,
-        보완점_및_개선방안: solutionToSave,
-        운동_수정_제안: exProposalToSave,
-        식단_수정_제안: dietProposalToSave
+        ...partsToSave
       });
 
       if (res && res.targetRow && targetFb && !targetFb._rowNumber) {
@@ -4384,39 +4195,21 @@ function initDailyFeedbackModalActions() {
     });
   }
 
-  const btnCopyEx = document.getElementById('btnCopyAiExerciseProposal');
-  if (btnCopyEx) {
-    btnCopyEx.addEventListener('click', () => {
-      const proposalText = document.getElementById('dfModalAiExerciseProposal').textContent;
-      if (proposalText && proposalText !== '제안 내용 없음') {
-        const inputEl = document.getElementById('inputExerciseGuideline');
-        if (inputEl) {
-          inputEl.value = proposalText;
-          showToast('AI 운동 수정 제안이 [중단 운동 루틴 수정 제안 지침] 칸으로 복사되었습니다! 중단의 [저장] 버튼을 누르면 회원 DB에 반영됩니다.', 'success');
-        }
-      }
+  // 입력칸 높이를 내용에 맞춤 (모달이 열린 뒤 다시 계산: 숨겨진 상태에서는 높이를 잴 수 없음)
+  document.querySelectorAll('#dailyFeedbackModal textarea.df-autogrow').forEach(el => {
+    el.addEventListener('input', () => {
+      autoGrowTextarea(el);
+      if (el.id === FEEDBACK_COACH_CHECK.inputId) updateCoachCheckVisibility();
     });
-  }
-
-  const btnCopyDiet = document.getElementById('btnCopyAiDietProposal');
-  if (btnCopyDiet) {
-    btnCopyDiet.addEventListener('click', () => {
-      const proposalText = document.getElementById('dfModalAiDietProposal').textContent;
-      if (proposalText && proposalText !== '제안 내용 없음') {
-        const inputEl = document.getElementById('inputDietGuideline');
-        if (inputEl) {
-          inputEl.value = proposalText;
-          showToast('AI 식단 수정 제안이 [중단 식단 수정 제안 지침] 칸으로 복사되었습니다! 중단의 [저장] 버튼을 누르면 회원 DB에 반영됩니다.', 'success');
-        }
-      }
-    });
-  }
+  });
+  const dfModalEl = document.getElementById('dailyFeedbackModal');
+  if (dfModalEl) dfModalEl.addEventListener('shown.bs.modal', autoGrowFeedbackModalFields);
 }
 
 /**
  * ==============================================================================
  * [5단계: 상단 알림 2종 분리 및 로컬스토리지 기반 읽음/모두읽음 관리]
- * 1) 🤖 AI 초안 작성 알림: status === 'AI초안' 또는 초안 요약 존재 & !completed
+ * 1) 🤖 AI 초안 작성 알림: status === 'AI초안' 또는 초안 요약 존재 & !completed (코치 확인 필요가 있으면 빨간 '확인 필요' 표시)
  * 2) 🔔 미완료 피드백 알림: !completed
  * ==============================================================================
  */
@@ -4525,6 +4318,7 @@ function getUnreadAiDraftItems() {
           memberKey,
           date,
           summary,
+          coachCheck: getFeedbackPart(fb, FEEDBACK_COACH_CHECK),
           isFailed: isAiFailed
         });
       }
@@ -4646,6 +4440,7 @@ function updateGlobalNotificationBadges() {
             <div class="small text-dark mb-1">
               🤖 <strong>${escapeHtml(item.memberName)}</strong> 회원의 <strong>${escapeHtml(item.date)}</strong> 피드백 AI 초안이 작성되었습니다.
             </div>
+            ${item.coachCheck ? `<div class="small text-danger fw-semibold text-truncate" style="max-width: 320px;"><span class="badge bg-danger me-1">확인 필요</span>${escapeHtml(item.coachCheck)}</div>` : ''}
             ${item.summary ? `<div class="small text-muted text-truncate" style="max-width: 320px;">${escapeHtml(item.summary)}</div>` : ''}
             <div class="text-end mt-1">
               <span class="badge bg-primary text-white small px-2 py-1"><i class="bi bi-pencil-square me-1"></i>초안 확인/수정 &rarr;</span>
@@ -5139,6 +4934,79 @@ function getMemberKey(m) {
   return String(getField(m, '회원번호', '회원 번호', '회원ID', '회원 ID', 'id', 'memberId', '이름', 'name') || '').trim();
 }
 
+// [데일리 피드백 칸] 회원용(잘한 점·개선할 점·코치 한마디) / 코치 전용(코치 확인 필요) - gas_backend.js와 같은 열 이름
+// - 이름 정확 일치(공백·밑줄 무시)로만 읽음, '코치 한마디'는 이름 변경 전 '보완점_및_개선방안'도 인정
+const FEEDBACK_MEMBER_PARTS = [
+  { key: '잘한_점', header: '잘한 점', aliases: [], inputId: 'dfModalGood' },
+  { key: '개선할_점', header: '개선할 점', aliases: [], inputId: 'dfModalImprove' },
+  { key: '코치_한마디', header: '코치 한마디', aliases: ['보완점_및_개선방안'], inputId: 'dfModalCoachNote' }
+];
+const FEEDBACK_COACH_CHECK = { key: '코치_확인_필요', header: '코치 확인 필요', aliases: [], inputId: 'dfModalCoachCheck' };
+
+function normalizeHeaderName(name) {
+  return String(name === null || name === undefined ? '' : name).replace(/[\s_]+/g, '').toLowerCase();
+}
+
+function getFeedbackPart(fb, part) {
+  if (!fb || typeof fb !== 'object') return '';
+  const wanted = [part.header].concat(part.aliases).map(normalizeHeaderName);
+  const keys = Object.keys(fb);
+  for (const w of wanted) {
+    for (const k of keys) {
+      if (normalizeHeaderName(k) !== w) continue;
+      const v = fb[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+  }
+  return '';
+}
+
+// 로컬 캐시 행에 칸 값 반영 (시트 열 이름 그대로, 이름 변경 전 열이 있으면 그 키에도 반영)
+function setFeedbackPart(fb, part, value) {
+  if (!fb) return;
+  const names = [part.header].concat(part.aliases).map(normalizeHeaderName);
+  const existing = Object.keys(fb).filter(k => names.includes(normalizeHeaderName(k)));
+  if (existing.length === 0) existing.push(part.header);
+  existing.forEach(k => { fb[k] = value; });
+}
+
+// 코치·AI가 쓰는 피드백 열 (회원 제출 원본 표시·AI 입력에서 제외)
+const COACH_WRITTEN_FEEDBACK_COLUMNS = ['피드백 코멘트', '피드백 내용', '피드백_요약', '코치 피드백', '코치 코멘트', '잘한 점', '개선할 점', '코치 한마디', '코치 확인 필요',
+  '보완점_및_개선방안', '문제점_분석', '운동_수정_제안', '식단_수정_제안', '피드백 상태', 'AI초안_생성일시'].map(normalizeHeaderName);
+function isCoachWrittenFeedbackColumn(key) {
+  return COACH_WRITTEN_FEEDBACK_COLUMNS.includes(normalizeHeaderName(key));
+}
+
+function getFeedbackCommentText(fb) {
+  return String(getField(fb, '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', '코치 피드백', '코치피드백', 'feedbackComment', 'coachComment') || '').trim();
+}
+
+// 회원용 최종본 = [잘한 점] + [개선할 점] + [코치 한마디] (빈 칸은 제목째 생략) - gas_backend.js composeMemberFeedbackComment와 동일 형식
+function composeMemberFeedbackComment(good, improve, note) {
+  return [['잘한 점', good], ['개선할 점', improve], ['코치 한마디', note]]
+    .map(([title, v]) => [title, String(v === null || v === undefined ? '' : v).trim()])
+    .filter(([, v]) => v)
+    .map(([title, v]) => `[${title}]\n${v}`)
+    .join('\n\n');
+}
+
+// 입력칸 높이를 내용에 맞춤 (길이 제한 없음, 모바일 포함)
+function autoGrowTextarea(el) {
+  if (!el || el.tagName !== 'TEXTAREA') return;
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + 2) + 'px';
+}
+
+function autoGrowFeedbackModalFields() {
+  document.querySelectorAll('#dailyFeedbackModal textarea.df-autogrow').forEach(autoGrowTextarea);
+}
+
+// 코치 확인 필요 칸은 내용이 있을 때만 표시
+function updateCoachCheckVisibility() {
+  const wrap = document.getElementById('dfModalCoachCheckWrap');
+  if (wrap) wrap.classList.toggle('d-none', !getInputValue('dfModalCoachCheck').trim());
+}
+
 // 점수 정규화: 숫자면 0~5, 비어 있거나 숫자가 아니면 빈 문자열 (기본 점수 추정 금지)
 function normalizeScore(raw) {
   if (raw === '' || raw === null || raw === undefined || raw === '-') return '';
@@ -5466,7 +5334,7 @@ function copyMemberViewLink() {
 window.copyMemberViewLink = copyMemberViewLink;
 
 /**
- * 텍스트 클립보드 복사 (보완점 및 개선방안 → 회원에게 카톡/문자로 전달용)
+ * 텍스트 클립보드 복사 (회원용 피드백 → 회원에게 카톡/문자로 전달용)
  * - 최신 브라우저: Clipboard API / 구형·비보안 환경: 임시 textarea 복사 / 모두 실패 시 직접 복사 창
  */
 function copyTextToClipboard(text, label) {
@@ -5498,14 +5366,16 @@ function copyTextToClipboard(text, label) {
   }
 }
 
-function copyFeedbackSolution(btn) {
-  copyTextToClipboard(btn && btn.getAttribute('data-copy'), '보완점 및 개선방안');
+function copyFeedbackMemberComment(btn) {
+  copyTextToClipboard(btn && btn.getAttribute('data-copy'), '회원용 피드백');
 }
-window.copyFeedbackSolution = copyFeedbackSolution;
+window.copyFeedbackMemberComment = copyFeedbackMemberComment;
 
-function copyModalSolution() {
-  const el = document.getElementById('dfModalSolution');
-  copyTextToClipboard(el ? el.value : '', '보완점 및 개선방안');
+// 모달의 잘한 점·개선할 점·코치 한마디를 회원용 최종본 형식으로 합쳐 복사
+function copyModalMemberComment() {
+  copyTextToClipboard(composeMemberFeedbackComment(
+    getInputValue('dfModalGood'), getInputValue('dfModalImprove'), getInputValue('dfModalCoachNote')
+  ), '회원용 피드백');
 }
-window.copyModalSolution = copyModalSolution;
+window.copyModalMemberComment = copyModalMemberComment;
 

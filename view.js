@@ -7,8 +7,8 @@
  * 3. 운동 루틴 & 식단 플랜: 표가 아닌 한눈에 쏙 들어오는 프리미엄 서식 박스로 표기 (수정 지침 100% 비공개)
  * 4. 피드백 관리: 코치 대시보드와 구조 완전 일치
  *    - 3개의 독립 꺾은선 차트 (공복 체중 변화, 운동 점수, 식단 점수)
- *    - 일자별 피드백 누적 테이블 (날짜, 공복체중, 운동점수, 식단점수, 코치 피드백, 실천일지)
- *    - 문제점 분석 및 비판성 내용은 회원 화면에서 완전히 제외
+ *    - 일자별 피드백 누적 테이블 (날짜, 공복체중, 운동점수, 식단점수, 코치 피드백(잘한 점/개선할 점/코치 한마디), 실천일지)
+ *    - 피드백 요약·코치 확인 필요·문제점 분석은 회원 화면에서 완전히 제외
  * ==============================================================================
  */
 
@@ -113,8 +113,9 @@ const VIEW_MOCK_DB = {
       '공복 몸무게': 82.5,
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.0,
-      '보완점_및_개선방안': '첫날 멋진 출발입니다! 밥 양 2/3 조절과 수분 2L 달성 훌륭합니다. 내일은 스쿼트 시 무릎이 발끝 앞으로 과도하게 나가지 않도록 둔근에 힘을 집중해 보세요.',
-      '피드백 요약': '첫날 멋진 출발입니다! 밥 양 2/3 조절과 수분 2L 달성 훌륭합니다.',
+      '잘한 점': '첫날부터 밥 양 2/3 조절과 수분 2L를 모두 지키셨어요.',
+      '개선할 점': '스쿼트할 때 무릎이 발끝 앞으로 너무 나가지 않게 엉덩이 힘에 집중해 보세요.',
+      '코치 한마디': '멋진 출발이에요! 내일도 같이 가요.',
       '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '첫날이라 긴장 반 설렘 반으로 시작했습니다. 물 2L 마시기 성공!'
     },
     {
@@ -128,8 +129,7 @@ const VIEW_MOCK_DB = {
       '공복 몸무게': 82.2,
       '운동_실행률_점수': 5.0,
       '식단_실행률_점수': 4.5,
-      '보완점_및_개선방안': '야식 유혹을 이겨낸 결단력이 대단합니다! 러닝 후에는 종아리와 아킬레스건을 5분간 충분히 마사지해 주시면 근육통 방지에 큰 도움이 됩니다.',
-      '피드백 요약': '야식 유혹을 이겨낸 결단력이 대단합니다. 숙면 취하세요!',
+      '코치 한마디': '야식 유혹을 이겨낸 결단력이 대단합니다! 러닝 후에는 종아리와 아킬레스건을 5분간 충분히 마사지해 주시면 근육통 방지에 큰 도움이 됩니다.',
       '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '러닝 후 땀 흘리니 상쾌하네요. 야식 유혹 참아냈습니다.'
     },
     {
@@ -143,8 +143,7 @@ const VIEW_MOCK_DB = {
       '공복 몸무게': 82.0,
       '운동_실행률_점수': 4.0,
       '식단_실행률_점수': 4.0,
-      '보완점_및_개선방안': '야근 중에도 취침 전 폼롤러 스트레칭을 잊지 않으신 점 최고입니다. 피로가 심할 땐 무리한 본운동 대신 온찜질과 스트레칭으로 회복에 집중해 주세요.',
-      '피드백 요약': '야근 중에도 취침 전 폼롤러 스트레칭으로 몸을 이완해 주신 점 훌륭합니다!',
+      '코치 한마디': '야근 중에도 취침 전 폼롤러 스트레칭을 잊지 않으신 점 최고입니다. 피로가 심할 땐 무리한 본운동 대신 온찜질과 스트레칭으로 회복에 집중해 주세요.',
       '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '업무가 너무 바빠 운동을 제대로 못해 아쉽고 피곤합니다.'
     },
     {
@@ -158,8 +157,7 @@ const VIEW_MOCK_DB = {
       '공복 몸무게': 81.8,
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.5,
-      '보완점_및_개선방안': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다! 몸의 가벼움이 지속될 거예요. 주말에도 수분 섭취 루틴 유지해 주세요.',
-      '피드백 요약': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다!',
+      '코치 한마디': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다! 몸의 가벼움이 지속될 거예요. 주말에도 수분 섭취 루틴 유지해 주세요.',
       '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '클린하게 챙겨 먹으니 오후에 식곤증이 없어서 신기합니다.'
     },
     {
@@ -172,7 +170,6 @@ const VIEW_MOCK_DB = {
       '식단 점수': 8,
       '운동_실행률_점수': 4.0,
       '식단_실행률_점수': 4.0,
-      '피드백_요약': '실내 사이클 35분 꾸준한 실천 감사합니다! 체중 감량 추세가 아주 안정적입니다.',
       '피드백 코멘트': '실내 사이클 35분 꾸준한 실천 감사합니다! 체중 감량 추세가 아주 안정적입니다.',
       '운동 내용': '실내 사이클 35분 (케이던스 80 유지)',
       '식단 내용': '아침 바나나+계란 2알, 점심 연어 포케, 저녁 프로틴 쉐이크+아몬드',
@@ -190,7 +187,6 @@ const VIEW_MOCK_DB = {
       '식단 점수': 7,
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.0,
-      '피드백_요약': '디저트 방어 성공 축하드립니다! 결단력이 정말 훌륭합니다.',
       '피드백 코멘트': '디저트 방어 성공 축하드립니다! 결단력이 정말 훌륭합니다.',
       '운동 내용': '필라테스 코어 35분',
       '식단 내용': '아침 사과, 점심 일반식(구내식당), 저녁 샐러드',
@@ -206,7 +202,6 @@ const VIEW_MOCK_DB = {
       '식단 점수': 8,
       '운동_실행률_점수': 4.5,
       '식단_실행률_점수': 4.0,
-      '피드백_요약': '퇴근길 만보 걷기 달성 멋집니다! 체중도 57kg대로 진입하셨네요 축하드려요!',
       '피드백 코멘트': '퇴근길 만보 걷기 달성 멋집니다! 체중도 57kg대로 진입하셨네요 축하드려요!',
       '운동 내용': '빠르게 걷기 만보 (50분)',
       '식단 내용': '아침 요거트, 점심 현미 포케, 저녁 닭가슴살 볼',
@@ -537,24 +532,47 @@ function extractFeedbackDietScore(fb) {
 }
 
 /**
- * 6. 보완점_및_개선방안 추출 (코치 피드백)
- * 실제 시트 헤더: '보완점_및_개선방안'
+ * 6. 코치 피드백 추출 (회원에게 보이는 칸만)
+ * - 새 형식: '잘한 점' / '개선할 점' / '코치 한마디' 열 (이름 정확 일치, '코치 한마디'는 이름 변경 전 '보완점_및_개선방안'도 인정)
+ * - 예전 형식(세 칸 모두 비어 있음): '피드백 코멘트'를 표시하되 [문제점 분석] 부분은 회원에게 보이지 않게 제거
+ * - 피드백 요약·코치 확인 필요는 코치 전용 (서버가 회원 응답에서 빼고 보냄)
  */
-function extractFeedbackImprovement(fb) {
-  if (!fb) return '';
-  // 1순위: '보완점'
-  let val = findValByKeywords(fb, ['보완점']);
-  // 2순위: '개선방안'
-  if (!val) val = findValByKeywords(fb, ['개선방안']);
-  // 3순위: '피드백' & '요약'
-  if (!val) val = findValByKeywords(fb, ['피드백', '요약']);
-  // 4순위: '피드백' & '코멘트'
-  if (!val) val = findValByKeywords(fb, ['피드백', '코멘트']);
-  // 5순위: '피드백' (단, '상태', '일시', '초안' 제외)
-  if (!val) val = findValByKeywords(fb, ['피드백'], ['상태', '일시', '생성', '초안']);
+const FEEDBACK_MEMBER_PARTS = [
+  { label: '잘한 점', headers: ['잘한 점'] },
+  { label: '개선할 점', headers: ['개선할 점'] },
+  { label: '코치 한마디', headers: ['코치 한마디', '보완점_및_개선방안'] }
+];
 
-  if (!val) return '';
-  return String(val).trim();
+function normalizeHeaderName(name) {
+  return String(name === null || name === undefined ? '' : name).replace(/[\s_]+/g, '').toLowerCase();
+}
+
+function getExactFeedbackField(fb, headers) {
+  if (!fb || typeof fb !== 'object') return '';
+  const keys = Object.keys(fb);
+  for (const h of headers.map(normalizeHeaderName)) {
+    for (const k of keys) {
+      if (normalizeHeaderName(k) !== h) continue;
+      const v = fb[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+  }
+  return '';
+}
+
+// [{label, text}] - 내용 있는 칸만, 예전 형식이면 [{label: '코치 피드백', text: 피드백 코멘트}]
+function extractFeedbackMemberParts(fb) {
+  if (!fb) return [];
+  const parts = FEEDBACK_MEMBER_PARTS.map(p => ({ label: p.label, text: getExactFeedbackField(fb, p.headers) })).filter(p => p.text);
+  if (parts.length > 0) return parts;
+  const legacy = getExactFeedbackField(fb, ['피드백 코멘트'])
+    .replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '')
+    .trim();
+  return legacy ? [{ label: '코치 피드백', text: legacy }] : [];
+}
+
+function renderFeedbackPartsHtml(parts) {
+  return parts.map(p => `<div class="mp-fb-part"><div class="mp-fb-part-title">${escapeHtml(p.label)}</div><div>${escapeHtml(p.text)}</div></div>`).join('');
 }
 
 /**
@@ -2193,8 +2211,8 @@ function renderFeedbackTable(feedbacks) {
     const exScore = extractFeedbackExerciseScore(fb);
     // 4. 식단_실행률_점수
     const dietScore = extractFeedbackDietScore(fb);
-    // 5. 보완점_및_개선방안 (코치 피드백)
-    const improvement = extractFeedbackImprovement(fb);
+    // 5. 코치 피드백 (잘한 점 / 개선할 점 / 코치 한마디, 예전 기록은 피드백 코멘트)
+    const feedbackParts = extractFeedbackMemberParts(fb);
     // 6. 회원의 실천 일지 & 코치에게 한마디
     const memberNote = extractFeedbackMemberNote(fb);
 
@@ -2208,10 +2226,10 @@ function renderFeedbackTable(feedbacks) {
             <span class="mp-score ${getScoreTone(dietScore)}">식단 ${dietScore !== '-' ? escapeHtml(dietScore) : '-'}</span>
           </div>
         </header>
-        ${improvement ? `
+        ${feedbackParts.length > 0 ? `
           <div class="feedback-comment-cell">
             <div class="mp-fb-label"><i class="bi bi-lightbulb-fill"></i>코치 피드백</div>
-            <div class="mp-fb-text ${idx === 0 ? '' : 'mp-clamp'}">${escapeHtml(improvement)}</div>
+            <div class="mp-fb-text ${idx === 0 ? '' : 'mp-clamp'}">${renderFeedbackPartsHtml(feedbackParts)}</div>
             ${idx === 0 ? '' : '<button type="button" class="mp-more-btn" onclick="toggleFeedbackClamp(this)">전체 보기</button>'}
           </div>
         ` : `
@@ -2230,7 +2248,7 @@ function renderFeedbackTable(feedbacks) {
   });
 
   tbody.innerHTML = html;
-  renderHomeLatestFeedback(sorted.find(fb => extractFeedbackImprovement(fb)) || null);
+  renderHomeLatestFeedback(sorted.find(fb => extractFeedbackMemberParts(fb).length > 0) || null);
   updateClampButtons();
 }
 
@@ -2248,7 +2266,7 @@ function renderHomeLatestFeedback(fb) {
         <h2 class="mp-card-title"><i class="bi bi-lightbulb-fill"></i>최근 코치 피드백</h2>
         <span class="mp-fb-date">${escapeHtml(extractFeedbackDate(fb))}</span>
       </div>
-      <div class="mp-fb-text mp-clamp">${escapeHtml(extractFeedbackImprovement(fb))}</div>
+      <div class="mp-fb-text mp-clamp">${renderFeedbackPartsHtml(extractFeedbackMemberParts(fb))}</div>
       <button type="button" class="mp-more-btn" data-tab-target="feedback">피드백 전체 보기 <i class="bi bi-chevron-right"></i></button>
     </section>
   `;

@@ -453,7 +453,7 @@ body {
 
 /* 피드백 요약 / 문제점 분석 / 보완점 및 개선방안 텍스트 박스: 적정 길이 자동 줄바꿈 및 창 길이(높이) 조절 */
 .feedback-text-cell {
-  white-space: normal !important;
+  white-space: pre-line !important; /* 여러 줄 피드백의 줄바꿈 유지 */
   word-break: break-word;
   overflow-wrap: break-word;
   line-height: 1.5;
@@ -486,6 +486,19 @@ body {
 .feedback-text-cell.solution-cell {
   background-color: #f0fdf4;
   border-color: #bbf7d0;
+}
+
+.feedback-text-cell.coach-check-cell {
+  background-color: #fef2f2;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
+/* 데일리 피드백 모달: 내용 길이에 맞춰 높이가 늘어나는 입력칸 (app.js autoGrowTextarea) */
+textarea.df-autogrow {
+  overflow-y: hidden;
+  resize: vertical;
+  min-height: 2.6rem;
 }
 
 .feedback-text-cell::-webkit-scrollbar {
