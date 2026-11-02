@@ -251,7 +251,7 @@ const AppState = {
   lastSyncedAt: 0,        // 서버 최신 데이터 수신 시각
   cacheSavedAt: 0,        // 현재 표시 중인 저장본의 기준 시각
   userEditedSinceRender: false, // 화면 렌더 후 코치가 입력칸을 수정했는지 (백그라운드 갱신 시 덮어쓰기 방지)
-  currentView: 'members', // 'members' | 'guidelines'
+  currentView: 'members', // 'members' | 'tagstats' | 'guidelines'
   members: [],
   feedbacks: [],
   guidelines: {
@@ -268,7 +268,8 @@ const AppState = {
   charts: {
     weight: null,
     exercise: null,
-    diet: null
+    diet: null,
+    tagStats: null
   },
   currentFeedbackContext: null, // 피드백 하기 모달 대상
   customTagTargetKey: null      // 태그 직접 입력 모달 대상
@@ -637,7 +638,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-10-24.12';
+const EXPECTED_BACKEND_VERSION = '2026-11-02.1';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -841,6 +842,7 @@ function renderDashboardAfterData() {
   renderTagFilterButtons();
   applyFiltersAndRenderMemberList();
   populateInlineGuidelines();
+  if (AppState.currentView === 'tagstats') renderTagStatsView();
   AppState.userEditedSinceRender = false;
   if (AppState.members.length > 0) {
     const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
@@ -947,6 +949,8 @@ function rerenderAfterBackgroundRefresh() {
     // 입력값은 보존하고 피드백 표/차트만 최신화
     updateFeedbackSection(AppState.selectedMember);
   }
+
+  if (AppState.currentView === 'tagstats') renderTagStatsView();
 
   if (!AppState.selectedMember && AppState.members.length > 0) {
     const firstActive = AppState.members.find(m => isMemberActive(m)) || AppState.members[0];
@@ -1592,12 +1596,14 @@ window.toggleSidebar = toggleSidebar;
 
 /**
  * ==============================================================================
- * [모바일 하단 탭바] 회원 / 프로필 / 루틴·식단 / 피드백 / 지침서
+ * [모바일 하단 탭바] 회원 / 프로필 / 루틴·식단 / 피드백 / 태그 / 지침서
  * - 화면 폭 992px 미만에서는 한 번에 한 화면만 보여 주고 하단 탭바·좌우 스와이프로 전환
  * - 데스크톱에서는 기존 2열 레이아웃 그대로 (탭 상태만 기억)
  * ==============================================================================
  */
-const COACH_TABS = ['list', 'profile', 'routine', 'feedback', 'guide'];
+const COACH_TABS = ['list', 'profile', 'routine', 'feedback', 'stats', 'guide'];
+// 탭 → 대시보드 뷰 (나머지 탭은 'members')
+const COACH_TAB_VIEWS = { guide: 'guidelines', stats: 'tagstats' };
 const COACH_DETAIL_TABS = ['profile', 'routine', 'feedback'];
 const CoachTabState = { current: 'list', lastDetail: 'profile', scroll: {}, routineSeg: 'exercise' };
 
@@ -1611,11 +1617,8 @@ function switchCoachTab(tab, opts = {}) {
   const mobile = isCoachMobileLayout();
   if (mobile && prev !== tab) CoachTabState.scroll[prev] = window.scrollY || 0;
 
-  if (tab === 'guide') {
-    if (AppState.currentView !== 'guidelines') switchDashboardView('guidelines');
-  } else if (AppState.currentView !== 'members') {
-    switchDashboardView('members');
-  }
+  const view = COACH_TAB_VIEWS[tab] || 'members';
+  if (AppState.currentView !== view) switchDashboardView(view);
 
   CoachTabState.current = tab;
   if (COACH_DETAIL_TABS.includes(tab)) CoachTabState.lastDetail = tab;
@@ -1636,6 +1639,7 @@ function switchCoachTab(tab, opts = {}) {
   }
   window.scrollTo({ top: CoachTabState.scroll[tab] || 0, behavior: 'auto' });
   if (tab === 'feedback') resizeCoachCharts();
+  if (tab === 'stats') resizeTagStatsChart();
 }
 window.switchCoachTab = switchCoachTab;
 
@@ -1728,65 +1732,301 @@ function initCoachMobileTabs() {
 }
 
 /**
- * 참여자 관리 뷰 <-> 코칭 지침서 관리 뷰 전환
+ * 대시보드 뷰 전환: 참여자 관리('members') / 태그별 그래프('tagstats') / 코칭 지침서 관리('guidelines')
+ * - 태그별 그래프 뷰에서도 사이드바는 참여자 목록을 그대로 보여 줌 (회원을 누르면 참여자 관리로 이동)
  */
 function switchDashboardView(viewName) {
   AppState.currentView = viewName;
+  const isGuidelines = viewName === 'guidelines';
 
-  const btnNavMembers = document.getElementById('btnNavViewMembers');
-  const btnNavGuidelines = document.getElementById('btnNavViewGuidelines');
+  const navButtons = { members: 'btnNavViewMembers', tagstats: 'btnNavViewTagStats', guidelines: 'btnNavViewGuidelines' };
+  Object.keys(navButtons).forEach(view => {
+    const btn = document.getElementById(navButtons[view]);
+    if (btn) btn.classList.toggle('active', view === viewName);
+  });
+
   const tabBtnMembers = document.getElementById('tabBtnMembers');
   const tabBtnGuidelines = document.getElementById('tabBtnGuidelines');
+  if (tabBtnMembers) { tabBtnMembers.classList.toggle('active', !isGuidelines); tabBtnMembers.classList.toggle('text-muted', isGuidelines); }
+  if (tabBtnGuidelines) { tabBtnGuidelines.classList.toggle('active', isGuidelines); tabBtnGuidelines.classList.toggle('text-muted', !isGuidelines); }
 
   const sidebarMembers = document.getElementById('sidebarMembersMode');
   const sidebarGuidelines = document.getElementById('sidebarGuidelinesMode');
-  const viewMembers = document.getElementById('viewMembersWrapper');
-  const viewGuidelines = document.getElementById('viewGuidelinesWrapper');
+  if (sidebarMembers) sidebarMembers.classList.toggle('d-none', isGuidelines);
+  if (sidebarGuidelines) {
+    sidebarGuidelines.classList.toggle('d-none', !isGuidelines);
+    sidebarGuidelines.classList.toggle('d-flex', isGuidelines);
+  }
 
-  if (viewName === 'guidelines') {
-    // 지침서 관리 뷰 활성화
-    if (btnNavMembers) btnNavMembers.classList.remove('active');
-    if (btnNavGuidelines) btnNavGuidelines.classList.add('active');
-    if (tabBtnMembers) { tabBtnMembers.classList.remove('active'); tabBtnMembers.classList.add('text-muted'); }
-    if (tabBtnGuidelines) { tabBtnGuidelines.classList.add('active'); tabBtnGuidelines.classList.remove('text-muted'); }
+  const views = { members: 'viewMembersWrapper', tagstats: 'viewTagStatsWrapper', guidelines: 'viewGuidelinesWrapper' };
+  Object.keys(views).forEach(view => {
+    const el = document.getElementById(views[view]);
+    if (el) el.classList.toggle('d-none', view !== viewName);
+  });
 
-    if (sidebarMembers) sidebarMembers.classList.add('d-none');
-    if (sidebarGuidelines) sidebarGuidelines.classList.remove('d-none');
-    if (sidebarGuidelines) sidebarGuidelines.classList.add('d-flex');
-
-    if (viewMembers) viewMembers.classList.add('d-none');
-    if (viewGuidelines) viewGuidelines.classList.remove('d-none');
-
+  if (isGuidelines) {
     populateInlineGuidelines();
-  } else {
-    // 참여자 관리 뷰 활성화
-    if (btnNavMembers) btnNavMembers.classList.add('active');
-    if (btnNavGuidelines) btnNavGuidelines.classList.remove('active');
-    if (tabBtnMembers) { tabBtnMembers.classList.add('active'); tabBtnMembers.classList.remove('text-muted'); }
-    if (tabBtnGuidelines) { tabBtnGuidelines.classList.remove('active'); tabBtnGuidelines.classList.add('text-muted'); }
-
-    if (sidebarMembers) sidebarMembers.classList.remove('d-none');
-    if (sidebarGuidelines) sidebarGuidelines.classList.add('d-none');
-    if (sidebarGuidelines) sidebarGuidelines.classList.remove('d-flex');
-
-    if (viewMembers) viewMembers.classList.remove('d-none');
-    if (viewGuidelines) viewGuidelines.classList.add('d-none');
-
+  } else if (viewName === 'tagstats') {
+    renderTagStatsView();
+  } else if (AppState.selectedMember) {
     // 선택된 참여자 차트 리사이즈 갱신
-    if (AppState.selectedMember) {
-      setTimeout(() => {
-        if (AppState.charts.weight) AppState.charts.weight.resize();
-        if (AppState.charts.exercise) AppState.charts.exercise.resize();
-        if (AppState.charts.diet) AppState.charts.diet.resize();
-      }, 100);
-    }
+    setTimeout(() => {
+      if (AppState.charts.weight) AppState.charts.weight.resize();
+      if (AppState.charts.exercise) AppState.charts.exercise.resize();
+      if (AppState.charts.diet) AppState.charts.diet.resize();
+    }, 100);
   }
 
   // 하단 탭바 상태 동기화 (상단 메뉴·회원 선택 등 다른 경로로 전환된 경우)
-  if (viewName === 'guidelines' && CoachTabState.current !== 'guide') {
-    switchCoachTab('guide');
-  } else if (viewName !== 'guidelines' && CoachTabState.current === 'guide') {
-    switchCoachTab('list');
+  const currentTabView = COACH_TAB_VIEWS[CoachTabState.current] || 'members';
+  if (currentTabView !== viewName) {
+    const tab = Object.keys(COACH_TAB_VIEWS).find(t => COACH_TAB_VIEWS[t] === viewName);
+    switchCoachTab(tab || 'list');
+  }
+}
+
+/**
+ * ==============================================================================
+ * [태그별 그래프] 한 태그 회원들의 체중 / 체중 변화 / 운동 점수 / 식단 점수를 한 그래프에서 비교
+ * - 점수는 서버가 계산해 시트에 저장한 값을 그대로 표시 (회원 상세 그래프와 같은 열)
+ * - 회원↔피드백 연결은 회원 상세 화면과 같은 이름 일치 방식 (읽기 전용)
+ * ==============================================================================
+ */
+const TagStatsState = { tag: '', metric: 'weight', axis: 'date', includeInactive: false };
+
+const TAG_STATS_METRICS = {
+  weight: { title: '아침 공복 몸무게 (kg)', unit: 'kg' },
+  weightChange: { title: '첫 기록 대비 체중 변화 (kg)', unit: 'kg' },
+  exercise: { title: '운동 점수 (5점 만점)', unit: '점' },
+  diet: { title: '식단 점수 (5점 만점)', unit: '점' }
+};
+
+const TAG_STATS_COLORS = ['#3182f6', '#f08c00', '#0ca678', '#e64980', '#7950f2', '#15aabf', '#fa5252', '#82c91e', '#495057', '#fab005', '#be4bdb', '#1c7ed6'];
+
+// 회원 상세 그래프(renderThreeIndependentCharts)와 같은 열에서 값을 읽음
+function getFeedbackWeightValue(f) {
+  const num = parseFloat(getField(f, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight'));
+  return isNaN(num) || num <= 0 ? null : num;
+}
+
+function getFeedbackExerciseScoreValue(f) {
+  const num = parseFloat(getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'));
+  return isNaN(num) ? null : num;
+}
+
+function getFeedbackDietScoreValue(f) {
+  const num = parseFloat(getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'));
+  return isNaN(num) ? null : num;
+}
+
+function dateKeyToUtcDay(dateKey) {
+  const m = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : null;
+}
+
+function getTagStatsMembers() {
+  return AppState.members.filter(m =>
+    getMemberTag(m) === TagStatsState.tag && (TagStatsState.includeInactive || isMemberActive(m))
+  );
+}
+
+// 회원 1명의 날짜별 기록 (같은 날짜가 여러 행이면 나중 행 우선)
+function collectMemberDailySeries(mem) {
+  const memberName = getMemberName(mem);
+  const byDate = new Map();
+  AppState.feedbacks
+    .filter(f => getMemberName(f) === memberName)
+    .forEach(f => {
+      const date = getFeedbackDate(f);
+      if (dateKeyToUtcDay(date) === null) return;
+      const prev = byDate.get(date) || {};
+      const pick = (val, old) => (val !== null ? val : (old !== undefined ? old : null));
+      byDate.set(date, {
+        weight: pick(getFeedbackWeightValue(f), prev.weight),
+        exercise: pick(getFeedbackExerciseScoreValue(f), prev.exercise),
+        diet: pick(getFeedbackDietScoreValue(f), prev.diet)
+      });
+    });
+  const rows = [...byDate.keys()].sort().map(date => ({ date, day: dateKeyToUtcDay(date), ...byDate.get(date) }));
+  const firstDay = rows.length ? rows[0].day : 0;
+  const firstWeight = (rows.find(r => r.weight !== null) || {}).weight;
+  rows.forEach(r => {
+    r.dayIndex = r.day - firstDay + 1;
+    r.weightChange = (r.weight !== null && firstWeight !== undefined) ? Math.round((r.weight - firstWeight) * 10) / 10 : null;
+  });
+  return rows;
+}
+
+function averageOf(values) {
+  const nums = values.filter(v => v !== null && v !== undefined);
+  return nums.length ? Math.round(nums.reduce((a, b) => a + b, 0) / nums.length * 10) / 10 : null;
+}
+
+function renderTagStatsTagChips() {
+  const container = document.getElementById('tagStatsTagChips');
+  if (!container) return;
+  const tags = [...new Set(AppState.members.map(getMemberTag).filter(Boolean))];
+  if (!tags.includes(TagStatsState.tag)) TagStatsState.tag = tags[0] || '';
+
+  container.innerHTML = `<small class="text-muted me-1 fw-bold"><i class="bi bi-tag-fill text-secondary me-1"></i>태그:</small>` +
+    (tags.length ? tags.map(tag => {
+      const selected = tag === TagStatsState.tag;
+      const count = AppState.members.filter(m => getMemberTag(m) === tag && (TagStatsState.includeInactive || isMemberActive(m))).length;
+      return `<button type="button" class="git-tag-pill tagstats-tag-btn ${selected ? 'bg-primary text-white border-primary' : ''}" data-tag="${escapeHtml(tag)}">
+        <i class="bi bi-tag-fill ${selected ? 'text-white' : 'text-primary'}"></i>${escapeHtml(tag)} <span class="opacity-75">${count}</span>
+      </button>`;
+    }).join('') : '<span class="text-muted small">등록된 태그가 없습니다.</span>');
+
+  container.querySelectorAll('.tagstats-tag-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      TagStatsState.tag = btn.getAttribute('data-tag');
+      renderTagStatsView();
+    });
+  });
+}
+
+function renderTagStatsView() {
+  renderTagStatsTagChips();
+  const metric = TAG_STATS_METRICS[TagStatsState.metric];
+  document.querySelectorAll('[data-tagstats-metric]').forEach(btn => {
+    btn.classList.toggle('is-active', btn.getAttribute('data-tagstats-metric') === TagStatsState.metric);
+  });
+  document.querySelectorAll('[data-tagstats-axis]').forEach(btn => {
+    btn.classList.toggle('active', btn.getAttribute('data-tagstats-axis') === TagStatsState.axis);
+  });
+  setElementText('tagStatsChartTitle', metric.title);
+
+  const members = getTagStatsMembers();
+  const seriesList = members.map(mem => ({ mem, rows: collectMemberDailySeries(mem) }));
+  renderTagStatsTable(seriesList);
+  renderTagStatsChart(seriesList);
+}
+
+function renderTagStatsChart(seriesList) {
+  if (AppState.charts.tagStats) {
+    AppState.charts.tagStats.destroy();
+    AppState.charts.tagStats = null;
+  }
+  const canvas = document.getElementById('chartTagStats');
+  const emptyEl = document.getElementById('tagStatsEmpty');
+  const key = TagStatsState.metric;
+  const byDay = TagStatsState.axis === 'day';
+  const withData = seriesList.filter(s => s.rows.some(r => r[key] !== null));
+  if (emptyEl) emptyEl.classList.toggle('d-none', withData.length > 0);
+  if (!canvas || withData.length === 0 || typeof Chart === 'undefined') return;
+
+  // 가로축: 모든 회원의 날짜(또는 참여 일차)를 합쳐 정렬
+  const axisKeys = [...new Set(withData.flatMap(s => s.rows.map(r => (byDay ? r.dayIndex : r.date))))]
+    .sort((a, b) => (byDay ? a - b : String(a).localeCompare(String(b))));
+  const labels = axisKeys.map(k => {
+    if (byDay) return `${k}일차`;
+    const [, mm, dd] = String(k).split('-');
+    return `${+mm}/${+dd}`;
+  });
+
+  const datasets = withData.map((s, i) => {
+    const color = TAG_STATS_COLORS[i % TAG_STATS_COLORS.length];
+    const valueByKey = new Map(s.rows.map(r => [byDay ? r.dayIndex : r.date, r[key]]));
+    return {
+      label: getMemberName(s.mem),
+      data: axisKeys.map(k => (valueByKey.has(k) ? valueByKey.get(k) : null)),
+      spanGaps: true,
+      borderColor: color,
+      backgroundColor: color,
+      borderWidth: 2,
+      tension: 0.2,
+      clip: false,
+      pointRadius: (ctx) => (ctx.raw === null || ctx.raw === undefined ? 0 : 3.5),
+      pointHoverRadius: 6
+    };
+  });
+
+  const unit = TAG_STATS_METRICS[key].unit;
+  let options;
+  if (key === 'exercise' || key === 'diet') {
+    options = createSingleChartOptions(unit, 0, 5.5, 1);
+  } else {
+    const values = datasets.flatMap(d => d.data).filter(v => v !== null);
+    const min = Math.floor(Math.min(...values) - 1);
+    const max = Math.ceil(Math.max(...values) + 1);
+    options = createSingleChartOptions(unit, min, max);
+    if (key === 'weightChange') {
+      options.scales.y.ticks.callback = (val) => `${val > 0 ? '+' : ''}${val}${unit}`;
+    }
+  }
+  options.plugins.legend = {
+    display: true,
+    position: 'bottom',
+    labels: { boxWidth: 10, boxHeight: 10, font: { size: 11 }, padding: 10 }
+  };
+  options.plugins.tooltip.callbacks.label = (ctx) => {
+    const v = ctx.parsed.y;
+    return `${ctx.dataset.label}: ${key === 'weightChange' && v > 0 ? '+' : ''}${v} ${unit}`;
+  };
+
+  AppState.charts.tagStats = new Chart(canvas, {
+    type: 'line',
+    data: { labels, datasets },
+    options,
+    plugins: (key === 'exercise' || key === 'diet') ? [zeroBaselinePointPlugin] : []
+  });
+}
+
+function renderTagStatsTable(seriesList) {
+  const tbody = document.getElementById('tagStatsTableBody');
+  if (!tbody) return;
+  if (seriesList.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">이 태그에 해당하는 회원이 없습니다.</td></tr>';
+    return;
+  }
+  const fmt = (v, suffix = '') => (v === null || v === undefined ? '<span class="text-muted">-</span>' : `${v}${suffix}`);
+  tbody.innerHTML = seriesList.map(({ mem, rows }) => {
+    const weights = rows.filter(r => r.weight !== null);
+    const first = weights.length ? weights[0].weight : null;
+    const last = weights.length ? weights[weights.length - 1].weight : null;
+    const change = (first !== null && last !== null) ? Math.round((last - first) * 10) / 10 : null;
+    const changeCls = change === null ? '' : (change < 0 ? 'text-primary fw-bold' : (change > 0 ? 'text-danger fw-bold' : ''));
+    const inactive = !isMemberActive(mem);
+    return `<tr>
+      <td><button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-semibold tagstats-member-link" data-member-key="${escapeHtml(getMemberKey(mem))}">${escapeHtml(getMemberName(mem))}</button>${inactive ? ' <span class="badge bg-secondary-subtle text-secondary">휴면</span>' : ''}</td>
+      <td class="text-end">${rows.length}일</td>
+      <td class="text-end">${fmt(first, 'kg')}</td>
+      <td class="text-end">${fmt(last, 'kg')}</td>
+      <td class="text-end ${changeCls}">${change === null ? fmt(null) : `${change > 0 ? '+' : ''}${change}kg`}</td>
+      <td class="text-end">${fmt(averageOf(rows.map(r => r.exercise)), '점')}</td>
+      <td class="text-end">${fmt(averageOf(rows.map(r => r.diet)), '점')}</td>
+    </tr>`;
+  }).join('');
+  tbody.querySelectorAll('.tagstats-member-link').forEach(btn => {
+    btn.addEventListener('click', () => selectMember(btn.getAttribute('data-member-key'), { tab: 'feedback' }));
+  });
+}
+
+function resizeTagStatsChart() {
+  setTimeout(() => {
+    if (AppState.charts.tagStats) AppState.charts.tagStats.resize();
+  }, 60);
+}
+
+function initTagStatsActions() {
+  document.querySelectorAll('[data-tagstats-metric]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      TagStatsState.metric = btn.getAttribute('data-tagstats-metric');
+      renderTagStatsView();
+    });
+  });
+  document.querySelectorAll('[data-tagstats-axis]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      TagStatsState.axis = btn.getAttribute('data-tagstats-axis');
+      renderTagStatsView();
+    });
+  });
+  const inactiveToggle = document.getElementById('tagStatsIncludeInactive');
+  if (inactiveToggle) {
+    inactiveToggle.addEventListener('change', () => {
+      TagStatsState.includeInactive = inactiveToggle.checked;
+      renderTagStatsView();
+    });
   }
 }
 
@@ -2271,6 +2511,8 @@ function updateGuidelineRoutinePanel(mem) {
     '식단계획', '식단 계획'
   );
 
+  MEMBER_PLAN_CHANGE_KINDS.forEach(k => renderMemberRequestNoteForCoach(mem, k));
+
   setInputValue('inputExerciseGuideline', exGuide);
   setInputValue('inputCurrentExerciseRoutine', exRoutine);
   setInputValue('inputDietGuideline', dietGuide);
@@ -2281,6 +2523,30 @@ function updateGuidelineRoutinePanel(mem) {
   switchRoutineViewMode('table');
   renderCoachDietPlanPreview(dietRoutine);
   switchDietViewMode('table');
+}
+
+// 회원이 마이페이지에서 마지막으로 요청한 수정과 '요청 반영 안내'를 지침 칸 아래에 표시 (코치 지침과 다른 부분은 빨간색 강조)
+function renderMemberRequestNoteForCoach(mem, k) {
+  const box = document.getElementById(`${k.kind}MemberRequestNote`);
+  if (!box) return;
+  const exact = (names) => String(mem[names[0]] || mem[names[1]] || '').trim();
+  const changedAt = exact(k.changed);
+  const request = exact(k.request);
+  const note = exact(k.note);
+  if (!changedAt || (!request && !note)) {
+    box.classList.add('d-none');
+    box.innerHTML = '';
+    return;
+  }
+  const conflict = hasCoachConflictRequestNote(note);
+  box.className = `mt-2 p-2 rounded-3 small border ${conflict ? 'border-danger bg-danger-subtle' : 'bg-light'}`;
+  box.innerHTML = `
+    <div class="fw-bold ${conflict ? 'text-danger' : 'text-dark'} mb-1">
+      <i class="bi ${conflict ? 'bi-exclamation-octagon-fill' : 'bi-person-gear'} me-1"></i>회원 셀프 수정 (${escapeHtml(changedAt)})${conflict ? ' · 코치 지침과 다른 부분 있음' : ''}
+    </div>
+    ${request ? `<div class="text-muted mb-1">요청: ${escapeHtml(request)}</div>` : ''}
+    ${note ? `<div class="text-dark" style="white-space: pre-wrap;">${escapeHtml(note)}</div>` : ''}
+  `;
 }
 
 /**
@@ -3366,21 +3632,9 @@ function renderThreeIndependentCharts(feedbacks) {
   });
 
   // [핵심] 체중 미입력일은 null로 처리하여 spanGaps로 잇고 점은 찍지 않음
-  const weightData = feedbacks.map(f => {
-    const val = getField(f, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight');
-    const num = parseFloat(val);
-    return isNaN(num) || num <= 0 ? null : num;
-  });
-  const exScoreData = feedbacks.map(f => {
-    const val = getField(f, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
-    const num = parseFloat(val);
-    return isNaN(num) ? null : num;
-  });
-  const dietScoreData = feedbacks.map(f => {
-    const val = getField(f, '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore');
-    const num = parseFloat(val);
-    return isNaN(num) ? null : num;
-  });
+  const weightData = feedbacks.map(getFeedbackWeightValue);
+  const exScoreData = feedbacks.map(getFeedbackExerciseScoreValue);
+  const dietScoreData = feedbacks.map(getFeedbackDietScoreValue);
 
   // 차트 1: 공복 몸무게 (kg)
   const ctxWeight = document.getElementById('chartWeight');
@@ -4532,6 +4786,7 @@ function updateGlobalNotificationBadges() {
               회원이 <strong>${escapeHtml(item.label)}</strong>을(를) ${item.isRevert ? '이전 버전으로 되돌렸습니다.' : 'AI로 변경했습니다.'}
             </div>
             ${item.request ? `<div class="small text-muted text-truncate" style="max-width: 300px;">요청: ${escapeHtml(item.request)}</div>` : ''}
+            ${item.hasCoachConflict ? '<div class="small text-danger fw-semibold"><i class="bi bi-exclamation-octagon me-1"></i>회원 요청이 코치 수정 지침과 다르게 반영되었습니다</div>' : ''}
             ${item.hasUnapplied ? '<div class="small text-warning-emphasis fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>일부 요청은 지침과 맞지 않아 반영되지 않았습니다</div>' : ''}
             <div class="text-end mt-1">
               <span class="badge bg-success text-white small px-2 py-1"><i class="bi bi-eye me-1"></i>변경 내용 확인 &rarr;</span>
@@ -4621,16 +4876,27 @@ function handlePendingNotificationClick(key, memberKey, targetDate) {
 /**
  * [회원 셀프 수정 알림] 회원이 마이페이지에서 AI로 루틴/식단을 바꾸거나 되돌린 기록 (Members 시트 '회원 운동/식단 변경일시')
  */
+// 회원 셀프 수정 열 (gas_backend.js MEMBER_PLAN_FIELDS와 같은 열 이름)
+const MEMBER_PLAN_CHANGE_KINDS = [
+  { kind: 'exercise', label: '운동 루틴', changed: ['회원 운동 변경일시', '회원운동변경일시'], request: ['회원 운동 요청', '회원운동요청'], note: ['회원 운동 요청 결과', '회원운동요청결과'] },
+  { kind: 'diet', label: '식단', changed: ['회원 식단 변경일시', '회원식단변경일시'], request: ['회원 식단 요청', '회원식단요청'], note: ['회원 식단 요청 결과', '회원식단요청결과'] }
+];
+
+// 요청 반영 안내에 '반영하지 못한 내용' / '코치님 지침과 다른 부분'이 '없음'이 아닌 값으로 들어 있는지
+function hasUnappliedRequestNote(note) {
+  return /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(note);
+}
+
+function hasCoachConflictRequestNote(note) {
+  return /코치님?\s*지침과\s*다른\s*부분\s*:\s*(?!없음)\S/.test(note);
+}
+
 function getUnreadMemberPlanChangeItems() {
   if (!AppState.members || AppState.members.length === 0) return [];
   const readKeys = new Set(getReadPendingNotiKeys());
-  const kinds = [
-    { kind: 'exercise', label: '운동 루틴', changed: ['회원 운동 변경일시', '회원운동변경일시'], request: ['회원 운동 요청', '회원운동요청'], note: ['회원 운동 요청 결과', '회원운동요청결과'] },
-    { kind: 'diet', label: '식단', changed: ['회원 식단 변경일시', '회원식단변경일시'], request: ['회원 식단 요청', '회원식단요청'], note: ['회원 식단 요청 결과', '회원식단요청결과'] }
-  ];
   const items = [];
   AppState.members.forEach(m => {
-    kinds.forEach(k => {
+    MEMBER_PLAN_CHANGE_KINDS.forEach(k => {
       const changedAt = String(m[k.changed[0]] || m[k.changed[1]] || '').trim();
       if (!changedAt) return;
       const memberKey = getMemberKey(m);
@@ -4644,7 +4910,8 @@ function getUnreadMemberPlanChangeItems() {
         changedAt,
         isRevert: changedAt.includes('되돌림'),
         request: String(m[k.request[0]] || m[k.request[1]] || '').trim(),
-        hasUnapplied: /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(String(m[k.note[0]] || m[k.note[1]] || ''))
+        hasUnapplied: hasUnappliedRequestNote(String(m[k.note[0]] || m[k.note[1]] || '')),
+        hasCoachConflict: hasCoachConflictRequestNote(String(m[k.note[0]] || m[k.note[1]] || ''))
       });
     });
   });
@@ -4879,7 +5146,7 @@ function updateApiStatusUI() {
 function initEventListeners() {
   // 코치가 입력칸을 수정하면 표시 (백그라운드 최신화가 작성 중인 내용을 덮어쓰지 않도록 보호)
   document.addEventListener('input', (e) => {
-    if (e.target && e.target.id !== 'memberSearchInput') AppState.userEditedSinceRender = true;
+    if (e.target && e.target.id !== 'memberSearchInput' && e.target.id !== 'tagStatsIncludeInactive') AppState.userEditedSinceRender = true;
   }, true);
 
   const searchInput = document.getElementById('memberSearchInput');
@@ -4901,6 +5168,7 @@ function initEventListeners() {
   initDailyFeedbackModalActions();
   initComprehensiveFeedbackActions();
   initCustomTagModalActions();
+  initTagStatsActions();
 
   // 하단 플로팅 로딩 바의 [요청 취소] 버튼 이벤트 바인딩
   const btnCancelTask = document.getElementById('btnCancelCurrentTask');

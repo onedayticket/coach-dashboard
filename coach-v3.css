@@ -2,7 +2,7 @@
  * ==============================================================================
  * [코치 대시보드 v3 디자인 레이어 - coach-v3.css]
  * style.css 위에 덮어쓰는 모던 라이트 테마 + 모바일 우선 레이아웃
- * - 992px 미만: 하단 탭바(회원/프로필/루틴·식단/피드백/지침서) + 한 화면씩 표시 + 스와이프 전환
+ * - 992px 미만: 하단 탭바(회원/프로필/루틴·식단/피드백/태그/지침서) + 한 화면씩 표시 + 스와이프 전환
  * - 992px 이상: 기존 2열 레이아웃 유지 (스타일만 갱신)
  * ==============================================================================
  */
@@ -247,6 +247,20 @@ body.cv3 {
 }
 
 .cv3-seg.cv3-seg-3 { grid-template-columns: repeat(3, 1fr); }
+.cv3-seg.cv3-seg-4 { grid-template-columns: repeat(4, 1fr); }
+
+/* 태그별 그래프: 회원 여러 명 + 범례가 들어가도록 높게 */
+.cv3 .tagstats-chart-card { height: 420px; }
+.tagstats-empty {
+  position: absolute;
+  inset: 40px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cv-ink-3);
+  font-size: 0.85rem;
+}
+.tagstats-table td, .tagstats-table th { white-space: nowrap; }
 
 .cv3-seg-btn {
   border: none;
@@ -492,6 +506,8 @@ body.cv3 {
   /* 그래프: 한 번에 하나 */
   .cv3-chart-col:not(.is-active) { display: none !important; }
   .cv3 .chart-card { height: 230px; }
+  .cv3 .tagstats-chart-card { height: 360px; }
+  .cv3 .cv3-seg-4 .cv3-seg-btn { font-size: 0.78rem; }
 
   /* 피드백 기록: 표 → 카드 */
   .cv3 .cv3-fb-table thead { display: none; }

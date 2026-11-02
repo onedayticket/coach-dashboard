@@ -9,7 +9,7 @@
 
 - **프로젝트명**: 4주 온라인 운동/식단 습관화 코칭 통합 대시보드
 - **구성**:
-  - **코치 대시보드** (`index.html`): 회원 프로필·데일리 피드백·5대 코칭 지침서 관리, AI 루틴/식단/피드백 초안 생성
+  - **코치 대시보드** (`index.html`): 회원 프로필·데일리 피드백·5대 코칭 지침서 관리, 태그별 회원 비교 그래프, AI 루틴/식단/피드백 초안 생성
   - **회원 페이지** (`view.html`): 회원번호 + 비밀번호(PIN) 인증 후 본인 루틴·식단·피드백 열람, 하루 3회까지 AI로 루틴/식단 수정 요청
 - **운영 형태**: 빌드 없는 순수 웹앱(Vanilla) + Google Apps Script(GAS) 백엔드 + Google 스프레드시트 DB
 
@@ -21,7 +21,7 @@
 | :--- | :--- | :--- |
 | Frontend | HTML5, Vanilla JS (ES6+), CSS | 프레임워크·번들러 미사용 |
 | UI | Bootstrap 5.3.2, Bootstrap Icons 1.11.3 (CDN) | 모바일(<992px)은 하단 탭바 레이아웃 |
-| 차트 | Chart.js 4.4.1 (CDN) | 체중 / 운동 점수 / 식단 점수 개별 그래프 |
+| 차트 | Chart.js 4.4.1 (CDN) | 체중 / 운동 점수 / 식단 점수 개별 그래프, 태그별 회원 비교 그래프 |
 | Backend & DB | GAS 웹앱 + Google Sheets | `gas_backend.js`를 Apps Script에 붙여넣어 배포 |
 | AI | Google Gemini API — Flash 계열만 사용 | 우선순위: `gemini-flash-lite-latest` → `gemini-flash-latest` → `gemini-3.7-flash` → `gemini-3.8-flash` (ListModels 결과로 자동 선정, Pro 계열 제외) |
 | AI 키 | GAS 스크립트 속성 | 서버 호출: `GEMINI_API_KEY` (브라우저로 절대 전달 금지) / 코치 브라우저 직통 스트리밍: `GEMINI_BROWSER_API_KEY` (없으면 직통 생략, GAS 생성만 사용) |
@@ -34,10 +34,10 @@
 
 ```text
 coach-dashboard/
-├── index.html          # 코치 대시보드 (참여자 관리·지침서 뷰, 피드백/설정 모달)
+├── index.html          # 코치 대시보드 (참여자 관리·태그별 그래프·지침서 뷰, 피드백/설정 모달)
 ├── app.js              # 코치 대시보드 로직 (AppState, GAS 통신, 캐시, 차트, 모바일 탭, MOCK_DB)
 ├── style.css           # 코치 대시보드 기본 스타일
-├── coach-v3.css        # 코치 대시보드 모바일(<992px) 레이아웃 — 하단 탭바, 카드형 피드백 표
+├── coach-v3.css        # 코치 대시보드 모바일(<992px) 레이아웃 — 하단 탭바(회원/프로필/루틴·식단/피드백/태그/지침서), 카드형 피드백 표
 ├── view.html           # 회원 페이지
 ├── view.js             # 회원 페이지 로직 (회원 인증, 열람, AI 수정 요청/되돌리기, VIEW_MOCK_DB)
 ├── view.css            # 회원 페이지 스타일 (모바일 스와이프 탭)
@@ -80,6 +80,11 @@ coach-dashboard/
 - **캐시 우선 로딩**: 저장된 캐시로 즉시 화면을 그린 뒤 서버 최신 데이터로 갱신하고, 상단 배지에 출처(live/cache)를 표시합니다. 서버 실패 시 캐시를 유지하고 재시도 버튼을 보여 줍니다.
 - **알림**: 🤖 AI 초안 알림, 🔔 미완료 피드백 알림 (읽음 상태는 `localStorage`에 저장).
 - **피드백 모달**: 클릭 즉시 열리고, AI 분석은 코치가 버튼을 누를 때만 실행합니다. **[피드백 코멘트 저장]** 을 눌러야 `완료`로 저장됩니다. 요약(코치용) / 잘한 점·개선할 점·코치 한마디(회원용) / 코치 확인 필요(코치용, 빨간색). 회원용 최종본은 [복사] 버튼으로 보낼 수 있습니다.
+  - 모바일 키패드: 입력 중에는 하단 고정 버튼 바(sticky footer)를 풀고(`coach-v3.css`의 `:has(textarea:focus)`), `keepModalFieldAboveKeyboard`가 `visualViewport` 기준으로 모달을 스크롤해 입력칸을 키패드 위에 둡니다. 키패드 높이는 CSS 변수 `--cv-kb-inset`으로 넘깁니다. 데일리 피드백 모달(`#dailyFeedbackModal`)에 textarea를 추가할 때 `df-autogrow` 클래스를 붙이면 같은 처리를 받습니다.
+- **태그별 그래프** (`switchDashboardView('tagstats')`, 모바일 `stats` 탭): 태그 하나를 골라 그 태그 회원들의 체중 / 체중 변화(첫 기록 대비) / 운동 점수 / 식단 점수를 한 그래프(`AppState.charts.tagStats`)로 비교합니다. 가로축은 날짜 또는 참여 일차, 기본은 유효 회원만(휴면 포함 토글).
+  - 점수는 회원 상세 그래프와 같은 열(`getFeedbackExerciseScoreValue`·`getFeedbackDietScoreValue`)에서 서버 저장값을 읽어 표시만 합니다. 요약 표의 체중 변화·평균은 코드가 계산합니다.
+  - 회원↔피드백 연결은 회원 상세 화면과 같은 이름 일치(읽기 전용)이며, 6.6의 정리 대상과 함께 바뀝니다.
+- **회원 셀프 수정 결과 표시**: 루틴·식단 패널의 수정 지침 칸 아래(`renderMemberRequestNoteForCoach`)와 🔔 알림에 회원 요청과 '요청 반영 안내'를 보여 주고, '코치님 지침과 다른 부분'이 있으면 빨간색으로 강조합니다.
 - **회원 페이지**: PIN 5회 오류 시 10분 잠금, 토큰 90일. AI 수정 요청은 운동·식단 각각 하루 3회, 요청 1000자 제한이며 이전 버전으로 되돌릴 수 있습니다.
 
 ---
@@ -118,7 +123,9 @@ coach-dashboard/
 
 ### 6.5 코칭 원칙
 - 5대 지침서와 코치가 입력한 `수정 제안 지침`을 최우선 제약으로 반영합니다.
-- 회원 수정 요청은 지침서 범위 안에서만 반영하고, 반영하지 않은 부분은 "요청 반영 안내"로 이유를 알려 줍니다.
+- 회원 셀프 수정 요청(회원 페이지)은 **코치 수정 지침보다 우선 반영**하고, 코치 수정 지침과 달라진 부분은 "요청 반영 안내"의 `코치님 지침과 다른 부분`으로 알려 줍니다(회원·코치 모두 확인). 기본 지침서·건강 안전 원칙과 충돌하는 부분은 반영하지 않고 `반영하지 못한 내용`에 이유를 적습니다.
+  - 구현: `buildWorkoutPrompt`/`buildDietPrompt`의 `withRequestNote`(회원 셀프 경로)일 때만 `buildGuidelinePriorityRule`·`buildMemberRequestPromptBlock(..., true)`·`MEMBER_SELF_EDIT_SAFETY_INSTRUCTION`이 회원 요청 우선으로 바뀝니다.
+  - 코치 대시보드에서 코치가 AI로 생성할 때는 기존대로 코치 수정 지침이 최우선이고, 회원의 지난 요청은 가장 낮은 우선순위의 참고 사항입니다.
 - 코치 대시보드의 AI 수정 제안은 회원 DB에 자동으로 덮어쓰지 않습니다. 코치가 확인하고 저장해야 반영됩니다.
 
 ### 6.6 현재 코드에 남아 있는 정리 대상

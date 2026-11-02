@@ -2542,14 +2542,15 @@ function renderPlanRegenPanel(kind, member) {
   `;
 }
 
-// AI가 정리한 '요청 반영 안내' (반영한 내용 / 반영하지 못한 내용과 이유) 표시
+// AI가 정리한 '요청 반영 안내' (반영한 내용 / 코치님 지침과 다른 부분 / 반영하지 못한 내용과 이유) 표시
 function renderRequestNoteBox(note) {
   if (!note) return '';
   const hasUnapplied = /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(note);
-  const tone = hasUnapplied ? 'is-warn' : 'is-ok';
+  const hasCoachConflict = /코치님?\s*지침과\s*다른\s*부분\s*:\s*(?!없음)\S/.test(note);
+  const tone = (hasUnapplied || hasCoachConflict) ? 'is-warn' : 'is-ok';
   return `
       <div class="mp-note-box ${tone}">
-        <div class="fw-bold mb-1"><i class="bi bi-clipboard-check me-1"></i>요청 반영 안내${hasUnapplied ? ' <span class="badge bg-warning text-dark ms-1">일부 미반영</span>' : ''}</div>
+        <div class="fw-bold mb-1"><i class="bi bi-clipboard-check me-1"></i>요청 반영 안내${hasCoachConflict ? ' <span class="badge bg-info text-dark ms-1">코치님 지침과 다름</span>' : ''}${hasUnapplied ? ' <span class="badge bg-warning text-dark ms-1">일부 미반영</span>' : ''}</div>
         <div class="text-dark" style="white-space: pre-wrap;">${escapeHtml(note)}</div>
       </div>`;
 }
