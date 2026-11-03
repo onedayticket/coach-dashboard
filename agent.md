@@ -81,6 +81,7 @@ coach-dashboard/
 - **알림**: 🤖 AI 초안 알림, 🔔 미완료 피드백 알림 (읽음 상태는 `localStorage`에 저장).
 - **피드백 모달**: 클릭 즉시 열리고, AI 분석은 코치가 버튼을 누를 때만 실행합니다. **[피드백 코멘트 저장]** 을 눌러야 `완료`로 저장됩니다. 요약(코치용) / 잘한 점·개선할 점·코치 한마디(회원용) / 코치 확인 필요(코치용, 빨간색). 회원용 최종본은 [복사] 버튼으로 보낼 수 있습니다.
   - 모바일 키패드: 입력 중에는 하단 고정 버튼 바(sticky footer)를 풀고(`coach-v3.css`의 `:has(textarea:focus)`), `keepModalFieldAboveKeyboard`가 `visualViewport` 기준으로 모달을 스크롤해 입력칸을 키패드 위에 둡니다. 키패드 높이는 CSS 변수 `--cv-kb-inset`으로 넘깁니다. 데일리 피드백 모달(`#dailyFeedbackModal`)에 textarea를 추가할 때 `df-autogrow` 클래스를 붙이면 같은 처리를 받습니다.
+- **마지막 기록 경과일**: 참여자 목록 카드에 회원별 가장 최근 피드백 기록일(`getFeedbackDate`)로부터 지난 일수를 배지로 표시합니다(`renderLastFeedbackBadge`, 0~1일 초록·2일 주황·3일 이상 빨강·기록 없음 회색).
 - **태그별 그래프** (`switchDashboardView('tagstats')`, 모바일 `stats` 탭): 태그 하나를 골라 그 태그 회원들의 체중 / 체중 변화(첫 기록 대비) / 운동 점수 / 식단 점수를 한 그래프(`AppState.charts.tagStats`)로 비교합니다. 가로축은 날짜 또는 참여 일차, 기본은 유효 회원만(휴면 포함 토글).
   - 점수는 회원 상세 그래프와 같은 열(`getFeedbackExerciseScoreValue`·`getFeedbackDietScoreValue`)에서 서버 저장값을 읽어 표시만 합니다. 요약 표의 체중 변화·평균은 코드가 계산합니다.
   - 회원↔피드백 연결은 회원 상세 화면과 같은 이름 일치(읽기 전용)이며, 6.6의 정리 대상과 함께 바뀝니다.

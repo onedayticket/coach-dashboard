@@ -2127,6 +2127,17 @@ async function saveSingleGuidelineInline(key, title) {
  * ==============================================================================
  */
 
+// 마지막 기록일로부터 며칠 지났는지 (0~1일 초록, 2일 주황, 3일 이상 빨강)
+function renderLastFeedbackBadge(lastDay, todayDay) {
+  if (lastDay === undefined) {
+    return `<span class="badge bg-secondary-subtle text-secondary rounded-pill fw-normal" style="font-size: 0.7rem;" title="피드백 기록이 없습니다">기록 없음</span>`;
+  }
+  const days = Math.max(0, todayDay - lastDay);
+  const tone = days <= 1 ? 'success' : (days === 2 ? 'warning' : 'danger');
+  const label = days === 0 ? '오늘 기록' : `${days}일 전`;
+  return `<span class="badge bg-${tone}-subtle text-${tone}-emphasis rounded-pill" style="font-size: 0.7rem;" title="마지막 피드백 기록 후 ${days}일 지남"><i class="bi bi-clock-history me-1"></i>${label}</span>`;
+}
+
 /**
  * 필터 적용 및 참여자 목록 렌더링
  */
@@ -2178,12 +2189,17 @@ function applyFiltersAndRenderMemberList() {
     return;
   }
 
-  // 회원별 피드백 건수를 1회 순회로 미리 집계 (회원 수 x 피드백 수 반복 스캔 방지)
+  // 회원별 피드백 건수·마지막 기록일을 1회 순회로 미리 집계 (회원 수 x 피드백 수 반복 스캔 방지)
   const fbCountByName = {};
+  const lastDayByName = {};
   AppState.feedbacks.forEach(f => {
     const fName = getMemberName(f);
     fbCountByName[fName] = (fbCountByName[fName] || 0) + 1;
+    const day = dateKeyToUtcDay(getFeedbackDate(f));
+    if (day !== null && !(lastDayByName[fName] >= day)) lastDayByName[fName] = day;
   });
+  const now = new Date();
+  const todayDay = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 86400000;
 
   let html = '';
   filtered.forEach((m, idx) => {
@@ -2194,6 +2210,7 @@ function applyFiltersAndRenderMemberList() {
     const tag = getMemberTag(m);
     const isSelected = AppState.selectedMember && getMemberKey(AppState.selectedMember) === key;
     const fbCount = fbCountByName[name] || 0;
+    const lastBadge = renderLastFeedbackBadge(lastDayByName[name], todayDay);
 
     const ageVal = getField(m, '나이', 'age');
     const jobVal = getField(m, '직업/근무시간', '직업', '근무시간', 'job');
@@ -2218,9 +2235,12 @@ function applyFiltersAndRenderMemberList() {
               </div>
             </div>
           </div>
-          <span class="badge bg-light text-secondary border rounded-pill" style="font-size: 0.72rem;">
-            ${fbCount}회 기록
-          </span>
+          <div class="d-flex flex-column align-items-end gap-1">
+            <span class="badge bg-light text-secondary border rounded-pill" style="font-size: 0.72rem;">
+              ${fbCount}회 기록
+            </span>
+            ${lastBadge}
+          </div>
         </div>
 
         <!-- [요구사항 2 & 3] 상태 토글 및 Fixed Popper Git Tag 스타일 드롭다운 -->
