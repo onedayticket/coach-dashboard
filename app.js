@@ -228,6 +228,13 @@ const MOCK_DB = {
       '식단 내용': '아침 요거트, 점심 현미 포케, 저녁 닭가슴살 볼',
       '회원 일기/코멘트': '퇴근길 지하철 2정거장 일찍 내려서 걸어왔어요.',
       '피드백 코멘트': ''
+    },
+    {
+      // 회원 마이페이지에서 체중만 입력한 행 예시
+      '오늘 날짜': '2026-10-13',
+      '이름': '이지원',
+      '공복 몸무게': 57.7,
+      '입력 구분': '체중만'
     }
   ],
   guidelines: {
@@ -638,7 +645,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-11-02.1';
+const EXPECTED_BACKEND_VERSION = '2026-11-04.1';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -2127,6 +2134,11 @@ async function saveSingleGuidelineInline(key, title) {
  * ==============================================================================
  */
 
+// 회원 마이페이지에서 체중만 입력한 행 (피드백 대상 아님, 체중 그래프·기록에만 쓰임)
+function isWeightOnlyFeedback(fb) {
+  return !!fb && String(fb['입력 구분'] || fb['입력구분'] || '').trim() === '체중만';
+}
+
 // 마지막 기록일로부터 며칠 지났는지 (0~1일 초록, 2일 주황, 3일 이상 빨강)
 function renderLastFeedbackBadge(lastDay, todayDay) {
   if (lastDay === undefined) {
@@ -2193,6 +2205,7 @@ function applyFiltersAndRenderMemberList() {
   const fbCountByName = {};
   const lastDayByName = {};
   AppState.feedbacks.forEach(f => {
+    if (isWeightOnlyFeedback(f)) return;
     const fName = getMemberName(f);
     fbCountByName[fName] = (fbCountByName[fName] || 0) + 1;
     const day = dateKeyToUtcDay(getFeedbackDate(f));
@@ -3884,6 +3897,22 @@ function renderFeedbackTable(feedbacks) {
     const memberName = getMemberName(fb) || (AppState.selectedMember ? getMemberName(AppState.selectedMember) : '-');
     const weight = getField(fb, '공복 몸무게', '공복몸무게', '체중', '시작 체중', '시작체중', '현재체중', 'weight') || '-';
 
+    if (isWeightOnlyFeedback(fb)) {
+      html += `
+      <tr class="is-weight-only">
+        <td class="cv3-c-date text-nowrap fw-semibold text-secondary small">${escapeHtml(date)}</td>
+        <td class="cv3-c-name text-nowrap fw-bold text-dark small">${escapeHtml(memberName)}</td>
+        <td class="cv3-c-weight text-nowrap fw-semibold text-dark">${weight !== '-' ? `${weight} kg` : '-'}</td>
+        <td class="cv3-c-ex text-center text-muted">-</td>
+        <td class="cv3-c-diet text-center text-muted">-</td>
+        <td class="cv3-c-summary small text-muted" colspan="4">회원이 마이페이지에서 체중만 기록했습니다.</td>
+        <td class="cv3-c-action text-center text-nowrap">
+          <span class="badge bg-secondary-subtle text-secondary border"><i class="bi bi-speedometer2 me-1"></i>체중만 기록</span>
+        </td>
+      </tr>`;
+      return;
+    }
+
     // 1. 점수 추출 (fb['운동_실행률_점수'], fb['식단_실행률_점수'] 우선, 0점 미운동 완벽 보존)
     const rawEx = getField(fb, '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore');
     const exScore = (rawEx !== '' && rawEx !== null && rawEx !== undefined) ? rawEx : '-';
@@ -4594,8 +4623,8 @@ function getUnreadAiDraftItems() {
   const items = [];
 
   AppState.feedbacks.forEach(fb => {
-    // 이미 코치가 저장 완료한 피드백은 제외
-    if (isFeedbackRecordCompleted(fb)) return;
+    // 이미 코치가 저장 완료한 피드백·체중만 입력한 행은 제외
+    if (isFeedbackRecordCompleted(fb) || isWeightOnlyFeedback(fb)) return;
 
     const status = String(getField(fb, '피드백 상태', '피드백상태', 'status') || '').trim();
     const summary = getField(fb, '피드백_요약', '피드백 요약', 'feedbackSummary', 'summary') || '';
@@ -4648,7 +4677,7 @@ function getUnreadPendingItems() {
   const items = [];
 
   AppState.feedbacks.forEach(fb => {
-    if (isFeedbackRecordCompleted(fb)) return;
+    if (isFeedbackRecordCompleted(fb) || isWeightOnlyFeedback(fb)) return;
 
     const memberName = getMemberName(fb);
     const date = getFeedbackDate(fb) || '-';

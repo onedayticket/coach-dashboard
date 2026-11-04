@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-11-02.1';
+const BACKEND_VERSION = '2026-11-04.1';
 
 /**
  * CORS 대응 (doOptions)
@@ -178,6 +178,10 @@ function doPost(e) {
     }
     if (action === 'memberRevertPlan') {
       return handleMemberRevertPlan(ss, payload);
+    }
+    // [회원 마이페이지] 날짜별 아침 공복 체중만 입력/수정/삭제 (회원 토큰 필수, 본인 피드백 행만 기록)
+    if (action === 'memberSaveWeight') {
+      return withMembersWriteLock(() => handleMemberSaveWeight(ss, payload));
     }
 
     // [보안] 그 외 모든 조회/저장/AI 생성 요청은 코치 로그인 토큰 필수
@@ -2457,6 +2461,15 @@ function onFormSubmitHandler(e) {
       return { status: 'error', message: '데이터 행 없음' };
     }
 
+    // 마이페이지에서 체중만 입력한 행은 피드백 대상이 아님 (일괄 초안 생성 메뉴에서 호출돼도 건너뜀)
+    // 폼 제출 행이면, 같은 회원·같은 날짜의 '체중만' 행을 이 행으로 합침 (한 날짜 = 한 행)
+    const merged = withMembersWriteLock(() => mergeWeightOnlyRowsIntoSubmission(feedbackSheet, targetRow));
+    if (merged.skip) {
+      Logger.log(`[onFormSubmitHandler 스킵] Row ${targetRow}는 마이페이지 체중만 입력 행입니다.`);
+      return { status: 'skipped', message: '체중만 입력한 행은 피드백을 만들지 않습니다.' };
+    }
+    targetRow = merged.row;
+
     const lastCol = Math.max(feedbackSheet.getLastColumn(), 1);
     const headers = feedbackSheet.getRange(1, 1, 1, lastCol).getValues()[0];
     const rowValues = feedbackSheet.getRange(targetRow, 1, 1, lastCol).getValues()[0];
@@ -2738,6 +2751,7 @@ function fillMissingFeedbackScores() {
     const isBlank = (v) => v === '' || v === null || v === undefined || String(v).trim() === '';
 
     rows.forEach(r => {
+      if (isWeightOnlyFeedbackRow(r)) return;
       const i = r._rowNumber - 2;
       const exBlank = isBlank(exVals[i] && exVals[i][0]);
       const dietBlank = isBlank(dietVals[i] && dietVals[i][0]);
@@ -3907,7 +3921,7 @@ function appendMemberPlanLog(ss, auth, kind, actionLabel, row, request, requestN
       Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss'),
       auth.memberKey,
       memberViewGetName(auth.member),
-      MEMBER_PLAN_FIELDS[kind].label,
+      MEMBER_PLAN_FIELDS[kind] ? MEMBER_PLAN_FIELDS[kind].label : kind,
       actionLabel,
       row,
       String(request || '').slice(0, 1000),
@@ -3953,4 +3967,165 @@ function getFeedbackRowDate(row) {
   }
   const ts = memberViewGetField(row, FEEDBACK_TIMESTAMP_CANDIDATES);
   return ts ? standardizeFeedbackDate(ts) : '';
+}
+
+/**
+ * ==============================================================================
+ * [회원 마이페이지 체중 입력] 날짜를 골라 아침 공복 체중만 기록
+ * - 그 날짜에 본인 피드백 행(폼 제출 또는 체중만 행)이 있으면 그 행의 공복 몸무게 칸만 고침
+ * - 없으면 Feedbacks 맨 아래에 '체중만' 행을 새로 씀 (이름·날짜·공복 몸무게·입력 구분)
+ * - 나중에 같은 날짜로 폼을 제출하면 onFormSubmitHandler가 '체중만' 행을 폼 행으로 합침
+ *   (폼 체중 칸이 비어 있으면 마이페이지 체중을 옮기고, 폼에 체중이 있으면 나중에 낸 폼 값을 씀)
+ * - 회원↔피드백 연결은 기존 회원 화면과 같은 규칙(memberViewFilterFeedbacks: 회원번호 열이 있으면 회원번호, 없으면 이름 완전 일치)
+ * ==============================================================================
+ */
+const WEIGHT_ONLY_MARKER_HEADER = '입력 구분';
+const WEIGHT_ONLY_MARKER = '체중만';
+const MEMBER_WEIGHT_MIN = 20;
+const MEMBER_WEIGHT_MAX = 250;
+
+function isWeightOnlyFeedbackRow(row) {
+  return getFeedbackPart(row, { header: WEIGHT_ONLY_MARKER_HEADER, aliases: [] }) === WEIGHT_ONLY_MARKER;
+}
+
+// 1행 헤더에서 조건에 맞는 열이 정확히 1개일 때만 열 번호 반환 (0개·2개 이상이면 오류 메시지)
+function findUniqueFeedbackColumn(headers, label, test) {
+  const cols = [];
+  headers.forEach((h, i) => {
+    if (test(normalizeHeaderName(h))) cols.push(i + 1);
+  });
+  if (cols.length === 1) return { col: cols[0] };
+  return { error: cols.length === 0 ? `피드백 시트에서 '${label}' 열을 찾지 못했습니다.` : `피드백 시트에 '${label}' 열이 ${cols.length}개 있어 어느 칸에 쓸지 정할 수 없습니다.` };
+}
+
+function locateFeedbackWeightColumns(sheet) {
+  const lastCol = Math.max(sheet.getLastColumn(), 1);
+  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
+  const weight = findUniqueFeedbackColumn(headers, '아침 공복 몸무게', k => k.includes('공복') && (k.includes('몸무게') || k.includes('체중')));
+  if (weight.error) return weight;
+  let date = findUniqueFeedbackColumn(headers, '오늘 날짜', k => k.startsWith('오늘날짜'));
+  if (date.error && !headers.some(h => normalizeHeaderName(h).startsWith('오늘날짜'))) {
+    date = findUniqueFeedbackColumn(headers, '날짜', k => k === '날짜');
+  }
+  if (date.error) return date;
+  const name = findUniqueFeedbackColumn(headers, '이름', k => k.startsWith('이름'));
+  if (name.error) return name;
+  return { headers: headers, weightCol: weight.col, dateCol: date.col, nameCol: name.col };
+}
+
+function parseMemberWeightInput(raw) {
+  const str = String(raw === null || raw === undefined ? '' : raw).trim();
+  if (!str) return { value: '' };
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(str)) return { error: '체중은 숫자로 입력해 주세요. 예) 72.4' };
+  const num = Math.round(parseFloat(str) * 10) / 10;
+  if (num < MEMBER_WEIGHT_MIN || num > MEMBER_WEIGHT_MAX) return { error: `체중은 ${MEMBER_WEIGHT_MIN}~${MEMBER_WEIGHT_MAX}kg 사이로 입력해 주세요.` };
+  return { value: num };
+}
+
+function handleMemberSaveWeight(ss, payload) {
+  const auth = resolveAuthorizedMember(ss, payload);
+  if (auth.error) return createJsonResponse(auth.error);
+
+  const date = String(payload.date || '').trim();
+  const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const check = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+  if (!check || check.getUTCMonth() !== +m[2] - 1 || check.getUTCDate() !== +m[3]) {
+    return createJsonResponse({ status: 'error', code: 'bad_request', message: '날짜를 다시 선택해 주세요.' });
+  }
+  if (date > Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd')) {
+    return createJsonResponse({ status: 'error', code: 'future_date', message: '오늘 이후 날짜에는 체중을 기록할 수 없어요.' });
+  }
+  const weight = parseMemberWeightInput(payload.weight);
+  if (weight.error) return createJsonResponse({ status: 'error', code: 'bad_weight', message: weight.error });
+
+  // 저장 직전 본인 행 재확인 (회원번호 정확 일치 1행 + 휴대폰 뒷자리 일치)
+  const self = locateSelfEditRow(auth.sheet, auth.memberKey, auth.phoneLast4);
+  if (self.error) return createJsonResponse({ status: 'error', code: self.code, message: self.error.replace(' (횟수는 차감되지 않았습니다)', '') });
+
+  // 피드백은 이름으로 연결되므로 같은 이름 회원이 2명 이상이면 기록하지 않음
+  const memberName = memberViewGetName(auth.member);
+  const sameName = getSheetDataWithHeaders(auth.sheet).filter(r => memberViewGetName(r) === memberName);
+  if (sameName.length !== 1) {
+    return createJsonResponse({ status: 'error', code: 'duplicate_member', message: '같은 이름의 회원이 있어 체중을 기록하지 않았습니다. 담당 코치님께 문의해 주세요.' });
+  }
+
+  const sheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!sheet) return createJsonResponse({ status: 'error', code: 'no_sheet', message: '피드백 시트를 찾지 못했습니다. 담당 코치님께 문의해 주세요.' });
+  const cols = locateFeedbackWeightColumns(sheet);
+  if (cols.error) {
+    Logger.log('[memberSaveWeight] ' + cols.error);
+    return createJsonResponse({ status: 'error', code: 'no_column', message: '체중을 기록할 칸을 찾지 못했습니다. 담당 코치님께 문의해 주세요.' });
+  }
+
+  const rows = memberViewFilterFeedbacks(getSheetDataWithHeaders(sheet), auth.member)
+    .filter(r => getFeedbackRowDate(r) === date);
+  let mode;
+  if (rows.length === 0) {
+    if (weight.value === '') {
+      mode = 'none';
+    } else {
+      const colMap = getHeaderColumnMap(sheet);
+      const markerCol = getOrAddExactColumn(sheet, colMap, WEIGHT_ONLY_MARKER_HEADER);
+      const noCol = findExactColumn(colMap, MEMBER_NO_HEADERS);
+      const values = new Array(Math.max(sheet.getLastColumn(), markerCol)).fill('');
+      values[cols.nameCol - 1] = memberName;
+      values[cols.dateCol - 1] = Utilities.parseDate(date, ss.getSpreadsheetTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
+      values[cols.weightCol - 1] = weight.value;
+      values[markerCol - 1] = WEIGHT_ONLY_MARKER;
+      if (noCol) values[noCol - 1] = auth.memberKey;
+      sheet.appendRow(values);
+      mode = 'created';
+    }
+  } else if (weight.value === '') {
+    // 지우기: 체중만 행은 행째 삭제, 폼 제출 행은 체중 칸만 비움
+    rows.filter(r => !isWeightOnlyFeedbackRow(r)).forEach(r => sheet.getRange(r._rowNumber, cols.weightCol).setValue(''));
+    rows.filter(isWeightOnlyFeedbackRow).map(r => r._rowNumber).sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
+    mode = 'deleted';
+  } else {
+    rows.forEach(r => sheet.getRange(r._rowNumber, cols.weightCol).setValue(weight.value));
+    mode = 'updated';
+  }
+  SpreadsheetApp.flush();
+
+  if (mode !== 'none') {
+    appendMemberPlanLog(ss, auth, '공복 체중', mode === 'created' ? '체중 새로 기록' : (mode === 'updated' ? '체중 수정' : '체중 삭제'),
+      rows.map(r => r._rowNumber).join(', ') || sheet.getLastRow(), `${date} ${weight.value === '' ? '(삭제)' : weight.value + 'kg'}`, '');
+  }
+
+  return createJsonResponse({ status: 'success', memberKey: auth.memberKey, date: date, weight: weight.value, mode: mode });
+}
+
+/**
+ * 폼 제출 행에 같은 회원·같은 날짜의 '체중만' 행을 합침 (스크립트 잠금 안에서 호출)
+ * - 반환: { skip: true } (제출 행 자체가 체중만 행) 또는 { row: 합친 뒤 제출 행 번호 }
+ */
+function mergeWeightOnlyRowsIntoSubmission(sheet, targetRow) {
+  const rows = getSheetDataWithHeaders(sheet);
+  const target = rows.find(r => r._rowNumber === targetRow);
+  if (!target) return { row: targetRow };
+  if (isWeightOnlyFeedbackRow(target)) return { skip: true };
+
+  const name = getFeedbackRowName(target);
+  const date = getFeedbackRowDate(target);
+  if (!name || !date) return { row: targetRow };
+  const weightOnly = rows.filter(r => r._rowNumber !== targetRow && isWeightOnlyFeedbackRow(r) &&
+    getFeedbackRowName(r) === name && getFeedbackRowDate(r) === date);
+  if (weightOnly.length === 0) return { row: targetRow };
+
+  const cols = locateFeedbackWeightColumns(sheet);
+  if (cols.error) {
+    Logger.log('[체중만 행 합치기 생략] ' + cols.error);
+    return { row: targetRow };
+  }
+  const formWeight = sheet.getRange(targetRow, cols.weightCol).getValue();
+  if (formWeight === '' || formWeight === null) {
+    const latest = weightOnly[weightOnly.length - 1];
+    sheet.getRange(targetRow, cols.weightCol).setValue(latest[cols.headers[cols.weightCol - 1]]);
+  }
+  const deleted = weightOnly.map(r => r._rowNumber).sort((a, b) => b - a);
+  deleted.forEach(n => sheet.deleteRow(n));
+  SpreadsheetApp.flush();
+  const newRow = targetRow - deleted.filter(n => n < targetRow).length;
+  Logger.log(`[체중만 행 합치기] ${date} 체중만 행 ${deleted.length}개를 폼 제출 행(${newRow})으로 합쳤습니다.`);
+  return { row: newRow };
 }

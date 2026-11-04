@@ -539,6 +539,10 @@ body.cv3 {
   .cv3 .cv3-fb-table tr.is-todo { border-left: 4px solid var(--cv-primary); }
   .cv3 .cv3-fb-table tr.is-draft { border-left: 4px solid #22b8cf; }
   .cv3 .cv3-fb-table tr.is-failed { border-left: 4px solid #dc3545; }
+  .cv3 .cv3-fb-table tr.is-weight-only { padding: 10px 14px; background: var(--cv-surface-2, #f8f9fa) !important; }
+  .cv3 .cv3-fb-table tr.is-weight-only .cv3-c-ex,
+  .cv3 .cv3-fb-table tr.is-weight-only .cv3-c-diet,
+  .cv3 .cv3-fb-table tr.is-weight-only .cv3-c-summary { display: none !important; }
 
   .cv3 .cv3-fb-table td {
     display: block;

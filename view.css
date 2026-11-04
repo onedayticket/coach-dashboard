@@ -1215,3 +1215,127 @@ details.diet-planb-card summary {
 
 details.diet-planb-card summary::-webkit-details-marker { display: none; }
 details.diet-planb-card[open] summary .text-muted { visibility: hidden; }
+
+/* ========================================================================= */
+/* [체중 기록 달력] */
+/* ========================================================================= */
+button.mp-cta-card {
+  width: 100%;
+  border: none;
+  text-align: left;
+}
+
+.mp-cta-weight .mp-cta-icon {
+  background: var(--mp-primary-soft);
+  color: var(--mp-primary);
+}
+
+.mp-wcal-modal {
+  border: none;
+  border-radius: var(--mp-radius);
+}
+
+.mp-wcal-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.mp-wcal-nav strong { font-size: 1rem; }
+
+.mp-wcal-nav button {
+  border: none;
+  background: var(--mp-surface-2);
+  color: var(--mp-ink-2);
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+}
+
+.mp-wcal-nav button:disabled { opacity: 0.35; }
+
+.mp-wcal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.mp-wcal-dow {
+  text-align: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mp-ink-3);
+  padding: 2px 0 4px;
+}
+
+.mp-wcal-dow.is-sun { color: var(--mp-low); }
+
+.mp-wcal-day {
+  border: none;
+  background: var(--mp-surface-2);
+  border-radius: 12px;
+  min-height: 50px;
+  padding: 5px 0 4px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  color: var(--mp-ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mp-wcal-day.is-empty { background: transparent; }
+.mp-wcal-day:disabled:not(.is-empty) { opacity: 0.35; }
+.mp-wcal-day.is-today { box-shadow: inset 0 0 0 1.5px var(--mp-primary); }
+.mp-wcal-day.has-weight { background: var(--mp-primary-soft); }
+
+.mp-wcal-day.is-selected {
+  background: var(--mp-primary);
+  color: #fff;
+}
+
+.mp-wcal-w {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--mp-primary);
+  line-height: 1;
+}
+
+.mp-wcal-day.is-selected .mp-wcal-w { color: #fff; }
+
+.mp-wcal-entry {
+  margin-top: 14px;
+  background: var(--mp-surface-2);
+  border-radius: var(--mp-radius-sm);
+  padding: 12px;
+}
+
+.mp-wcal-entry-title {
+  font-size: 0.9rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.mp-wcal-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mp-wcal-input-row .form-control {
+  font-size: 1.1rem;
+  font-weight: 700;
+  border-radius: 12px;
+  max-width: 130px;
+}
+
+.mp-wcal-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mp-wcal-actions .mp-btn { flex: 1 1 0; }

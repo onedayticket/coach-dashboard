@@ -175,6 +175,14 @@ const VIEW_MOCK_DB = {
       '식단 내용': '아침 바나나+계란 2알, 점심 연어 포케, 저녁 프로틴 쉐이크+아몬드',
       '회원 일기/코멘트': '몸이 한결 가벼워졌고 옷 입을 때 허리가 편안합니다!'
     },
+    {
+      // 마이페이지에서 체중만 입력한 행 예시
+      '오늘 날짜': '2026-10-13',
+      '이름': '김민수',
+      '회원번호': 'M001',
+      '공복 몸무게': 81.5,
+      '입력 구분': '체중만'
+    },
 
     // 이지원 회원 피드백
     {
@@ -1130,7 +1138,29 @@ function unlockAndRenderMemberPage() {
   setText('heroMemberNo', memberNo ? `No. ${memberNo}` : '');
   setText('heroMemberName', memberName);
 
-  // 체중 계산
+  renderHeroWeights(member, feedbacks);
+
+  // 3. 운동 루틴 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
+  renderWorkoutRoutineBox(member);
+
+  // 4. 식단 플랜 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
+  renderDietPlanBox(member);
+
+  // 5-1. 회원 셀프 수정 패널 (AI 재생성 / 이전 버전 되돌리기) - 서버 인증된 실제 회원에게만 표시
+  renderPlanRegenPanels(member);
+
+  // 5. 데일리 데이터 추이 3개의 독립 꺾은선 차트 (코치 대시보드와 동일)
+  renderThreeIndependentCharts(feedbacks);
+
+  // 6. 일자별 피드백 누적 테이블 렌더링 (코치 대시보드 목록 기준 그대로 가져옴)
+  renderFeedbackTable(feedbacks);
+
+  // 7. 하단 탭바 / 좌우 스와이프 전환 연결 (최초 1회)
+  initMemberTabs();
+}
+
+// 홈 상단 시작 체중 / 최근 체중 / 변화
+function renderHeroWeights(member, feedbacks) {
   const startWeight = parseFloat(getField(member, '시작 체중', '시작체중', '체중', 'weight') || 0);
   let latestWeight = startWeight;
 
@@ -1162,24 +1192,6 @@ function unlockAndRenderMemberPage() {
       diffBox.className = 'mp-diff';
     }
   }
-
-  // 3. 운동 루틴 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
-  renderWorkoutRoutineBox(member);
-
-  // 4. 식단 플랜 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
-  renderDietPlanBox(member);
-
-  // 5-1. 회원 셀프 수정 패널 (AI 재생성 / 이전 버전 되돌리기) - 서버 인증된 실제 회원에게만 표시
-  renderPlanRegenPanels(member);
-
-  // 5. 데일리 데이터 추이 3개의 독립 꺾은선 차트 (코치 대시보드와 동일)
-  renderThreeIndependentCharts(feedbacks);
-
-  // 6. 일자별 피드백 누적 테이블 렌더링 (코치 대시보드 목록 기준 그대로 가져옴)
-  renderFeedbackTable(feedbacks);
-
-  // 7. 하단 탭바 / 좌우 스와이프 전환 연결 (최초 1회)
-  initMemberTabs();
 }
 
 /**
@@ -2200,7 +2212,7 @@ function renderFeedbackTable(feedbacks) {
     return String(rawB).localeCompare(String(rawA));
   });
 
-  if (countBadge) countBadge.textContent = `누적 ${sorted.length}건`;
+  if (countBadge) countBadge.textContent = `누적 ${sorted.filter(fb => !isWeightOnlyFeedback(fb)).length}건`;
 
   let html = '';
   sorted.forEach((fb, idx) => {
@@ -2217,6 +2229,20 @@ function renderFeedbackTable(feedbacks) {
     const feedbackParts = extractFeedbackMemberParts(fb);
     // 6. 회원의 실천 일지 & 코치에게 한마디
     const memberNote = extractFeedbackMemberNote(fb);
+
+    if (isWeightOnlyFeedback(fb)) {
+      html += `
+      <article class="mp-fb-card">
+        <header class="mp-fb-head">
+          <span class="mp-fb-date">${escapeHtml(date)}</span>
+          <div class="mp-fb-metrics">
+            <span class="mp-metric"><i class="bi bi-speedometer2"></i>${weight !== '-' ? `${escapeHtml(weight)}kg` : '-'}</span>
+          </div>
+        </header>
+        <div class="mp-fb-pending"><i class="bi bi-calendar3"></i>체중만 기록한 날이에요</div>
+      </article>`;
+      return;
+    }
 
     html += `
       <article class="mp-fb-card">
@@ -2779,3 +2805,192 @@ function resizeMemberCharts() {
     if (chart && typeof chart.resize === 'function') chart.resize();
   });
 }
+
+/**
+ * ==============================================================================
+ * [체중만 기록] 달력에서 날짜를 골라 아침 공복 체중을 바로 기록
+ * - 서버(memberSaveWeight)가 그 날짜의 본인 피드백 행 체중 칸을 고치거나, 없으면 '체중만' 행을 새로 씀
+ * - 저장 성공 후 화면의 기록도 서버와 같은 규칙으로 고쳐 바로 반영 (새로고침하면 시트 값으로 다시 받음)
+ * ==============================================================================
+ */
+const WeightCalendarState = { year: 0, month: 0, selected: '', busy: false };
+
+function isWeightOnlyFeedback(fb) {
+  return !!fb && String(fb['입력 구분'] || fb['입력구분'] || '').trim() === '체중만';
+}
+
+function toLocalDateKey(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// 공복 체중 열 (시트 원본 헤더와 공백 제거 별칭 모두)
+function isWeightHeaderKey(key) {
+  const k = String(key).replace(/[\s\r\n]+/g, '');
+  return k.includes('공복') && (k.includes('몸무게') || k.includes('체중'));
+}
+
+// 날짜별 체중 (같은 날짜가 여러 행이면 뒤쪽 행 우선 - 코치 대시보드와 동일)
+function getWeightByDate() {
+  const map = {};
+  (CurrentMemberState.feedbacks || []).forEach(fb => {
+    const w = parseFloat(extractFeedbackWeight(fb));
+    if (!isNaN(w)) map[extractFeedbackDate(fb)] = w;
+  });
+  return map;
+}
+
+function openWeightCalendar() {
+  const today = new Date();
+  WeightCalendarState.year = today.getFullYear();
+  WeightCalendarState.month = today.getMonth();
+  WeightCalendarState.selected = toLocalDateKey(today);
+  renderWeightCalendar();
+  const modalEl = document.getElementById('weightCalendarModal');
+  if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
+}
+
+function moveWeightCalendarMonth(delta) {
+  const d = new Date(WeightCalendarState.year, WeightCalendarState.month + delta, 1);
+  WeightCalendarState.year = d.getFullYear();
+  WeightCalendarState.month = d.getMonth();
+  renderWeightCalendar();
+}
+
+function selectWeightCalendarDate(key) {
+  WeightCalendarState.selected = key;
+  renderWeightCalendar();
+  const input = document.getElementById('weightCalendarInput');
+  if (input) input.focus();
+}
+
+function renderWeightCalendar(statusHtml) {
+  const body = document.getElementById('weightCalendarBody');
+  if (!body) return;
+  const { year, month, selected, busy } = WeightCalendarState;
+  const todayKey = toLocalDateKey(new Date());
+  const weights = getWeightByDate();
+  const now = new Date();
+  const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
+
+  let cells = ['일', '월', '화', '수', '목', '금', '토']
+    .map((d, i) => `<div class="mp-wcal-dow ${i === 0 ? 'is-sun' : ''}">${d}</div>`).join('');
+  const firstDow = new Date(year, month, 1).getDay();
+  const lastDate = new Date(year, month + 1, 0).getDate();
+  for (let i = 0; i < firstDow; i++) cells += '<span class="mp-wcal-day is-empty"></span>';
+  for (let d = 1; d <= lastDate; d++) {
+    const key = toLocalDateKey(new Date(year, month, d));
+    const w = weights[key];
+    const cls = ['mp-wcal-day', key === todayKey ? 'is-today' : '', key === selected ? 'is-selected' : '', w !== undefined ? 'has-weight' : ''].join(' ');
+    cells += `<button type="button" class="${cls}" ${key > todayKey ? 'disabled' : ''} onclick="selectWeightCalendarDate('${key}')">
+        <span>${d}</span>${w !== undefined ? `<span class="mp-wcal-w">${w.toFixed(1)}</span>` : ''}
+      </button>`;
+  }
+
+  const selW = weights[selected];
+  const [, sm, sd] = selected.split('-');
+  const canSave = canMemberSelfEdit();
+  body.innerHTML = `
+    <div class="mp-wcal-nav">
+      <button type="button" onclick="moveWeightCalendarMonth(-1)" aria-label="이전 달"><i class="bi bi-chevron-left"></i></button>
+      <strong>${year}년 ${month + 1}월</strong>
+      <button type="button" onclick="moveWeightCalendarMonth(1)" aria-label="다음 달" ${isCurrentMonth ? 'disabled' : ''}><i class="bi bi-chevron-right"></i></button>
+    </div>
+    <div class="mp-wcal-grid">${cells}</div>
+    <div class="mp-wcal-entry">
+      <div class="mp-wcal-entry-title">${+sm}월 ${+sd}일 아침 공복 체중</div>
+      <form class="mp-wcal-input-row" onsubmit="event.preventDefault(); saveMemberWeight(false);">
+        <input type="text" inputmode="decimal" class="form-control" id="weightCalendarInput" placeholder="예) 72.4"
+               value="${selW !== undefined ? selW.toFixed(1) : ''}" autocomplete="off" ${busy ? 'disabled' : ''}>
+        <span class="fw-bold text-secondary">kg</span>
+      </form>
+      <div class="mp-wcal-actions">
+        <button type="button" class="mp-btn mp-btn-primary" onclick="saveMemberWeight(false)" ${busy || !canSave ? 'disabled' : ''}>
+          ${busy ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>저장 중...' : '<i class="bi bi-check-lg"></i>저장'}
+        </button>
+        ${selW !== undefined ? `<button type="button" class="mp-btn mp-btn-ghost" onclick="saveMemberWeight(true)" ${busy || !canSave ? 'disabled' : ''}><i class="bi bi-trash3"></i>지우기</button>` : ''}
+      </div>
+      <div class="small mt-2" id="weightCalendarStatus">${statusHtml || (canSave ? '<span class="text-muted">저장하면 코치님 화면의 체중 기록에도 바로 반영돼요.</span>' : '<span class="text-danger">미리보기 화면에서는 저장되지 않아요.</span>')}</div>
+    </div>
+  `;
+}
+
+async function saveMemberWeight(clear) {
+  if (WeightCalendarState.busy || !canMemberSelfEdit()) return;
+  const date = WeightCalendarState.selected;
+  const input = document.getElementById('weightCalendarInput');
+  const raw = clear ? '' : String(input ? input.value : '').trim();
+  if (!clear) {
+    const num = parseFloat(raw);
+    if (!/^\d{1,3}(\.\d{1,2})?$/.test(raw) || num < 20 || num > 250) {
+      renderWeightCalendar('<span class="text-danger fw-semibold">체중을 숫자로 입력해 주세요. 예) 72.4</span>');
+      return;
+    }
+  } else if (!confirm(`${date} 체중 기록을 지울까요?`)) {
+    return;
+  }
+
+  WeightCalendarState.busy = true;
+  renderWeightCalendar('<span class="text-primary fw-semibold">저장 중입니다...</span>');
+  const res = await postMemberSelfEdit({
+    action: 'memberSaveWeight',
+    id: CurrentMemberState.targetId,
+    memberToken: storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId),
+    date: date,
+    weight: raw
+  });
+  WeightCalendarState.busy = false;
+
+  if (res && res.status === 'success') {
+    // [다른 회원 오반영 차단] 서버가 처리한 회원·날짜가 지금 화면과 같을 때만 화면에 반영
+    if (res.memberKey !== getMemberNo(CurrentMemberState.member) || res.date !== date) {
+      renderWeightCalendar('<span class="text-danger fw-semibold">회원 정보 확인에 실패해 화면에 반영하지 않았습니다. 새로고침해 주세요.</span>');
+      return;
+    }
+    applyLocalWeightChange(date, res.weight === '' ? '' : Number(res.weight));
+    renderWeightCalendar(`<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>${res.weight === '' ? '체중 기록을 지웠어요.' : '체중을 기록했어요.'}</span>`);
+    return;
+  }
+  if (res && res.code === 'auth_required') {
+    bootstrap.Modal.getInstance(document.getElementById('weightCalendarModal'))?.hide();
+    clearMemberSession(CurrentMemberState.targetId);
+    document.getElementById('memberPageContent')?.classList.add('d-none');
+    showMemberAuthModal();
+    return;
+  }
+  renderWeightCalendar(`<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml((res && res.message) || '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.')}</span>`);
+}
+
+// 서버와 같은 규칙으로 화면 기록 수정: 그 날짜 행이 있으면 체중 칸만 고치고(지우기면 체중만 행 삭제), 없으면 체중만 행 추가
+function applyLocalWeightChange(date, weight) {
+  const member = CurrentMemberState.member;
+  const sameDate = CurrentMemberState.feedbacks.filter(fb => extractFeedbackDate(fb) === date);
+  if (sameDate.length === 0) {
+    if (weight !== '') {
+      CurrentMemberState.feedbacks.push({ '오늘 날짜': date, '이름': getMemberName(member), '공복 몸무게': weight, '입력 구분': '체중만' });
+    }
+  } else if (weight === '') {
+    CurrentMemberState.feedbacks = CurrentMemberState.feedbacks.filter(fb => !(sameDate.includes(fb) && isWeightOnlyFeedback(fb)));
+    sameDate.forEach(fb => Object.keys(fb).forEach(k => { if (isWeightHeaderKey(k)) fb[k] = ''; }));
+  } else {
+    sameDate.forEach(fb => {
+      const keys = Object.keys(fb).filter(isWeightHeaderKey);
+      if (keys.length === 0) fb['공복 몸무게'] = weight;
+      keys.forEach(k => { fb[k] = weight; });
+    });
+  }
+
+  renderHeroWeights(member, CurrentMemberState.feedbacks);
+  renderThreeIndependentCharts(CurrentMemberState.feedbacks);
+  renderFeedbackTable(CurrentMemberState.feedbacks);
+  saveMemberSession(CurrentMemberState.targetId, null, {
+    member: member,
+    feedbacks: CurrentMemberState.feedbacks,
+    feedbackTotal: CurrentMemberState.rawFeedbacksTotal,
+    regenRemaining: CurrentMemberState.regenRemaining
+  });
+}
+
+window.openWeightCalendar = openWeightCalendar;
+window.moveWeightCalendarMonth = moveWeightCalendarMonth;
+window.selectWeightCalendarDate = selectWeightCalendarDate;
+window.saveMemberWeight = saveMemberWeight;
