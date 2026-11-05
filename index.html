@@ -18,7 +18,7 @@
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
   <!-- Custom CSS (style.css + v3 모바일 우선 디자인 레이어) -->
   <link href="style.css?v=3.2.0" rel="stylesheet">
-  <link href="coach-v3.css?v=3.7.0" rel="stylesheet">
+  <link href="coach-v3.css?v=3.8.0" rel="stylesheet">
 </head>
 <body class="cv3" data-ctab="list">
 
@@ -631,7 +631,7 @@
                 <h4 class="section-title text-dark d-flex align-items-center mb-1">
                   <i class="bi bi-graph-up text-info me-2 fs-4"></i>태그별 그래프
                 </h4>
-                <p class="text-muted small mb-0">태그를 고르면 그 태그 회원들의 기록을 한 그래프에서 비교합니다. 범례의 이름을 누르면 그 회원을 숨기거나 다시 보여 줍니다.</p>
+                <p class="text-muted small mb-0">체중은 회원별 그래프로 따로 보여 주고(감량 많은 순), 체중 변화·점수는 한 그래프에서 비교합니다. 범례의 이름을 누르면 그 회원을 숨기거나 다시 보여 줍니다.</p>
               </div>
             </div>
             <div class="section-body">
@@ -658,13 +658,16 @@
                 </div>
               </div>
 
-              <div class="chart-card tagstats-chart-card mb-3">
+              <div class="chart-card tagstats-chart-card mb-3 d-none" id="tagStatsChartCard">
                 <div class="chart-card-title" id="tagStatsChartTitle">아침 공복 몸무게 (kg)</div>
                 <div class="chart-canvas-wrapper">
                   <canvas id="chartTagStats"></canvas>
                 </div>
                 <div class="tagstats-empty d-none" id="tagStatsEmpty">이 태그에는 표시할 기록이 없습니다.</div>
               </div>
+
+              <!-- 체중: 회원별 작은 그래프 (각자 눈금, 감량 많은 순) -->
+              <div class="tagstats-member-grid mb-3" id="tagStatsMemberGrid"></div>
 
               <!-- 회원별 요약 (코드 계산값) -->
               <div class="table-responsive">
@@ -1219,6 +1222,6 @@
   <!-- Chart.js 4.x CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Main Application Logic (app.js) -->
-  <script src="app.js?v=3.9.0"></script>
+  <script src="app.js?v=3.10.0"></script>
 </body>
 </html>

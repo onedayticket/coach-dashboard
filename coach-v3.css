@@ -262,6 +262,55 @@ body.cv3 {
 }
 .tagstats-table td, .tagstats-table th { white-space: nowrap; }
 
+/* 태그별 그래프 - 체중: 회원별 작은 그래프 */
+.tagstats-member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.tagstats-member-card {
+  background: var(--cv-surface);
+  border: 1px solid var(--cv-line);
+  border-left: 4px solid var(--cv-ink-3);
+  border-radius: var(--cv-radius-sm);
+  padding: 10px 12px 8px;
+  min-width: 0;
+}
+.tagstats-member-card.is-down { border-left-color: #3182f6; }
+.tagstats-member-card.is-up { border-left-color: #f04452; }
+.tagstats-member-card.is-none { border-left-color: var(--cv-line); }
+.tagstats-member-head { display: flex; align-items: center; gap: 6px; }
+.tagstats-trend-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--cv-surface-2);
+  color: var(--cv-ink-2);
+}
+.is-down .tagstats-trend-badge { background: #e8f3ff; color: #1b64da; }
+.is-up .tagstats-trend-badge { background: #ffeeee; color: #d22030; }
+.tagstats-member-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+  margin: 6px 0 4px;
+  font-size: 0.85rem;
+}
+.tagstats-member-stats b { display: block; color: var(--cv-ink); }
+.tagstats-member-stats b.is-down { color: #1b64da; }
+.tagstats-member-stats b.is-up { color: #d22030; }
+.tagstats-stat-label { display: block; font-size: 0.7rem; color: var(--cv-ink-3); }
+.tagstats-member-chart { position: relative; height: 130px; }
+.tagstats-member-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--cv-ink-3);
+  font-size: 0.8rem;
+}
+
 .cv3-seg-btn {
   border: none;
   background: transparent;

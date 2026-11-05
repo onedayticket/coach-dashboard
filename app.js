@@ -276,7 +276,8 @@ const AppState = {
     weight: null,
     exercise: null,
     diet: null,
-    tagStats: null
+    tagStats: null,
+    tagStatsMembers: []
   },
   currentFeedbackContext: null, // 피드백 하기 모달 대상
   customTagTargetKey: null      // 태그 직접 입력 모달 대상
@@ -1906,7 +1907,148 @@ function renderTagStatsView() {
   const members = getTagStatsMembers();
   const seriesList = members.map(mem => ({ mem, rows: collectMemberDailySeries(mem) }));
   renderTagStatsTable(seriesList);
-  renderTagStatsChart(seriesList);
+  // 체중은 회원마다 눈금이 달라 한 그래프에 겹치면 추세가 묻히므로 회원별 작은 그래프로 따로 그림
+  const perMember = TagStatsState.metric === 'weight';
+  const chartCard = document.getElementById('tagStatsChartCard');
+  if (chartCard) chartCard.classList.toggle('d-none', perMember);
+  if (perMember) {
+    renderTagStatsChart([]);
+    renderTagStatsMemberGrid(seriesList);
+  } else {
+    renderTagStatsMemberGrid(null);
+    renderTagStatsChart(seriesList);
+  }
+}
+
+const TAG_STATS_TREND_COLORS = { down: '#3182f6', up: '#f04452', flat: '#8b95a1' };
+
+// 회원 1명의 체중 추세 (코드 계산): 첫/최근 체중, 변화, 7일 평균선, 주당 변화 속도(최소제곱 기울기)
+function computeMemberWeightTrend(rows) {
+  const points = rows.filter(r => r.weight !== null);
+  const trend = { points, first: null, last: null, change: null, pacePerWeek: null, direction: 'none', avg7: [] };
+  if (!points.length) return trend;
+  trend.first = points[0].weight;
+  trend.last = points[points.length - 1].weight;
+  trend.change = Math.round((trend.last - trend.first) * 10) / 10;
+  trend.avg7 = points.map(p => averageOf(points.filter(q => q.day <= p.day && q.day > p.day - 7).map(q => q.weight)));
+
+  const spanDays = points[points.length - 1].day - points[0].day;
+  if (points.length >= 3 && spanDays >= 4) {
+    const n = points.length;
+    const mx = points.reduce((a, p) => a + p.day, 0) / n;
+    const my = points.reduce((a, p) => a + p.weight, 0) / n;
+    const num = points.reduce((a, p) => a + (p.day - mx) * (p.weight - my), 0);
+    const den = points.reduce((a, p) => a + (p.day - mx) ** 2, 0);
+    if (den > 0) trend.pacePerWeek = Math.round(num / den * 7 * 100) / 100;
+  }
+  if (trend.pacePerWeek === null) trend.direction = 'none';
+  else if (trend.pacePerWeek <= -0.2) trend.direction = 'down';
+  else if (trend.pacePerWeek >= 0.2) trend.direction = 'up';
+  else trend.direction = 'flat';
+  return trend;
+}
+
+function destroyTagStatsMemberCharts() {
+  (AppState.charts.tagStatsMembers || []).forEach(c => c.destroy());
+  AppState.charts.tagStatsMembers = [];
+}
+
+// 회원별 체중 그래프 카드 (감량 많은 순). seriesList가 null이면 숨김
+function renderTagStatsMemberGrid(seriesList) {
+  destroyTagStatsMemberCharts();
+  const grid = document.getElementById('tagStatsMemberGrid');
+  if (!grid) return;
+  grid.classList.toggle('d-none', seriesList === null);
+  if (seriesList === null) { grid.innerHTML = ''; return; }
+  if (!seriesList.length) {
+    grid.innerHTML = '<div class="text-center text-muted small py-4">이 태그에 해당하는 회원이 없습니다.</div>';
+    return;
+  }
+
+  const byDay = TagStatsState.axis === 'day';
+  const items = seriesList.map(s => ({ ...s, trend: computeMemberWeightTrend(s.rows) }))
+    .sort((a, b) => {
+      if (a.trend.change === null) return b.trend.change === null ? 0 : 1;
+      if (b.trend.change === null) return -1;
+      return a.trend.change - b.trend.change;
+    });
+
+  const signed = (v, suffix) => `${v > 0 ? '+' : ''}${v}${suffix}`;
+  const trendLabel = { down: '감소 추세', up: '증가 추세', flat: '유지', none: '기록 부족' };
+  grid.innerHTML = items.map(({ mem, trend }, i) => {
+    const inactive = !isMemberActive(mem);
+    const changeCls = trend.change === null ? 'text-muted' : (trend.change < 0 ? 'is-down' : (trend.change > 0 ? 'is-up' : ''));
+    const hasData = trend.points.length > 0;
+    return `<div class="tagstats-member-card is-${trend.direction}">
+      <div class="tagstats-member-head">
+        <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold tagstats-member-link" data-member-key="${escapeHtml(getMemberKey(mem))}">${escapeHtml(getMemberName(mem))}</button>
+        ${inactive ? '<span class="badge bg-secondary-subtle text-secondary">휴면</span>' : ''}
+        <span class="tagstats-trend-badge ms-auto">${trendLabel[trend.direction]}</span>
+      </div>
+      <div class="tagstats-member-stats">
+        <div><span class="tagstats-stat-label">최근</span><b>${hasData ? `${trend.last}kg` : '-'}</b></div>
+        <div><span class="tagstats-stat-label">첫 기록 대비</span><b class="${changeCls}">${trend.change === null ? '-' : signed(trend.change, 'kg')}</b></div>
+        <div><span class="tagstats-stat-label">주당</span><b>${trend.pacePerWeek === null ? '-' : signed(trend.pacePerWeek, 'kg')}</b></div>
+      </div>
+      <div class="tagstats-member-chart">
+        ${hasData ? `<canvas data-tagstats-idx="${i}"></canvas>` : '<div class="tagstats-member-empty">체중 기록이 없습니다.</div>'}
+      </div>
+    </div>`;
+  }).join('');
+
+  grid.querySelectorAll('.tagstats-member-link').forEach(btn => {
+    btn.addEventListener('click', () => selectMember(btn.getAttribute('data-member-key'), { tab: 'feedback' }));
+  });
+  if (typeof Chart === 'undefined') return;
+
+  grid.querySelectorAll('canvas[data-tagstats-idx]').forEach(canvas => {
+    const { trend } = items[+canvas.getAttribute('data-tagstats-idx')];
+    const color = TAG_STATS_TREND_COLORS[trend.direction] || TAG_STATS_TREND_COLORS.flat;
+    const labels = trend.points.map(p => {
+      if (byDay) return `${p.dayIndex}일차`;
+      const [, mm, dd] = p.date.split('-');
+      return `${+mm}/${+dd}`;
+    });
+    // 회원마다 자기 체중 범위로 눈금을 잡되, 최소 3kg 폭을 둬 작은 출렁임이 과장되지 않게 함
+    const values = trend.points.map(p => p.weight);
+    const lo = Math.min(...values), hi = Math.max(...values);
+    const mid = (lo + hi) / 2, half = Math.max(1.5, (hi - lo) / 2 + 0.5);
+    const options = createSingleChartOptions('kg', Math.floor(mid - half), Math.ceil(mid + half));
+    options.layout.padding = { top: 6, right: 6, bottom: 0, left: 0 };
+    options.scales.x.ticks = { font: { size: 9 }, maxRotation: 0, autoSkip: true, maxTicksLimit: 6 };
+    options.scales.y.ticks = { font: { size: 9 }, maxTicksLimit: 4, callback: (val) => `${val}` };
+    options.plugins.tooltip.callbacks.label = (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y} kg`;
+
+    AppState.charts.tagStatsMembers.push(new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [
+          {
+            label: '체중',
+            data: values,
+            borderColor: 'rgba(139, 149, 161, 0.45)',
+            backgroundColor: 'rgba(139, 149, 161, 0.85)',
+            borderWidth: 1,
+            pointRadius: 2.5,
+            pointHoverRadius: 5,
+            tension: 0
+          },
+          {
+            label: '7일 평균',
+            data: trend.avg7,
+            borderColor: color,
+            backgroundColor: color,
+            borderWidth: 2.5,
+            pointRadius: 0,
+            pointHoverRadius: 4,
+            tension: 0.3
+          }
+        ]
+      },
+      options
+    }));
+  });
 }
 
 function renderTagStatsChart(seriesList) {
@@ -2012,6 +2154,7 @@ function renderTagStatsTable(seriesList) {
 function resizeTagStatsChart() {
   setTimeout(() => {
     if (AppState.charts.tagStats) AppState.charts.tagStats.resize();
+    (AppState.charts.tagStatsMembers || []).forEach(c => c.resize());
   }, 60);
 }
 

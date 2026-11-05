@@ -84,6 +84,7 @@ coach-dashboard/
   - 모바일 키패드: 입력 중에는 하단 고정 버튼 바(sticky footer)를 풀고(`coach-v3.css`의 `:has(textarea:focus)`), `keepModalFieldAboveKeyboard`가 `visualViewport` 기준으로 모달을 스크롤해 입력칸을 키패드 위에 둡니다. 키패드 높이는 CSS 변수 `--cv-kb-inset`으로 넘깁니다. 데일리 피드백 모달(`#dailyFeedbackModal`)에 textarea를 추가할 때 `df-autogrow` 클래스를 붙이면 같은 처리를 받습니다.
 - **마지막 기록 경과일**: 참여자 목록 카드에 회원별 가장 최근 피드백 기록일(`getFeedbackDate`, 체중만 행 제외)로부터 지난 일수를 배지로 표시합니다(`renderLastFeedbackBadge`, 0~1일 초록·2일 주황·3일 이상 빨강·기록 없음 회색).
 - **태그별 그래프** (`switchDashboardView('tagstats')`, 모바일 `stats` 탭): 태그 하나를 골라 그 태그 회원들의 체중 / 체중 변화(첫 기록 대비) / 운동 점수 / 식단 점수를 한 그래프(`AppState.charts.tagStats`)로 비교합니다. 가로축은 날짜 또는 참여 일차, 기본은 유효 회원만(휴면 포함 토글).
+  - '체중'은 회원별 작은 그래프(`renderTagStatsMemberGrid`, 각자 눈금·최소 3kg 폭)로 따로 그리고 첫 기록 대비 감량 많은 순으로 정렬합니다. 카드의 첫 기록 대비 변화·주당 변화(최소제곱 기울기)·7일 평균선·추세(주당 ±0.2kg 기준)는 코드가 계산합니다(`computeMemberWeightTrend`). 체중 변화·점수는 한 그래프로 비교합니다.
   - 점수는 회원 상세 그래프와 같은 열(`getFeedbackExerciseScoreValue`·`getFeedbackDietScoreValue`)에서 서버 저장값을 읽어 표시만 합니다. 요약 표의 체중 변화·평균은 코드가 계산합니다.
   - 회원↔피드백 연결은 회원 상세 화면과 같은 이름 일치(읽기 전용)이며, 6.6의 정리 대상과 함께 바뀝니다.
 - **회원 셀프 수정 결과 표시**: 루틴·식단 패널의 수정 지침 칸 아래(`renderMemberRequestNoteForCoach`)와 🔔 알림에 회원 요청과 '요청 반영 안내'를 보여 주고, '코치님 지침과 다른 부분'이 있으면 빨간색으로 강조합니다.
