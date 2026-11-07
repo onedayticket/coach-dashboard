@@ -2,7 +2,7 @@
  * ==============================================================================
  * [코치 대시보드 v3 디자인 레이어 - coach-v3.css]
  * style.css 위에 덮어쓰는 모던 라이트 테마 + 모바일 우선 레이아웃
- * - 992px 미만: 하단 탭바(회원/프로필/루틴·식단/피드백/태그/지침서) + 한 화면씩 표시 + 스와이프 전환
+ * - 992px 미만: 하단 탭바(오늘/회원/루틴·식단/기록/더보기) + 한 화면씩 표시 + 스와이프 전환
  * - 992px 이상: 기존 2열 레이아웃 유지 (스타일만 갱신)
  * ==============================================================================
  */
@@ -340,6 +340,282 @@ body.cv3 {
 .cv3-seg-btn[data-routine-seg="diet"].is-active i { color: var(--cv-diet); }
 
 /* ========================================================================= */
+/* [오늘 보드] 날짜별 회원 기록 현황 */
+/* ========================================================================= */
+.today-board { overflow: hidden; }
+.today-board-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--cv-line);
+}
+.today-date-nav { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.today-date-btn {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 11px;
+  background: var(--cv-surface-2);
+  color: var(--cv-ink-2);
+  flex-shrink: 0;
+}
+.today-date-btn:disabled { opacity: 0.35; }
+.today-date-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 11px;
+  background: var(--cv-surface-2);
+  font-weight: 800;
+  font-size: 0.98rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+/* 날짜 글자를 눌러도 달력이 열리도록 투명한 date 입력을 위에 덮음 */
+.today-date-field input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  cursor: pointer;
+}
+.today-today-btn {
+  border: none;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 11px;
+  background: var(--cv-primary-soft);
+  color: var(--cv-primary);
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.today-progress { min-width: 140px; flex: 0 1 220px; }
+.today-progress-text { font-weight: 800; font-size: 0.9rem; text-align: right; margin-bottom: 4px; }
+.today-progress-bar { height: 6px; border-radius: 999px; background: var(--cv-surface-2); overflow: hidden; }
+.today-progress-bar span { display: block; height: 100%; width: 0; background: var(--cv-workout); border-radius: 999px; transition: width 0.25s; }
+
+.today-filters { padding: 10px 16px 4px; display: flex; flex-direction: column; gap: 6px; }
+.today-chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.today-chip-row.is-scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+.today-chip-row.is-scroll::-webkit-scrollbar { display: none; }
+.today-chip {
+  border: 1px solid var(--cv-line);
+  background: #fff;
+  color: var(--cv-ink-2);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.today-chip.is-active { background: var(--cv-ink); border-color: var(--cv-ink); color: #fff; }
+
+.today-list { padding: 8px 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.today-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--cv-line);
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-height: 58px;
+}
+.today-row:hover { border-color: #d5dae0; background: #fafbfc; }
+.today-row.is-todo { border-left: 4px solid var(--cv-primary); }
+.today-row.is-done { border-left: 4px solid var(--cv-workout); background: #fbfdfc; }
+.today-row.is-disabled { opacity: 0.55; border-left: 4px solid var(--cv-line); grid-template-columns: 1fr; }
+.today-row-main { min-width: 0; }
+.today-row-name { font-weight: 800; font-size: 0.95rem; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.today-row-name small { font-weight: 600; font-size: 0.72rem; color: var(--cv-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.today-row-sub { font-size: 0.75rem; color: var(--cv-ink-3); }
+.today-row-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 3px;
+  font-size: 0.76rem;
+  color: #c2410c;
+  min-width: 0;
+}
+.today-row-check b { flex-shrink: 0; font-size: 0.7rem; background: #fff1e6; border-radius: 999px; padding: 0 6px; }
+.today-ai-flag { font-size: 0.65rem; font-weight: 800; color: #fff; background: #7048e8; border-radius: 6px; padding: 1px 5px; }
+.today-row-weight { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 0.85rem; white-space: nowrap; }
+.today-weight-missing { color: var(--cv-ink-3); font-size: 0.78rem; background: var(--cv-surface-2); border-radius: 6px; padding: 1px 6px; }
+.today-trend { font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 2px; }
+.today-trend.is-down { color: #1b64da; }
+.today-trend.is-up { color: #d22030; }
+.today-trend.is-flat, .today-trend.is-none { color: var(--cv-ink-3); }
+.today-row-status { display: flex; align-items: center; gap: 4px; min-width: 64px; justify-content: flex-end; white-space: nowrap; }
+.today-done { color: var(--cv-workout); font-weight: 800; font-size: 0.8rem; display: inline-flex; align-items: center; gap: 3px; }
+.today-todo { color: var(--cv-primary); font-weight: 800; font-size: 0.8rem; background: var(--cv-primary-soft); border-radius: 8px; padding: 3px 8px; }
+.today-status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cv-ink-3); }
+.today-status-dot.is-good { background: var(--cv-workout); }
+.today-status-dot.is-mid { background: #f59f00; }
+.today-status-dot.is-warn { background: #f04452; }
+.today-empty { text-align: center; color: var(--cv-ink-3); padding: 40px 0; font-size: 0.88rem; }
+.today-empty i { display: block; font-size: 1.8rem; opacity: 0.5; margin-bottom: 4px; }
+
+/* ========================================================================= */
+/* [코치 기록 창] 모바일 아래 시트 / 데스크톱 오른쪽 패널 */
+/* ========================================================================= */
+.coachlog-sheet.offcanvas-bottom {
+  height: 92vh;
+  height: 92dvh;
+  border-radius: 22px 22px 0 0;
+}
+.coachlog-sheet.offcanvas-end { width: min(480px, 100vw); }
+.coachlog-head { border-bottom: 1px solid var(--cv-line); padding: 12px 16px; gap: 6px; }
+.coachlog-head .offcanvas-title { font-weight: 800; font-size: 1.05rem; }
+.coachlog-sub { font-size: 0.78rem; color: var(--cv-ink-3); }
+.coachlog-detail-btn { flex-shrink: 0; }
+.coachlog-body { padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+
+.coachlog-saved {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #e6fcf5;
+  color: #087f5b;
+  border-radius: 12px;
+  padding: 8px 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  animation: coachlogSaved 0.3s ease-out;
+}
+@keyframes coachlogSaved { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.coachlog-summary { display: flex; flex-direction: column; gap: 8px; }
+.coachlog-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.coachlog-stats > div { background: var(--cv-surface-2); border-radius: 12px; padding: 8px 10px; min-width: 0; }
+.coachlog-stats span { display: block; font-size: 0.7rem; color: var(--cv-ink-3); }
+.coachlog-stats b { font-size: 0.92rem; }
+.coachlog-stats em, .coachlog-lastnote em { font-style: normal; color: var(--cv-ink-3); font-weight: 600; }
+.coachlog-lastnote { border-left: 3px solid var(--cv-primary); background: #f7faff; border-radius: 0 12px 12px 0; padding: 8px 10px; font-size: 0.85rem; }
+.coachlog-lastnote > span { display: block; font-size: 0.72rem; color: var(--cv-ink-3); font-weight: 700; margin-bottom: 2px; }
+.coachlog-lastnote > span i { margin-right: 3px; }
+
+.coachlog-block { display: flex; flex-direction: column; gap: 8px; }
+.coachlog-label { font-weight: 800; font-size: 0.9rem; display: flex; align-items: center; gap: 6px; margin: 0; }
+.coachlog-block.is-diet .coachlog-label i { color: var(--cv-diet); }
+.coachlog-block.is-workout .coachlog-label i { color: var(--cv-workout); }
+.coachlog-hint { font-weight: 600; font-size: 0.72rem; color: var(--cv-ink-3); }
+.coachlog-hint.is-public { color: #d9480f; background: #fff4e6; border-radius: 999px; padding: 1px 8px; }
+
+.coachlog-choices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.coachlog-choice {
+  height: 46px;
+  border: 1.5px solid var(--cv-line);
+  background: #fff;
+  border-radius: 12px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--cv-ink-2);
+}
+.coachlog-choice.is-on.is-good { background: #e6fcf5; border-color: var(--cv-workout); color: #087f5b; }
+.coachlog-choice.is-on.is-mid { background: #fff9db; border-color: #f59f00; color: #a35f00; }
+.coachlog-choice.is-on.is-warn { background: #fff0f0; border-color: #f04452; color: #c92a2a; }
+
+.coachlog-tags, .coachlog-phrases { display: flex; flex-wrap: wrap; gap: 6px; }
+.coachlog-tag, .coachlog-phrase {
+  border: 1px solid var(--cv-line);
+  background: var(--cv-surface-2);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--cv-ink-2);
+}
+.coachlog-tag.is-on { background: var(--cv-ink); border-color: var(--cv-ink); color: #fff; }
+.coachlog-phrase { background: #fff; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coachlog-phrase:active { background: var(--cv-primary-soft); }
+.coachlog-body textarea, .coachlog-body input[type="text"] { font-size: 16px; } /* iOS 확대 방지 */
+
+.coachlog-pending { display: flex; flex-direction: column; gap: 6px; }
+.coachlog-pending-title { font-size: 0.75rem; font-weight: 700; color: var(--cv-ink-3); margin-top: 2px; }
+.coachlog-pending-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: #fff8f1;
+  border: 1px solid #ffe0c2;
+  border-radius: 12px;
+  padding: 9px 10px;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.coachlog-pending-item .form-check-input { margin-top: 2px; flex-shrink: 0; width: 1.15em; height: 1.15em; }
+.coachlog-pending-item small { display: block; font-size: 0.7rem; color: var(--cv-ink-3); }
+.coachlog-pending-item.is-done { background: #f1f3f5; border-color: var(--cv-line); color: var(--cv-ink-3); text-decoration: line-through; }
+
+.coachlog-footer {
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px calc(10px + var(--cv-safe-bottom));
+  border-top: 1px solid var(--cv-line);
+  background: #fff;
+}
+.coachlog-footer .btn { height: 48px; font-size: 0.98rem; }
+.coachlog-footer #btnCoachLogSave { flex: 0 0 34%; }
+
+/* ========================================================================= */
+/* [회원 상세] 날짜별 코치 기록 타임라인 · AI 리포트 자리 */
+/* ========================================================================= */
+.coach-ai-report-slot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1.5px dashed #d0bfff;
+  background: #f8f5ff;
+  color: #5f3dc4;
+  border-radius: var(--cv-radius-sm);
+  padding: 12px 14px;
+}
+.coach-ai-report-slot > i { font-size: 1.3rem; }
+.coach-ai-report-slot .small { color: #7950f2; opacity: 0.85; }
+
+.coach-timeline-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.coach-timeline-head h6 { margin: 0; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+.coach-timeline-empty { color: var(--cv-ink-3); font-size: 0.85rem; background: var(--cv-surface-2); border-radius: 12px; padding: 14px; text-align: center; }
+.coach-tl-list { display: flex; flex-direction: column; gap: 6px; }
+.coach-tl-item {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--cv-line);
+  background: #fff;
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.coach-tl-item:hover { border-color: #d5dae0; background: #fafbfc; }
+.coach-tl-date { font-weight: 800; font-size: 0.82rem; color: var(--cv-ink-2); padding-top: 1px; }
+.coach-tl-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; font-size: 0.86rem; }
+.coach-tl-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.coach-tl-status, .coach-tl-tag { font-size: 0.72rem; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: var(--cv-surface-2); color: var(--cv-ink-2); }
+.coach-tl-status.is-good { background: #e6fcf5; color: #087f5b; }
+.coach-tl-status.is-mid { background: #fff9db; color: #a35f00; }
+.coach-tl-status.is-warn { background: #fff0f0; color: #c92a2a; }
+.coach-tl-memo, .coach-tl-note, .coach-tl-check { display: flex; gap: 6px; white-space: pre-wrap; word-break: break-word; }
+.coach-tl-memo { color: var(--cv-ink-3); }
+.coach-tl-memo i, .coach-tl-note i, .coach-tl-check i { flex-shrink: 0; margin-top: 2px; }
+.coach-tl-note i { color: #e64980; }
+.coach-tl-check { color: #c2410c; }
+.coach-tl-check.is-done { color: var(--cv-ink-3); }
+.coach-tl-check small { margin-left: 4px; color: var(--cv-ink-3); white-space: nowrap; }
+.member-weight-table-details > summary { font-size: 0.85rem; font-weight: 700; color: var(--cv-ink-2); cursor: pointer; }
+
+/* ========================================================================= */
 /* [모바일 / 태블릿 (992px 미만): 한 화면씩 + 하단 탭바] */
 /* ========================================================================= */
 .cv3-tabbar { display: none; }
@@ -426,14 +702,32 @@ body.cv3 {
   body.cv3[data-ctab="list"] #mainContentColumn { display: none !important; }
   body.cv3:not([data-ctab="list"]) #sidebarColumn { display: none !important; }
 
-  body.cv3[data-ctab="profile"] #panelGuidelineRoutine,
-  body.cv3[data-ctab="profile"] #panelWeightHistory,
-  body.cv3[data-ctab="routine"] #panelPersonalInfo,
+  /* 루틴·식단 탭: 프로필은 상단 이름 줄을 눌렀을 때만 펼침 / 기록 탭: 체중·코치 기록만 */
+  body.cv3:not([data-cprofile="open"]) #panelPersonalInfo,
+  body.cv3[data-ctab="record"] #panelPersonalInfo,
   body.cv3[data-ctab="routine"] #panelWeightHistory,
-  body.cv3[data-ctab="weight"] #panelPersonalInfo,
-  body.cv3[data-ctab="weight"] #panelGuidelineRoutine {
+  body.cv3[data-ctab="record"] #panelGuidelineRoutine {
     display: none !important;
   }
+
+  /* 더보기 (태그별 그래프 · 코칭 지침서) */
+  .cv3-tab-more { flex: 1 1 0; display: flex; }
+  .cv3-tab-more .cv3-tab { width: 100%; }
+  .cv3-tab-more .cv3-tab::after { display: none; }
+  .cv3-more-menu {
+    border: none;
+    border-radius: 16px;
+    padding: 6px;
+    min-width: 190px;
+    margin-bottom: 6px !important;
+  }
+  .cv3-more-menu .dropdown-item {
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-weight: 700;
+    font-size: 0.92rem;
+  }
+  .cv3-more-menu .dropdown-item.is-active { background: var(--cv-primary-soft); color: var(--cv-primary); }
 
   body.cv3[data-croutine="exercise"] #colDietPlan,
   body.cv3[data-croutine="diet"] #colExerciseRoutine {
@@ -540,7 +834,34 @@ body.cv3 {
     min-width: 0;
     font-weight: 800;
     font-size: 0.92rem;
+    border: none;
+    background: transparent;
+    color: var(--cv-ink);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 2px;
+    text-align: left;
+    height: 36px;
   }
+
+  .cv3-strip-profile-hint {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--cv-ink-3);
+    background: var(--cv-surface-2);
+    border-radius: 999px;
+    padding: 3px 8px;
+  }
+  .cv3-strip-chevron { transition: transform 0.2s; }
+  body.cv3[data-cprofile="open"] .cv3-strip-chevron { transform: rotate(180deg); }
+  body.cv3[data-cprofile="open"] .cv3-strip-profile-hint { color: var(--cv-primary); background: var(--cv-primary-soft); }
+  body.cv3[data-ctab="record"] .cv3-strip-profile-hint { display: none; }
+  body.cv3[data-ctab="record"] .cv3-strip-name { pointer-events: none; }
 
   .cv3-strip-btn {
     border: none;
@@ -556,6 +877,26 @@ body.cv3 {
     gap: 2px;
     flex-shrink: 0;
   }
+
+  /* 알림 토스트는 하단 탭바 바로 위에 (탭바·상단 날짜 줄을 가리지 않도록, 기록 창 안에서는 창 안에 저장 확인을 띄움) */
+  body.cv3 #appGlobalToast {
+    bottom: calc(var(--cv-tabbar-h) + var(--cv-safe-bottom) + 8px) !important;
+    left: 0 !important;
+    right: 0 !important;
+    margin: 0 auto !important;
+    width: calc(100% - 24px);
+  }
+
+  /* 오늘 보드: 날짜 줄과 진행률을 한 줄씩 */
+  .today-board-head { padding: 12px; }
+  .today-date-nav { width: 100%; }
+  .today-date-field { flex: 1 1 auto; justify-content: center; }
+  .today-progress { flex: 1 1 100%; }
+  .today-progress-text { text-align: left; }
+  .today-filters { padding: 10px 12px 2px; }
+  .today-list { padding: 8px 8px 10px; }
+  .today-row { padding: 10px; gap: 8px; }
+  .coach-tl-item { grid-template-columns: 1fr; gap: 4px; }
 
   /* 그래프 */
   .cv3 .chart-card { height: 230px; }

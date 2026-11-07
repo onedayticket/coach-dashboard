@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-11-07.3';
+const BACKEND_VERSION = '2026-11-07.4';
 
 /**
  * CORS 대응 (doOptions)
@@ -62,7 +62,7 @@ function doOptions(e) {
 /**
  * GET 요청 핸들러 (doGet)
  * - action 파라미터에 따라 데이터를 반환합니다.
- * - action: 'getAll' (기본값) -> 전체 회원 목록, 체중 기록(WeightLog) 전체, 지침서 반환
+ * - action: 'getAll' (기본값) -> 전체 회원 목록, 체중 기록(WeightLog) 전체, 최근 코치 관리 기록(CoachLog), 코치 설정(CoachSettings), 지침서 반환
  * - action: 'getGuidelines' -> 지침서만 반환
  */
 function doGet(e) {
@@ -110,6 +110,9 @@ function doGet(e) {
           // 전송량 절감: 공백 제거 별칭 키 중복 없이 원본 헤더만 전송 (대시보드는 공백 무관 탐색으로 동일하게 읽음)
           members: getSheetDataWithHeaders(memberSheet, { noAliases: true }),
           weights: readWeightLog(ss),
+          // 코치 관리 기록: 최근 60일 + 그 이전이라도 아직 확인 안 한 '다음에 확인' (전체 기록은 getCoachLogHistory)
+          coachLogs: readRecentCoachLogs(ss),
+          coachSettings: readCoachSettings(ss),
           guidelines: getGuidelinesData(guidelineSheet)
         }
       });
@@ -146,6 +149,8 @@ function doGet(e) {
  *   3. updateGuidelines: 지침서(코칭 철학·운동·식단) 저장/업데이트
  *   4. generateWorkoutRoutine: AI 운동 루틴 생성 (지침서 + 수정제안지침 최우선 반영)
  *   5. generateDietPlan: AI 식단 생성 (지침서 + 수정제안지침 최우선 반영)
+ *   6. saveCoachLog: 코치 관리 기록 저장 (CoachLog, 회원번호+날짜 1행)
+ *   7. getCoachLogHistory: 회원 1명의 코치 관리 기록 전체
  *   - buildAiPrompt: 코치 브라우저 직통 스트리밍용 프롬프트만 조립해 반환 (workout/diet)
  */
 function doPost(e) {
@@ -220,6 +225,16 @@ function doPost(e) {
     // 5. [AI] 식단 계획 생성
     if (action === 'generateDietPlan') {
       return handleAiDietPlan(ss, payload);
+    }
+
+    // 6. 코치 관리 기록 저장 (회원번호+날짜 1행, 스크립트 잠금)
+    if (action === 'saveCoachLog') {
+      return withMembersWriteLock(() => handleSaveCoachLog(ss, payload));
+    }
+
+    // 7. 회원 1명의 코치 관리 기록 전체 (회원 상세 타임라인 '더 보기')
+    if (action === 'getCoachLogHistory') {
+      return handleGetCoachLogHistory(ss, payload);
     }
 
     return createJsonResponse({ status: 'error', message: '지원하지 않는 action입니다: ' + action });
@@ -1488,7 +1503,7 @@ function setupInitialSheets() {
       '회원번호', '이름', '상태', '태그', '나이', '성별', '키', '체중', '시작 체중',
       '직업/근무시간', '운동 경력', '주당 운동 횟수', '참여목적',
       '운동 루틴 수정 제안 지침', '식단 수정 제안 지침',
-      '현재 제안 운동 루틴', '현재 제안 식단'
+      '현재 제안 운동 루틴', '현재 제안 식단', '체중 목표', '운동 목적'
     ]);
     memSheet.appendRow([
       'M001', '김민수', '유효', '4주-체중감량반', 31, '남성', 178, 82.5, 82.5,
@@ -1580,6 +1595,9 @@ function onOpen() {
       .addSeparator()
       .addItem('⚖️ 체중 기록 옮기기 (Feedbacks·MemberPlanLog → WeightLog, 1회)', 'migrateWeightsToWeightLog')
       .addItem('🧯 폼 제출 트리거 삭제 (예전 데일리 피드백)', 'removeLegacyFeedbackTriggers')
+      .addSeparator()
+      .addItem('🧱 코치 기록 시트 준비 (CoachLog·CoachSettings·Members 열)', 'setupCoachRecordSheets')
+      .addItem('💬 코치 한마디 옮기기 (Feedbacks → CoachLog, 1회)', 'migrateCoachNotesToCoachLog')
       .addSeparator()
       .addItem('🔑 코치 마스터 비밀번호 설정/확인', 'promptChangeCoachPassword')
       .addToUi();
@@ -1737,7 +1755,8 @@ function createUnauthorizedResponse() {
  * ==============================================================================
  * [회원 마이페이지 전용 API] getMemberView
  * - 회원 식별(view.js와 동일한 매칭 규칙) -> 휴대폰 뒷 4자리 또는 회원 토큰 서버 검증
- * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처 열 제외, 체중은 WeightLog의 본인 회원번호 행만)
+ * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처 열 제외, 체중은 WeightLog의 본인 회원번호 행만,
+ *   코치 관리 기록은 본인 회원번호 행의 날짜·코치 한마디만)
  * - 휴대폰 번호 미등록 회원은 인증 불가 (비상 비밀번호 없음)
  * ==============================================================================
  */
@@ -1802,12 +1821,15 @@ function handleGetMemberView(ss, payload) {
   const weights = readWeightLog(ss)
     .filter(r => r['회원번호'] === memberKey)
     .map(r => ({ '날짜': r['날짜'], '체중': r['체중'] }));
+  // 코치 관리 기록 중 회원 공개 칸(코치 한마디)만 - 메모·상태·태그·다음에 확인은 보내지 않음
+  const coachNotes = readMemberCoachNotes(ss, memberKey);
 
   return createJsonResponse({
     status: 'success',
     data: {
       member: memberViewSanitize(member, ['지침']),
       weights: weights,
+      coachNotes: coachNotes,
       regenRemaining: getMemberRegenRemaining(memberKey)
     },
     memberToken: issueMemberToken(memberKey, phoneLast4)
@@ -2553,10 +2575,10 @@ function migrateWeightsToWeightLog() {
     ui.ButtonSet.OK);
 }
 
-function runWeightMigration(ss) {
+// Members 회원번호 ↔ 이름 지도 (1회 이관 메뉴 전용: 예전 폼 행에 회원번호를 붙일 때만 이름으로 찾음)
+function readMemberNoNameMaps(ss) {
   const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
   const members = getSheetDataWithHeaders(memberSheet);
-  if (!members.length) return { error: 'Members 시트에서 회원을 찾지 못했습니다.' };
   const nameByNo = {};
   const noByName = {};
   members.forEach(mem => {
@@ -2566,6 +2588,14 @@ function runWeightMigration(ss) {
     nameByNo[no] = name;
     if (name) (noByName[name] = noByName[name] || []).push(no);
   });
+  return { count: members.length, nameByNo: nameByNo, noByName: noByName };
+}
+
+function runWeightMigration(ss) {
+  const maps = readMemberNoNameMaps(ss);
+  if (!maps.count) return { error: 'Members 시트에서 회원을 찾지 못했습니다.' };
+  const nameByNo = maps.nameByNo;
+  const noByName = maps.noByName;
 
   const failures = [];
   const latest = {}; // '회원번호|날짜' -> { memberNo, date, weight(null이면 삭제), time }
@@ -2680,4 +2710,435 @@ function removeLegacyFeedbackTriggers() {
   try {
     SpreadsheetApp.getUi().alert('🧯 폼 제출 트리거 삭제', removed ? `예전 피드백 트리거 ${removed}개를 삭제했습니다.` : '삭제할 예전 피드백 트리거가 없습니다.', SpreadsheetApp.getUi().ButtonSet.OK);
   } catch (e) {}
+}
+
+/**
+ * ==============================================================================
+ * [코치 관리 기록] CoachLog 시트 - 회원번호+날짜 1행 (같은 날 다시 저장하면 덮어쓰기)
+ * - 열: 날짜 | 회원번호 | 이름 | 식단 상태 | 운동 상태 | 식단 태그 | 운동 태그 | 메모 | 코치 한마디 |
+ *       다음에 확인 | 확인 완료 | 작성시각 | 수정시각 (처음 저장할 때 자동 생성)
+ * - 메모는 코치 전용, 코치 한마디만 회원 페이지에 보임
+ * - 태그는 쉼표로 구분해 저장, '확인 완료'에는 확인한 기록의 날짜를 적음 (비어 있으면 아직 확인 전)
+ * - 저장은 코치 토큰 + 스크립트 잠금 + Members 회원번호 정확 일치 1명일 때만
+ * ==============================================================================
+ */
+const COACH_LOG_SHEET = 'CoachLog';
+const COACH_LOG_HEADERS = ['날짜', '회원번호', '이름', '식단 상태', '운동 상태', '식단 태그', '운동 태그', '메모', '코치 한마디', '다음에 확인', '확인 완료', '작성시각', '수정시각'];
+const COACH_LOG_DIET_STATUSES = ['좋음', '보통', '주의'];
+const COACH_LOG_EXERCISE_STATUSES = ['했음', '쉬는 날', '안 함'];
+const COACH_LOG_RECENT_DAYS = 60;
+const COACH_LOG_MAX_LEN = { memo: 5000, coachNote: 1000, nextCheck: 300 };
+// 날짜처럼 보이는 글자를 시트가 날짜 값으로 바꾸지 않도록 글자 서식으로 두는 열
+const COACH_LOG_TEXT_HEADERS = ['날짜', '회원번호', '확인 완료', '작성시각', '수정시각'];
+
+const COACH_SETTINGS_SHEET = 'CoachSettings';
+const COACH_SETTINGS_COLUMNS = [
+  { key: 'dietTags', header: '식단 태그', defaults: ['과식', '야식', '음주', '단백질 부족', '잘 지킴'] },
+  { key: 'exerciseTags', header: '운동 태그', defaults: ['통증', '질문', '강도↑', '누락'] },
+  { key: 'phrases', header: '자주 쓰는 문구', defaults: [] }
+];
+const MEMBER_SURVEY_EXTRA_HEADERS = ['체중 목표', '운동 목적'];
+
+function kstDateKey(d) {
+  return Utilities.formatDate(d || new Date(), 'Asia/Seoul', 'yyyy-MM-dd');
+}
+
+function shiftDateKey(dateKey, days) {
+  const m = String(dateKey).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + days));
+  return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+}
+
+function isValidDateKey(dateKey) {
+  const m = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return false;
+  const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  return d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3];
+}
+
+function getCoachLogSheet(ss, create) {
+  let sheet = ss.getSheetByName(COACH_LOG_SHEET);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(COACH_LOG_SHEET);
+    sheet.getRange(1, 1, 1, COACH_LOG_HEADERS.length).setValues([COACH_LOG_HEADERS]);
+    sheet.setFrozenRows(1);
+    COACH_LOG_TEXT_HEADERS.forEach(h => {
+      const col = COACH_LOG_HEADERS.indexOf(h) + 1;
+      sheet.getRange(1, col, sheet.getMaxRows(), 1).setNumberFormat('@');
+    });
+  }
+  return sheet;
+}
+
+// 1행 헤더에서 CoachLog 열 번호를 찾음 (13개 중 하나라도 없으면 오류 - 다른 칸에 쓰지 않도록)
+function locateCoachLogColumns(sheet) {
+  const colMap = getHeaderColumnMap(sheet);
+  const cols = {};
+  const missing = [];
+  COACH_LOG_HEADERS.forEach(h => {
+    cols[h] = findExactColumn(colMap, [h]);
+    if (!cols[h]) missing.push(h);
+  });
+  if (missing.length) return { error: `CoachLog 시트에서 '${missing.join("', '")}' 열을 찾지 못했습니다.` };
+  cols.width = Math.max.apply(null, [sheet.getLastColumn()].concat(COACH_LOG_HEADERS.map(h => cols[h])));
+  return cols;
+}
+
+// CoachLog 전체를 헤더 이름 키 객체 배열로 읽음 (날짜·회원번호가 올바른 행만)
+function readCoachLog(ss) {
+  const sheet = getCoachLogSheet(ss, false);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const cols = locateCoachLogColumns(sheet);
+  if (cols.error) {
+    Logger.log('[readCoachLog] ' + cols.error);
+    return [];
+  }
+  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  const asText = (v, fmt) => v instanceof Date ? Utilities.formatDate(v, tz, fmt) : String(v === null || v === undefined ? '' : v).trim();
+  const out = [];
+  values.forEach((row, i) => {
+    const date = asText(row[cols['날짜'] - 1], 'yyyy-MM-dd');
+    const memberNo = asText(row[cols['회원번호'] - 1]);
+    if (!isValidDateKey(date) || !memberNo) return;
+    const obj = { _rowNumber: i + 2 };
+    COACH_LOG_HEADERS.forEach(h => {
+      const fmt = (h === '확인 완료') ? 'yyyy-MM-dd' : 'yyyy-MM-dd HH:mm:ss';
+      obj[h] = asText(row[cols[h] - 1], fmt);
+    });
+    obj['날짜'] = date;
+    obj['회원번호'] = memberNo;
+    out.push(obj);
+  });
+  return out;
+}
+
+function stripCoachLogRow(r) {
+  const out = {};
+  COACH_LOG_HEADERS.forEach(h => { out[h] = r[h]; });
+  return out;
+}
+
+// getAll용: 최근 60일 + 그 이전이라도 '다음에 확인'이 아직 확인 전인 기록
+function readRecentCoachLogs(ss) {
+  const since = shiftDateKey(kstDateKey(), -COACH_LOG_RECENT_DAYS);
+  return readCoachLog(ss)
+    .filter(r => r['날짜'] >= since || (r['다음에 확인'] && !r['확인 완료']))
+    .map(stripCoachLogRow);
+}
+
+// 회원 페이지용: 본인 회원번호 행의 날짜·코치 한마디만 (최신 30개)
+function readMemberCoachNotes(ss, memberNo) {
+  if (!memberNo) return [];
+  const today = kstDateKey();
+  return readCoachLog(ss)
+    .filter(r => r['회원번호'] === memberNo && r['코치 한마디'] && r['날짜'] <= today)
+    .sort((a, b) => (a['날짜'] < b['날짜'] ? 1 : -1))
+    .slice(0, 30)
+    .map(r => ({ '날짜': r['날짜'], '코치 한마디': r['코치 한마디'] }));
+}
+
+// CoachSettings: 1행 헤더(식단 태그 | 운동 태그 | 자주 쓰는 문구) 아래로 한 칸에 하나씩. 시트가 없으면 기본값
+function readCoachSettings(ss) {
+  const result = { fromSheet: false };
+  COACH_SETTINGS_COLUMNS.forEach(c => { result[c.key] = c.defaults.slice(); });
+  const sheet = ss.getSheetByName(COACH_SETTINGS_SHEET);
+  if (!sheet || sheet.getLastRow() < 1 || sheet.getLastColumn() < 1) return result;
+  const values = sheet.getRange(1, 1, sheet.getLastRow(), sheet.getLastColumn()).getValues();
+  const headers = values[0].map(h => normalizeHeaderName(h));
+  COACH_SETTINGS_COLUMNS.forEach(c => {
+    const idx = headers.indexOf(normalizeHeaderName(c.header));
+    if (idx < 0) return;
+    const list = [];
+    for (let r = 1; r < values.length; r++) {
+      const v = String(values[r][idx] === null || values[r][idx] === undefined ? '' : values[r][idx]).trim();
+      if (v && list.indexOf(v) < 0) list.push(v);
+    }
+    result[c.key] = list;
+    result.fromSheet = true;
+  });
+  return result;
+}
+
+function sanitizeCoachLogTags(raw) {
+  const list = Array.isArray(raw) ? raw : String(raw || '').split(',');
+  const out = [];
+  list.forEach(t => {
+    const tag = String(t === null || t === undefined ? '' : t).replace(/,/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 30);
+    if (tag && out.indexOf(tag) < 0 && out.length < 20) out.push(tag);
+  });
+  return out.join(', ');
+}
+
+function coachLogText(raw, maxLen) {
+  return String(raw === null || raw === undefined ? '' : raw).replace(/\r\n/g, '\n').trim().slice(0, maxLen);
+}
+
+function setCoachLogCell(sheet, row, col, header, value) {
+  const range = sheet.getRange(row, col);
+  if (COACH_LOG_TEXT_HEADERS.indexOf(header) >= 0) range.setNumberFormat('@');
+  range.setValue(value);
+}
+
+function handleSaveCoachLog(ss, payload) {
+  const memberNo = String(payload.memberNo || '').trim();
+  const date = String(payload.date || '').trim();
+  if (!memberNo) return createJsonResponse({ status: 'error', code: 'bad_request', message: '회원번호가 없는 회원은 기록할 수 없습니다. Members 시트에 회원번호를 먼저 입력해 주세요.' });
+  if (!isValidDateKey(date)) return createJsonResponse({ status: 'error', code: 'bad_request', message: '날짜를 다시 선택해 주세요.' });
+  if (date > kstDateKey()) return createJsonResponse({ status: 'error', code: 'future_date', message: '오늘 이후 날짜에는 기록할 수 없습니다.' });
+
+  const dietStatus = String(payload.dietStatus || '').trim();
+  const exerciseStatus = String(payload.exerciseStatus || '').trim();
+  if (dietStatus && COACH_LOG_DIET_STATUSES.indexOf(dietStatus) < 0) return createJsonResponse({ status: 'error', code: 'bad_request', message: '식단 상태 값이 올바르지 않습니다.' });
+  if (exerciseStatus && COACH_LOG_EXERCISE_STATUSES.indexOf(exerciseStatus) < 0) return createJsonResponse({ status: 'error', code: 'bad_request', message: '운동 상태 값이 올바르지 않습니다.' });
+
+  // [다른 회원 오기록 차단] 저장 직전(잠금 안에서) Members 회원번호 정확 일치 1명 확인
+  const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+  const matches = getSheetDataWithHeaders(memberSheet).filter(m => memberViewGetNo(m) === memberNo);
+  if (matches.length !== 1) {
+    return createJsonResponse({
+      status: 'error',
+      code: matches.length ? 'duplicate_member' : 'not_found',
+      message: matches.length
+        ? `Members 시트에 회원번호 '${memberNo}'가 ${matches.length}명 있어 저장하지 않았습니다. 회원번호 중복을 정리해 주세요.`
+        : `Members 시트에서 회원번호 '${memberNo}'를 찾지 못해 저장하지 않았습니다.`
+    });
+  }
+
+  const sheet = getCoachLogSheet(ss, true);
+  const cols = locateCoachLogColumns(sheet);
+  if (cols.error) return createJsonResponse({ status: 'error', code: 'no_column', message: cols.error + ' 열 이름을 확인해 주세요.' });
+
+  const now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  const values = {
+    '이름': memberViewGetName(matches[0]),
+    '식단 상태': dietStatus,
+    '운동 상태': exerciseStatus,
+    '식단 태그': sanitizeCoachLogTags(payload.dietTags),
+    '운동 태그': sanitizeCoachLogTags(payload.exerciseTags),
+    '메모': coachLogText(payload.memo, COACH_LOG_MAX_LEN.memo),
+    '코치 한마디': coachLogText(payload.coachNote, COACH_LOG_MAX_LEN.coachNote),
+    '다음에 확인': coachLogText(payload.nextCheck, COACH_LOG_MAX_LEN.nextCheck).replace(/\n+/g, ' ')
+  };
+
+  const all = readCoachLog(ss);
+  const mine = all.filter(r => r['회원번호'] === memberNo);
+  const sameDay = mine.filter(r => r['날짜'] === date);
+  let saved;
+  let mode;
+  if (sameDay.length) {
+    // 같은 회원·날짜가 여러 행이면 첫 행만 남기고 정리 (회원번호+날짜 1행 유지). 작성시각·확인 완료·코치가 덧붙인 다른 열은 그대로
+    const keep = sameDay[0];
+    Object.keys(values).forEach(h => setCoachLogCell(sheet, keep._rowNumber, cols[h], h, values[h]));
+    setCoachLogCell(sheet, keep._rowNumber, cols['수정시각'], '수정시각', now);
+    saved = Object.assign(stripCoachLogRow(keep), values, { '수정시각': now });
+    mode = 'updated';
+  } else {
+    saved = Object.assign({ '날짜': date, '회원번호': memberNo, '확인 완료': '', '작성시각': now, '수정시각': '' }, values);
+    const row = new Array(cols.width).fill('');
+    COACH_LOG_HEADERS.forEach(h => { row[cols[h] - 1] = saved[h]; });
+    const newRow = sheet.getLastRow() + 1;
+    COACH_LOG_TEXT_HEADERS.forEach(h => sheet.getRange(newRow, cols[h]).setNumberFormat('@'));
+    sheet.getRange(newRow, 1, 1, row.length).setValues([row]);
+    mode = 'created';
+  }
+
+  // 이전 날짜의 '다음에 확인' 확인 완료 처리 (같은 회원, 저장 날짜보다 이전 기록만)
+  const resolved = [];
+  (Array.isArray(payload.resolve) ? payload.resolve : []).forEach(item => {
+    const target = String(item && item.date || '').trim();
+    if (!isValidDateKey(target) || target >= date) return;
+    const value = item.done ? date : '';
+    mine.filter(r => r['날짜'] === target && r['다음에 확인']).forEach(r => {
+      setCoachLogCell(sheet, r._rowNumber, cols['확인 완료'], '확인 완료', value);
+      resolved.push({ '날짜': target, '확인 완료': value });
+    });
+  });
+
+  // 중복 행 삭제는 모든 칸을 쓴 뒤 아래 행부터 (행 번호가 밀리지 않도록)
+  sameDay.slice(1).map(r => r._rowNumber).sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
+  SpreadsheetApp.flush();
+
+  return createJsonResponse({ status: 'success', memberNo: memberNo, date: date, mode: mode, log: saved, resolved: resolved });
+}
+
+function handleGetCoachLogHistory(ss, payload) {
+  const memberNo = String(payload.memberNo || '').trim();
+  if (!memberNo) return createJsonResponse({ status: 'error', code: 'bad_request', message: '회원번호가 없습니다.' });
+  const logs = readCoachLog(ss).filter(r => r['회원번호'] === memberNo).map(stripCoachLogRow);
+  return createJsonResponse({ status: 'success', memberNo: memberNo, logs: logs });
+}
+
+/**
+ * [시트 메뉴] 코치 기록 시트 준비: CoachLog·CoachSettings 생성(기본값) + Members 열 추가(체중 목표·운동 목적, 맨 오른쪽, 값은 비움)
+ * - 이미 있는 시트·열은 건드리지 않으므로 여러 번 실행해도 됨
+ */
+function setupCoachRecordSheets() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const done = [];
+
+  if (!ss.getSheetByName(COACH_LOG_SHEET)) {
+    getCoachLogSheet(ss, true);
+    done.push('CoachLog 시트를 만들었습니다.');
+  } else {
+    const cols = locateCoachLogColumns(ss.getSheetByName(COACH_LOG_SHEET));
+    done.push(cols.error ? '⚠️ ' + cols.error : 'CoachLog 시트는 이미 있습니다.');
+  }
+
+  if (!ss.getSheetByName(COACH_SETTINGS_SHEET)) {
+    const sheet = ss.insertSheet(COACH_SETTINGS_SHEET);
+    const depth = Math.max.apply(null, COACH_SETTINGS_COLUMNS.map(c => c.defaults.length));
+    const rows = [COACH_SETTINGS_COLUMNS.map(c => c.header)];
+    for (let i = 0; i < depth; i++) rows.push(COACH_SETTINGS_COLUMNS.map(c => c.defaults[i] || ''));
+    sheet.getRange(1, 1, rows.length, COACH_SETTINGS_COLUMNS.length).setValues(rows);
+    sheet.setFrozenRows(1);
+    done.push('CoachSettings 시트를 기본 태그로 만들었습니다. (자주 쓰는 문구 열은 직접 채워 주세요)');
+  } else {
+    done.push('CoachSettings 시트는 이미 있습니다.');
+  }
+
+  const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+  if (memberSheet) {
+    const colMap = getHeaderColumnMap(memberSheet);
+    MEMBER_SURVEY_EXTRA_HEADERS.forEach(h => {
+      if (findExactColumn(colMap, [h])) {
+        done.push(`Members '${h}' 열은 이미 있습니다.`);
+      } else {
+        getOrAddExactColumn(memberSheet, colMap, h);
+        done.push(`Members 맨 오른쪽에 '${h}' 열을 추가했습니다.`);
+      }
+    });
+  } else {
+    done.push('⚠️ Members 시트를 찾지 못해 열을 추가하지 않았습니다.');
+  }
+
+  SpreadsheetApp.getUi().alert('🧱 코치 기록 시트 준비', done.join('\n'), SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+/**
+ * [시트 메뉴] 예전 코치 한마디를 CoachLog로 1회 옮기기 (Feedbacks는 읽기만 함)
+ * - 예전 회원 화면과 같이 '피드백 상태'가 '완료'인 행만 옮김 (검토 전 AI 초안이 회원에게 보이지 않도록)
+ * - 옮길 내용: '코치 한마디', 비어 있으면 '피드백 코멘트' ([문제점 분석] 부분은 회원에게 안 보이던 내용이라 뺌)
+ * - 회원 연결: Feedbacks에 회원번호 열 값이 있으면 그 값, 없으면 이번 1회만 Members 이름 정확 일치 1명 (0명·2명 이상이면 실패 목록)
+ * - 같은 회원·날짜는 타임스탬프가 가장 늦은 행. CoachLog에 그 날 코치 한마디가 있으면 건너뛰고, 행만 있으면 그 칸만 채움
+ */
+function migrateCoachNotesToCoachLog() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert('💬 코치 한마디 옮기기',
+    "Feedbacks 시트에서 '피드백 상태'가 '완료'인 행의 코치 한마디를 CoachLog로 복사합니다.\n" +
+    'Feedbacks는 수정하지 않고, CoachLog에 그 날 코치 한마디가 이미 있으면 건너뜁니다.\n\n계속할까요?',
+    ui.ButtonSet.OK_CANCEL);
+  if (confirm !== ui.Button.OK) return;
+
+  const result = withMembersWriteLock(() => runCoachNoteMigration(SpreadsheetApp.getActiveSpreadsheet()));
+  if (result.error) {
+    ui.alert('💬 코치 한마디 옮기기', result.error, ui.ButtonSet.OK);
+    return;
+  }
+  Logger.log('[코치 한마디 옮기기] 실패 목록\n' + result.failures.join('\n'));
+  const shown = result.failures.slice(0, 40);
+  ui.alert('💬 코치 한마디 옮기기 완료',
+    `새 행으로 복사: ${result.copied}건\n` +
+    `빈 칸만 채움: ${result.filled}건\n` +
+    `건너뜀(CoachLog에 이미 있음): ${result.skippedExisting}건\n` +
+    `건너뜀(완료 전 행): ${result.skippedNotDone}건\n` +
+    `실패: ${result.failures.length}건` +
+    (shown.length ? '\n\n[실패 목록]\n' + shown.join('\n') + (result.failures.length > shown.length ? `\n…외 ${result.failures.length - shown.length}건 (전체는 Apps Script 실행 로그)` : '') : ''),
+    ui.ButtonSet.OK);
+}
+
+function stripLegacyProblemAnalysis(comment) {
+  return String(comment || '').replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '').trim();
+}
+
+function runCoachNoteMigration(ss) {
+  const maps = readMemberNoNameMaps(ss);
+  if (!maps.count) return { error: 'Members 시트에서 회원을 찾지 못했습니다.' };
+
+  const fbSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (!fbSheet || fbSheet.getLastRow() < 2) return { error: 'Feedbacks 시트에 옮길 기록이 없습니다.' };
+
+  const headers = fbSheet.getRange(1, 1, 1, fbSheet.getLastColumn()).getValues()[0].map(h => normalizeHeaderName(h));
+  const findIdx = (names) => {
+    for (let i = 0; i < names.length; i++) {
+      const idx = headers.indexOf(normalizeHeaderName(names[i]));
+      if (idx >= 0) return idx;
+    }
+    return -1;
+  };
+  const noteIdx = findIdx(['코치 한마디', '보완점_및_개선방안']);
+  const commentIdx = findIdx(['피드백 코멘트']);
+  const statusIdx = findIdx(['피드백 상태', '완료 여부', '진행상태']);
+  const tsIdx = findIdx(FEEDBACK_TIMESTAMP_CANDIDATES);
+  const memberNoIdx = findIdx(MEMBER_NO_HEADERS);
+  if (noteIdx < 0 && commentIdx < 0) return { error: "Feedbacks 시트에서 '코치 한마디'나 '피드백 코멘트' 열을 찾지 못했습니다." };
+  if (statusIdx < 0) return { error: "Feedbacks 시트에서 '피드백 상태' 열을 찾지 못해, 회원에게 공개된 코치 한마디를 가려낼 수 없습니다." };
+
+  const rawValues = fbSheet.getRange(1, 1, fbSheet.getLastRow(), fbSheet.getLastColumn()).getValues();
+  const failures = [];
+  const latest = {}; // '회원번호|날짜' -> { memberNo, date, note, time }
+  let skippedNotDone = 0;
+
+  getSheetDataWithHeaders(fbSheet).forEach(row => {
+    const raw = rawValues[row._rowNumber - 1];
+    let note = noteIdx >= 0 ? String(raw[noteIdx] || '').trim() : '';
+    if (!note && commentIdx >= 0) note = stripLegacyProblemAnalysis(raw[commentIdx]);
+    if (!note) return;
+    if (String(raw[statusIdx] || '').trim() !== '완료') { skippedNotDone++; return; }
+
+    const name = getFeedbackRowName(row);
+    const date = getFeedbackRowDate(row);
+    const label = `Feedbacks ${row._rowNumber}행 (${name || '이름 없음'}, ${date || '날짜 없음'})`;
+    if (!isValidDateKey(date)) return failures.push(`${label}: 날짜를 해석할 수 없음`);
+
+    let memberNo = memberNoIdx >= 0 ? String(raw[memberNoIdx] || '').trim() : '';
+    if (memberNo) {
+      if (!(memberNo in maps.nameByNo)) return failures.push(`${label}: Members에 없는 회원번호 (${memberNo})`);
+    } else {
+      const nos = maps.noByName[name] || [];
+      if (nos.length === 0) return failures.push(`${label}: Members에 같은 이름의 회원이 없음`);
+      if (nos.length > 1) return failures.push(`${label}: Members에 같은 이름이 ${nos.length}명 (${nos.join(', ')})`);
+      memberNo = nos[0];
+    }
+    const ts = tsIdx >= 0 ? raw[tsIdx] : '';
+    const time = ts instanceof Date ? ts.getTime() : 0;
+    const key = memberNo + '|' + date;
+    if (!latest[key] || time >= latest[key].time) latest[key] = { memberNo: memberNo, date: date, note: note.slice(0, COACH_LOG_MAX_LEN.coachNote), time: time };
+  });
+
+  const sheet = getCoachLogSheet(ss, true);
+  const cols = locateCoachLogColumns(sheet);
+  if (cols.error) return { error: cols.error };
+  const existing = {};
+  readCoachLog(ss).forEach(r => {
+    const key = r['회원번호'] + '|' + r['날짜'];
+    if (!existing[key]) existing[key] = r;
+  });
+
+  const now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  const rows = [];
+  let filled = 0;
+  let skippedExisting = 0;
+  Object.keys(latest).sort().forEach(key => {
+    const ev = latest[key];
+    const found = existing[key];
+    if (found && found['코치 한마디']) { skippedExisting++; return; }
+    if (found) {
+      setCoachLogCell(sheet, found._rowNumber, cols['코치 한마디'], '코치 한마디', ev.note);
+      filled++;
+      return;
+    }
+    const entry = { '날짜': ev.date, '회원번호': ev.memberNo, '이름': maps.nameByNo[ev.memberNo] || '', '코치 한마디': ev.note,
+      '작성시각': ev.time ? Utilities.formatDate(new Date(ev.time), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') : now };
+    const row = new Array(cols.width).fill('');
+    COACH_LOG_HEADERS.forEach(h => { row[cols[h] - 1] = entry[h] || ''; });
+    rows.push(row);
+  });
+  if (rows.length) {
+    const first = sheet.getLastRow() + 1;
+    COACH_LOG_TEXT_HEADERS.forEach(h => sheet.getRange(first, cols[h], rows.length, 1).setNumberFormat('@'));
+    sheet.getRange(first, 1, rows.length, rows[0].length).setValues(rows);
+  }
+  SpreadsheetApp.flush();
+  return { copied: rows.length, filled: filled, skippedExisting: skippedExisting, skippedNotDone: skippedNotDone, failures: failures };
 }

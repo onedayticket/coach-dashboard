@@ -105,6 +105,12 @@ const VIEW_MOCK_DB = {
     { '날짜': '2026-10-12', '체중': 81.4 },
     { '날짜': '2026-10-13', '체중': 81.5 },
     { '날짜': '2026-10-15', '체중': 81.1 }
+  ],
+  // M001 회원의 CoachLog 중 회원 공개 칸 (서버는 본인 회원번호 행의 날짜·코치 한마디만 보냄)
+  coachNotes: [
+    { '날짜': '2026-10-15', '코치 한마디': '어제 식단 완벽했어요 👍 오늘도 물 2L 챙겨 주세요.' },
+    { '날짜': '2026-10-12', '코치 한마디': '야근하셨는데도 운동 챙기신 거 멋져요! 무릎은 하루 쉬어 주세요.' },
+    { '날짜': '2026-10-09', '코치 한마디': '첫 주 잘 시작하셨어요. 체중은 매일 아침 같은 시간에 재 주세요.' }
   ]
 };
 
@@ -112,6 +118,7 @@ const VIEW_MOCK_DB = {
 let CurrentMemberState = {
   member: null,
   weights: [], // [{ 날짜, 체중 }] 본인 공복 체중 기록 (WeightLog)
+  coachNotes: [], // [{ 날짜, 코치 한마디 }] 코치가 남긴 한마디 (CoachLog의 회원 공개 칸만, 최신순)
   isUsingMock: false,
   targetId: '', // URL 회원 식별값 (서버 인증 요청용)
   gasUrl: '',
@@ -252,7 +259,7 @@ function showInvalidAccessScreen(reasonHint = '', customTitle = '', customDesc =
 }
 
 // 회원 본인 데이터 전용 캐시 & 서버 발급 회원 인증 토큰 (URL 회원 식별값 기준 저장)
-const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v5_';
+const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v6_';
 const MEMBER_VIEW_TOKEN_PREFIX = 'member_view_token_';
 
 function storageGet(key) {
@@ -281,7 +288,7 @@ function purgeLegacyMemberViewStorage() {
   [window.localStorage, window.sessionStorage].forEach(store => {
     try {
       Object.keys(store).forEach(k => {
-        if (k.indexOf('member_auth_') === 0 || k.indexOf('coach_dash_view_member_v4_') === 0) store.removeItem(k);
+        if (k.indexOf('member_auth_') === 0 || k.indexOf('coach_dash_view_member_v4_') === 0 || k.indexOf('coach_dash_view_member_v5_') === 0) store.removeItem(k);
       });
     } catch (e) {}
   });
@@ -292,6 +299,7 @@ function saveMemberSession(targetId, memberToken, data) {
   storageSet(MEMBER_VIEW_CACHE_PREFIX + targetId, JSON.stringify({
     member: data.member,
     weights: data.weights,
+    coachNotes: data.coachNotes !== undefined ? data.coachNotes : CurrentMemberState.coachNotes,
     regenRemaining: data.regenRemaining,
     timestamp: Date.now()
   }));
@@ -461,7 +469,7 @@ async function loadMemberPageData(targetId) {
     if (loadingScreen) loadingScreen.classList.add('d-none');
     const previewMember = findMemberInList(VIEW_MOCK_DB.members, targetId);
     if (previewMember) {
-      applyMemberData(previewMember, VIEW_MOCK_DB.weights, true);
+      applyMemberData(previewMember, VIEW_MOCK_DB.weights, true, { coachNotes: VIEW_MOCK_DB.coachNotes });
       unlockAndRenderMemberPage();
     } else {
       showInvalidAccessScreen('', '미리보기 회원 없음', '구글 시트 연동 URL이 설정되지 않았습니다. 담당 코치님께 받은 링크로 다시 접속해 주세요.');
@@ -480,7 +488,7 @@ async function loadMemberPageData(targetId) {
       const cached = rawCache ? JSON.parse(rawCache) : null;
       if (cached && cached.member) {
         console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(cached.member)}`);
-        applyMemberData(cached.member, cached.weights || [], false, { regenRemaining: cached.regenRemaining });
+        applyMemberData(cached.member, cached.weights || [], false, { regenRemaining: cached.regenRemaining, coachNotes: cached.coachNotes });
 
         const statusBadge = document.getElementById('dataConnectionStatusBadge');
         if (statusBadge) {
@@ -512,7 +520,7 @@ async function loadMemberPageData(targetId) {
   if (res && res.status === 'success' && res.data) {
     // [성공] 저장된 회원 토큰이 유효 -> 최신 데이터로 갱신
     saveMemberSession(targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining });
+    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining, coachNotes: res.data.coachNotes });
     unlockAndRenderMemberPage();
     console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(res.data.member)} (ID: ${targetId})`);
     return;
@@ -593,6 +601,7 @@ function applyMemberData(member, weights, isMock, serverInfo) {
   CurrentMemberState.member = member;
   CurrentMemberState.weights = Array.isArray(weights) ? weights : [];
   CurrentMemberState.regenRemaining = (serverInfo && serverInfo.regenRemaining) || null;
+  CurrentMemberState.coachNotes = (serverInfo && Array.isArray(serverInfo.coachNotes)) ? serverInfo.coachNotes : [];
   CurrentMemberState.isUsingMock = isMock;
 
   // 하단 연동 상태 뱃지 업데이트
@@ -684,7 +693,7 @@ async function handleMemberAuthLogin() {
 
   if (res && res.status === 'success' && res.data) {
     saveMemberSession(CurrentMemberState.targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining });
+    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining, coachNotes: res.data.coachNotes });
     closeModalAndRender();
     return;
   }
@@ -723,6 +732,7 @@ function unlockAndRenderMemberPage() {
   setText('heroMemberName', memberName);
 
   renderHeroWeights(member);
+  renderCoachNotes();
 
   // 3. 운동 루틴 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
   renderWorkoutRoutineBox(member);
@@ -740,6 +750,49 @@ function unlockAndRenderMemberPage() {
   // 7. 하단 탭바 / 좌우 스와이프 전환 연결 (최초 1회)
   initMemberTabs();
 }
+
+// 홈 '코치 한마디': 최신 1개는 크게, 나머지는 펼쳐서 보기 (서버가 날짜·한마디만 보냄)
+const COACH_NOTES_PREVIEW = 3;
+let coachNotesExpanded = false;
+
+function formatCoachNoteDate(dateKey) {
+  const m = String(dateKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) return escapeHtml(dateKey);
+  const wd = ['일', '월', '화', '수', '목', '금', '토'][new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])).getUTCDay()];
+  return `${+m[2]}월 ${+m[3]}일 (${wd})`;
+}
+
+function renderCoachNotes() {
+  const box = document.getElementById('coachNotesCard');
+  if (!box) return;
+  const notes = (CurrentMemberState.coachNotes || [])
+    .filter(n => String(n['코치 한마디'] || '').trim())
+    .sort((a, b) => (String(a['날짜']) < String(b['날짜']) ? 1 : -1));
+  box.classList.toggle('d-none', notes.length === 0);
+  if (!notes.length) return;
+  const shown = coachNotesExpanded ? notes : notes.slice(0, COACH_NOTES_PREVIEW);
+  const [latest, ...rest] = shown;
+  box.innerHTML = `
+    <div class="mp-card-head">
+      <h2 class="mp-card-title"><i class="bi bi-chat-heart-fill"></i>코치 한마디</h2>
+      <span class="mp-chip">${notes.length}개</span>
+    </div>
+    <div class="mp-coach-note is-latest">
+      <div class="mp-coach-note-date">${formatCoachNoteDate(latest['날짜'])}</div>
+      <div class="mp-coach-note-text">${escapeHtml(latest['코치 한마디'])}</div>
+    </div>
+    ${rest.map(n => `<div class="mp-coach-note">
+      <div class="mp-coach-note-date">${formatCoachNoteDate(n['날짜'])}</div>
+      <div class="mp-coach-note-text">${escapeHtml(n['코치 한마디'])}</div>
+    </div>`).join('')}
+    ${notes.length > COACH_NOTES_PREVIEW ? `<button type="button" class="mp-link-btn mp-coach-note-more" onclick="toggleCoachNotes()">${coachNotesExpanded ? '접기' : `지난 한마디 ${notes.length - COACH_NOTES_PREVIEW}개 더 보기`}</button>` : ''}`;
+}
+
+function toggleCoachNotes() {
+  coachNotesExpanded = !coachNotesExpanded;
+  renderCoachNotes();
+}
+window.toggleCoachNotes = toggleCoachNotes;
 
 // 날짜순 본인 체중 기록 [{ date, weight }] (같은 날짜는 마지막 값)
 function getSortedWeights() {

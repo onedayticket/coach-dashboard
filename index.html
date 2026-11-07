@@ -18,16 +18,16 @@
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
   <!-- Custom CSS (style.css + v3 모바일 우선 디자인 레이어) -->
   <link href="style.css?v=4.0.0" rel="stylesheet">
-  <link href="coach-v3.css?v=4.0.0" rel="stylesheet">
+  <link href="coach-v3.css?v=4.1.0" rel="stylesheet">
 </head>
-<body class="cv3" data-ctab="list">
+<body class="cv3" data-ctab="today">
 
   <!-- ========================================================================= -->
   <!-- [상단 내비게이션 바] -->
   <!-- ========================================================================= -->
   <nav class="navbar navbar-expand-lg sticky-top py-2 cv3-navbar">
     <div class="container-fluid px-2 px-lg-4">
-      <a class="navbar-brand d-flex align-items-center me-1 me-md-2" href="#" onclick="switchCoachTab('list'); return false;">
+      <a class="navbar-brand d-flex align-items-center me-1 me-md-2" href="#" onclick="switchCoachTab('today'); return false;">
         <span class="cv3-brand-mark"><i class="bi bi-heart-pulse-fill"></i></span>
         <span class="d-none d-sm-inline">4주 습관화 코칭 대시보드</span>
         <span class="d-inline d-sm-none fw-bold">코칭 대시보드</span>
@@ -41,7 +41,10 @@
 
       <!-- [요구사항 1] 대시보드 메인 뷰 전환 탭: 참여자 관리 vs 지침서 관리 (모달 아님) -->
       <div class="d-none d-lg-flex align-items-center gap-1 ms-1 ms-lg-3">
-        <button type="button" class="view-nav-btn active px-2 px-md-3 py-1" id="btnNavViewMembers" onclick="switchDashboardView('members')">
+        <button type="button" class="view-nav-btn active px-2 px-md-3 py-1" id="btnNavViewToday" onclick="switchDashboardView('today')">
+          <i class="bi bi-calendar-check-fill me-1 text-success"></i><span>오늘 보드</span>
+        </button>
+        <button type="button" class="view-nav-btn px-2 px-md-3 py-1" id="btnNavViewMembers" onclick="switchDashboardView('members')">
           <i class="bi bi-people-fill me-1"></i><span class="d-none d-sm-inline">참여자 관리</span><span class="d-inline d-sm-none">참여자</span>
         </button>
         <button type="button" class="view-nav-btn px-2 px-md-3 py-1" id="btnNavViewTagStats" onclick="switchDashboardView('tagstats')">
@@ -148,10 +151,10 @@
 
               <!-- 상태 필터 토글: 전체 / 유효(Active) / 휴면(Inactive) -->
               <div class="btn-group btn-group-sm w-100 mb-2" role="group">
-                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusAll" value="all" checked autocomplete="off">
+                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusAll" value="all" autocomplete="off">
                 <label class="btn btn-outline-secondary" for="filterStatusAll">전체</label>
 
-                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusActive" value="active" autocomplete="off">
+                <input type="radio" class="btn-check" name="statusFilter" id="filterStatusActive" value="active" checked autocomplete="off">
                 <label class="btn btn-outline-success" for="filterStatusActive"><i class="bi bi-check-circle me-1"></i>유효</label>
 
                 <input type="radio" class="btn-check" name="statusFilter" id="filterStatusInactive" value="inactive" autocomplete="off">
@@ -217,9 +220,39 @@
       <div class="col-12 col-md-8 col-xl-9" id="mainContentColumn">
 
         <!-- =================================================================== -->
+        <!-- [VIEW 0: 오늘 보드 - 날짜별 회원 기록 현황 (첫 화면)] -->
+        <!-- =================================================================== -->
+        <div id="viewTodayWrapper">
+          <section class="section-panel today-board">
+            <div class="today-board-head">
+              <div class="today-date-nav">
+                <button type="button" class="today-date-btn" id="btnBoardPrevDay" aria-label="전날"><i class="bi bi-chevron-left"></i></button>
+                <label class="today-date-field">
+                  <span class="today-date-text" id="boardDateText">오늘</span>
+                  <input type="date" id="boardDateInput" aria-label="날짜 선택">
+                </label>
+                <button type="button" class="today-date-btn" id="btnBoardNextDay" aria-label="다음 날"><i class="bi bi-chevron-right"></i></button>
+                <button type="button" class="today-today-btn d-none" id="btnBoardToday">오늘</button>
+              </div>
+              <div class="today-progress">
+                <div class="today-progress-text" id="boardProgressText">기록 0/0</div>
+                <div class="today-progress-bar"><span id="boardProgressBar"></span></div>
+              </div>
+            </div>
+            <div class="today-filters" id="boardFilters"></div>
+            <div class="today-list" id="boardList">
+              <div class="text-center py-5 text-muted small">
+                <div class="spinner-border spinner-border-sm text-primary mb-2"></div>
+                <div>회원 목록을 불러오는 중...</div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- =================================================================== -->
         <!-- [VIEW 1: 참여자 관리 메인 화면] -->
         <!-- =================================================================== -->
-        <div id="viewMembersWrapper">
+        <div id="viewMembersWrapper" class="d-none">
           <!-- 참여자 미선택 시 Empty State -->
           <div id="noMemberSelectedState" class="card section-panel p-5 text-center">
             <div class="py-5">
@@ -237,7 +270,10 @@
               <button type="button" class="cv3-strip-back" onclick="switchCoachTab('list')" aria-label="회원 목록으로">
                 <i class="bi bi-chevron-left"></i>
               </button>
-              <div class="cv3-strip-name text-truncate" id="mobileSelectedMemberNameTop">회원 선택됨</div>
+              <button type="button" class="cv3-strip-name" id="btnStripProfileToggle" onclick="toggleMobileProfile()" aria-expanded="false" aria-controls="panelPersonalInfo" title="프로필 펼치기/접기">
+                <span class="text-truncate" id="mobileSelectedMemberNameTop">회원 선택됨</span>
+                <span class="cv3-strip-profile-hint"><i class="bi bi-person-vcard"></i>프로필<i class="bi bi-chevron-down cv3-strip-chevron"></i></span>
+              </button>
               <button type="button" class="cv3-strip-btn" onclick="copyMemberViewLink()" title="회원 마이페이지 링크 복사">
                 <i class="bi bi-link-45deg"></i>링크
               </button>
@@ -478,13 +514,13 @@
             </section>
 
             <!-- ----------------------------------------------------------------- -->
-            <!-- [하단] 공복 체중 기록 (WeightLog, 회원이 마이페이지 달력에서 입력) -->
+            <!-- [하단] 체중 · 코치 기록 (WeightLog 그래프 + CoachLog 날짜별 타임라인) -->
             <!-- ----------------------------------------------------------------- -->
             <section class="section-panel" id="panelWeightHistory">
               <div class="section-header">
                 <div class="d-flex align-items-center gap-2">
-                  <i class="bi bi-speedometer2 text-info fs-5"></i>
-                  <h5 class="section-title">공복 체중 기록</h5>
+                  <i class="bi bi-journal-text text-info fs-5"></i>
+                  <h5 class="section-title">체중 · 코치 기록</h5>
                 </div>
                 <button class="btn btn-sm btn-toggle-collapse" type="button" data-bs-toggle="collapse" data-bs-target="#collapseWeightHistory" aria-expanded="true">
                   <i class="bi bi-chevron-down fs-6"></i>
@@ -506,18 +542,33 @@
                     <div class="tagstats-empty d-none" id="memberWeightEmpty">아직 체중 기록이 없습니다.</div>
                   </div>
 
-                  <div class="table-responsive border rounded-3 bg-white member-weight-table-wrap">
-                    <table class="table table-sm align-middle small mb-0">
-                      <thead class="table-light">
-                        <tr>
-                          <th>날짜</th>
-                          <th class="text-end">공복 체중</th>
-                          <th class="text-end">전 기록 대비</th>
-                        </tr>
-                      </thead>
-                      <tbody id="memberWeightTableBody"></tbody>
-                    </table>
+                  <!-- 4단계 AI 분석 리포트 자리 -->
+                  <div class="coach-ai-report-slot mb-3" id="memberAiReportSlot">
+                    <i class="bi bi-stars"></i>
+                    <div>
+                      <div class="fw-bold">AI 분석 리포트</div>
+                      <div class="small">코치 기록이 쌓이면 다음 단계에서 이 자리에 분석 리포트가 들어갈 예정입니다.</div>
+                    </div>
                   </div>
+
+                  <!-- 날짜별 코치 기록 타임라인 (최신순, 누르면 기록 창에서 수정) -->
+                  <div class="coach-timeline mb-3" id="memberCoachTimeline"></div>
+
+                  <details class="member-weight-table-details">
+                    <summary>체중 날짜별 표</summary>
+                    <div class="table-responsive border rounded-3 bg-white member-weight-table-wrap mt-2">
+                      <table class="table table-sm align-middle small mb-0">
+                        <thead class="table-light">
+                          <tr>
+                            <th>날짜</th>
+                            <th class="text-end">공복 체중</th>
+                            <th class="text-end">전 기록 대비</th>
+                          </tr>
+                        </thead>
+                        <tbody id="memberWeightTableBody"></tbody>
+                      </table>
+                    </div>
+                  </details>
                 </div>
               </div>
             </section>
@@ -698,28 +749,86 @@
   </div>
 
   <!-- ========================================================================= -->
-  <!-- [모바일 하단 탭바: 회원 / 프로필 / 루틴 / 체중 / 태그 / 지침서] -->
+  <!-- [모바일 하단 탭바: 오늘 / 회원 / 루틴·식단(프로필 펼치기) / 기록 / 더보기(태그·지침서)] -->
   <!-- ========================================================================= -->
   <nav class="cv3-tabbar d-lg-none" id="coachTabBar" role="tablist" aria-label="메뉴">
-    <button type="button" class="cv3-tab is-active" data-ctab-target="list" role="tab">
-      <span class="cv3-tab-icon"><i class="bi bi-people-fill"></i></span><span>회원</span>
+    <button type="button" class="cv3-tab is-active" data-ctab-target="today" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-calendar-check-fill"></i></span><span>오늘</span>
     </button>
-    <button type="button" class="cv3-tab" data-ctab-target="profile" role="tab">
-      <span class="cv3-tab-icon"><i class="bi bi-person-vcard-fill"></i></span><span>프로필</span>
+    <button type="button" class="cv3-tab" data-ctab-target="list" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-people-fill"></i></span><span>회원</span>
     </button>
     <button type="button" class="cv3-tab" data-ctab-target="routine" role="tab">
       <span class="cv3-tab-icon"><i class="bi bi-lightning-charge-fill"></i></span><span>루틴·식단</span>
     </button>
-    <button type="button" class="cv3-tab" data-ctab-target="weight" role="tab">
-      <span class="cv3-tab-icon"><i class="bi bi-speedometer2"></i></span><span>체중</span>
+    <button type="button" class="cv3-tab" data-ctab-target="record" role="tab">
+      <span class="cv3-tab-icon"><i class="bi bi-journal-text"></i></span><span>기록</span>
     </button>
-    <button type="button" class="cv3-tab" data-ctab-target="stats" role="tab">
-      <span class="cv3-tab-icon"><i class="bi bi-graph-up"></i></span><span>태그</span>
-    </button>
-    <button type="button" class="cv3-tab" data-ctab-target="guide" role="tab">
-      <span class="cv3-tab-icon"><i class="bi bi-journal-bookmark-fill"></i></span><span>지침서</span>
-    </button>
+    <div class="dropup cv3-tab-more">
+      <button type="button" class="cv3-tab" id="coachTabMore" data-bs-toggle="dropdown" aria-expanded="false">
+        <span class="cv3-tab-icon"><i class="bi bi-three-dots"></i></span><span>더보기</span>
+      </button>
+      <ul class="dropdown-menu dropdown-menu-end cv3-more-menu shadow-lg">
+        <li><button type="button" class="dropdown-item" data-ctab-target="stats"><i class="bi bi-graph-up me-2 text-info"></i>태그별 그래프</button></li>
+        <li><button type="button" class="dropdown-item" data-ctab-target="guide"><i class="bi bi-journal-bookmark-fill me-2 text-warning"></i>코칭 지침서</button></li>
+      </ul>
+    </div>
   </nav>
+
+  <!-- ========================================================================= -->
+  <!-- [코치 기록 창] 모바일: 아래에서 올라오는 창 / 데스크톱: 오른쪽 패널 (열 때 위치를 정함) -->
+  <!-- ========================================================================= -->
+  <div class="offcanvas offcanvas-bottom coachlog-sheet" tabindex="-1" id="coachLogSheet" aria-labelledby="coachLogSheetTitle">
+    <div class="offcanvas-header coachlog-head">
+      <div class="flex-grow-1 min-w-0">
+        <h5 class="offcanvas-title text-truncate" id="coachLogSheetTitle">회원</h5>
+        <div class="coachlog-sub" id="coachLogSheetSub">날짜</div>
+      </div>
+      <button type="button" class="btn btn-sm btn-light border coachlog-detail-btn" id="btnCoachLogOpenDetail" title="회원 상세(체중·기록) 보기">
+        <i class="bi bi-person-lines-fill me-1"></i>상세
+      </button>
+      <button type="button" class="btn-close ms-1" data-bs-dismiss="offcanvas" aria-label="닫기"></button>
+    </div>
+    <div class="offcanvas-body coachlog-body" id="coachLogSheetBody">
+      <div class="coachlog-saved d-none" id="coachLogSavedNote" role="status"></div>
+      <div class="coachlog-summary" id="coachLogSummary"></div>
+
+      <div class="coachlog-block is-diet">
+        <div class="coachlog-label"><i class="bi bi-egg-fried"></i>식단</div>
+        <div class="coachlog-choices" id="coachLogDietStatus"></div>
+        <div class="coachlog-tags" id="coachLogDietTags"></div>
+      </div>
+
+      <div class="coachlog-block is-workout">
+        <div class="coachlog-label"><i class="bi bi-lightning-charge-fill"></i>운동</div>
+        <div class="coachlog-choices" id="coachLogExerciseStatus"></div>
+        <div class="coachlog-tags" id="coachLogExerciseTags"></div>
+      </div>
+
+      <div class="coachlog-block">
+        <label class="coachlog-label" for="coachLogMemo"><i class="bi bi-lock-fill"></i>메모 <span class="coachlog-hint">코치만 봄 · 카톡 내용 붙여넣기</span></label>
+        <textarea class="form-control" id="coachLogMemo" rows="3" maxlength="5000" placeholder="회원과 나눈 내용, 참고할 점"></textarea>
+      </div>
+
+      <div class="coachlog-block">
+        <label class="coachlog-label" for="coachLogNote"><i class="bi bi-chat-heart-fill"></i>코치 한마디 <span class="coachlog-hint is-public">회원에게 보임</span></label>
+        <div class="coachlog-phrases" id="coachLogPhrases"></div>
+        <textarea class="form-control" id="coachLogNote" rows="3" maxlength="1000" placeholder="회원 마이페이지에 보이는 한마디"></textarea>
+      </div>
+
+      <div class="coachlog-block">
+        <label class="coachlog-label" for="coachLogNextCheck"><i class="bi bi-pin-angle-fill"></i>다음에 확인</label>
+        <input type="text" class="form-control" id="coachLogNextCheck" maxlength="300" placeholder="다음 기록 때 확인할 것 (예: 무릎 통증 나아졌는지)">
+        <div class="coachlog-pending" id="coachLogPendingChecks"></div>
+      </div>
+
+      <div class="alert alert-danger small d-none mb-0" id="coachLogError" role="alert"></div>
+    </div>
+    <div class="coachlog-footer">
+      <button type="button" class="btn btn-outline-primary" id="btnCoachLogSave">저장</button>
+      <button type="button" class="btn btn-primary flex-grow-1" id="btnCoachLogSaveNext">저장하고 다음 <i class="bi bi-arrow-right"></i></button>
+    </div>
+  </div>
 
   <!-- ========================================================================= -->
   <!-- [모달 1: 참여자 프로그램 태그 직접 입력 모달] -->
@@ -895,6 +1004,6 @@
   <!-- Chart.js 4.x CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Main Application Logic (app.js) -->
-  <script src="app.js?v=4.0.2"></script>
+  <script src="app.js?v=4.1.0"></script>
 </body>
 </html>
