@@ -32,8 +32,8 @@ const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
 const STORAGE_READ_PENDING_NOTIS_KEY = 'coach_dash_read_pending_notis_v1';
 const STORAGE_COACH_AUTH_KEY = 'coach_authenticated';
 const STORAGE_COACH_TOKEN_KEY = 'coach_session_token'; // GAS 서버가 발급한 코치 로그인 토큰 (모든 시트 조회/저장에 필수)
-const STORAGE_COACH_DATA_CACHE_KEY = 'coach_dash_data_cache_v3'; // 마지막으로 불러온 시트 데이터 사본 (새로고침 즉시 표시용, 잠금/로그아웃 시 삭제)
-const LEGACY_COACH_DATA_CACHE_KEYS = ['coach_dash_data_cache_v2']; // 예전 구조(코치 기록 없음) 저장본 - 시작할 때 지움
+const STORAGE_COACH_DATA_CACHE_KEY = 'coach_dash_data_cache_v4'; // 마지막으로 불러온 시트 데이터 사본 (새로고침 즉시 표시용, 잠금/로그아웃 시 삭제)
+const LEGACY_COACH_DATA_CACHE_KEYS = ['coach_dash_data_cache_v2', 'coach_dash_data_cache_v3']; // 예전 구조(코치 기록·AI 분석 없음) 저장본 - 시작할 때 지움
 const STORAGE_COACH_FAIL_COUNT_KEY = 'coach_fail_count';
 const STORAGE_COACH_LOCK_UNTIL_KEY = 'coach_lock_until';
 
@@ -132,9 +132,25 @@ const MOCK_DB = {
   guidelines: {
     philosophy: '완벽함보다는 지속 가능성에 집중합니다. 단기간 극단적 절식 대신 평생 유지할 수 있는 작은 습관의 복리 효과를 지향합니다. 실패한 날도 과정의 일부로 인정합니다.',
     exercise: '초보자는 주 3~4회, 하루 20~30분 저강도~중강도 루틴으로 성공 경험을 축적합니다. 점진적 과부하와 관절 부상 방지(스트레칭 10분 필수)를 최우선 원칙으로 합니다.',
-    diet: '극단적 탄수화물 제한을 지양하고, 매 끼니 양질의 단백질 20~30g과 식이섬유를 기본 탑재합니다. 가공식품과 단순당을 줄이고 수분 1.5~2L 섭취를 강조합니다.'
-  }
+    diet: '극단적 탄수화물 제한을 지양하고, 매 끼니 양질의 단백질 20~30g과 식이섬유를 기본 탑재합니다. 가공식품과 단순당을 줄이고 수분 1.5~2L 섭취를 강조합니다.',
+    analysis: '통증·부상 언급, 식단 주의 3일 이상, 체중 기록 3일 이상 끊김, 주간 변화율 ±1.5% 초과를 특이사항으로 봅니다. 형식: 첫 줄 요약, 이어서 근거와 코치가 할 일.'
+  },
+  // AnalysisLog 시트 (분석일시 | 회원번호 | 이름 | 특이사항_있음 | 보고) - getAll과 같이 최근 보고만 전문, 이전 보고는 요약
+  analyses: buildMockAnalyses(),
+  analysisFailures: {}
 };
+
+// [미리보기 전용] 샘플 AI 분석 보고
+function buildMockAnalyses() {
+  const today = localDateKey();
+  return [
+    { '분석일시': `${shiftDateKey(today, -2)} 23:04:00`, '회원번호': 'M001', '이름': '김민수', '특이사항_있음': false, '요약': '체중 순조롭게 감소 중, 특이사항 없음' },
+    { '분석일시': `${shiftDateKey(today, -1)} 23:05:00`, '회원번호': 'M001', '이름': '김민수', '특이사항_있음': true, '요약': '왼쪽 무릎 통증 확인 필요 (3일째 미확인)',
+      '보고': '왼쪽 무릎 통증 확인 필요 (3일째 미확인)\n- 근거: 3일 전 메모 \'스쿼트 때 왼쪽 무릎 시큰\', 다음에 확인이 아직 확인 전\n- 체중: 최근 7일 평균이 그 전 7일보다 0.9kg 감소로 순조로움\n- 코치 할 일: 하체 루틴 강도 조정 여부 확인' },
+    { '분석일시': `${shiftDateKey(today, -1)} 23:06:00`, '회원번호': 'M002', '이름': '이지원', '특이사항_있음': false, '요약': '회식 후 체중 소폭 상승, 지켜보기',
+      '보고': '회식 후 체중 소폭 상승, 지켜보기\n- 근거: 최근 7일 평균 변화 +0.1kg, 운동 안 함 1회\n- 코치 할 일: 주말 필라테스 참여 여부만 확인' }
+  ];
+}
 
 // [미리보기 전용] 오늘 기준 며칠 전 날짜로 샘플 체중·코치 기록 생성
 function buildMockWeights() {
@@ -178,12 +194,17 @@ const AppState = {
   coachLogs: [], // CoachLog 코치 관리 기록 (최근 60일 + 확인 안 한 '다음에 확인', 회원 상세 '더 보기'로 이전 기록 추가)
   coachSettings: null, // CoachSettings 태그·자주 쓰는 문구 (pickCoachSettings로 채움)
   coachLogHistoryLoaded: {}, // 회원번호 -> 전체 기록을 받아 왔는지
+  analyses: [], // AI 회원 분석 (회원별 최근 보고 전문 + 최근 14일 요약, 코치 전용)
+  analysisFailures: {}, // 회원번호 -> { at, reason } 마지막 분석 실패 (성공하면 서버가 지움)
+  analysisHistoryLoaded: {}, // 회원번호 -> 이전 보고 전문을 받아 왔는지
+  analysisRunning: {}, // 회원번호 -> [분석 업데이트] 진행 중
   localCoachLogEdits: [], // 방금 저장한 기록 (저장 직전에 출발한 백그라운드 최신화가 덮어쓰지 않도록 잠깐 다시 적용)
   boardDate: localDateKey(), // 오늘 보드 날짜
   guidelines: {
     philosophy: '',
     exercise: '',
-    diet: ''
+    diet: '',
+    analysis: ''
   },
   selectedMember: null,
   filterStatus: 'active', // 'all' | 'active' | 'inactive' (오늘 보드·회원 목록 공통, 기본 유효 회원)
@@ -561,7 +582,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-11-07.4';
+const EXPECTED_BACKEND_VERSION = '2026-11-07.5';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -685,6 +706,8 @@ function saveCoachDataCache() {
       weights: AppState.weights,
       coachLogs: AppState.coachLogs,
       coachSettings: AppState.coachSettings,
+      analyses: AppState.analyses,
+      analysisFailures: AppState.analysisFailures,
       guidelines: AppState.guidelines
     }));
   } catch (e) {
@@ -702,10 +725,14 @@ function loadCoachDataCache() {
   return null;
 }
 
-// 지침서는 코칭 철학·운동·식단 3종만 사용 (예전 저장본의 피드백·동기부여 지침은 버림)
+// 지침서는 코칭 철학·운동·식단·회원 분석 4종만 사용 (예전 저장본의 피드백·동기부여 지침은 버림)
 function pickGuidelines(g) {
   const src = g || {};
-  return { philosophy: src.philosophy || '', exercise: src.exercise || '', diet: src.diet || '' };
+  return { philosophy: src.philosophy || '', exercise: src.exercise || '', diet: src.diet || '', analysis: src.analysis || '' };
+}
+
+function pickAnalysisFailures(f) {
+  return (f && typeof f === 'object' && !Array.isArray(f)) ? f : {};
 }
 
 function clearCoachDataCache() {
@@ -725,6 +752,9 @@ function applyServerData(data, gasUrl) {
   AppState.coachLogs = Array.isArray(data.coachLogs) ? data.coachLogs : [];
   AppState.coachSettings = pickCoachSettings(data.coachSettings);
   AppState.coachLogHistoryLoaded = {};
+  AppState.analyses = Array.isArray(data.analyses) ? data.analyses : [];
+  AppState.analysisFailures = pickAnalysisFailures(data.analysisFailures);
+  AppState.analysisHistoryLoaded = {};
   reapplyLocalCoachLogEdits();
   if (data.guidelines) AppState.guidelines = pickGuidelines(data.guidelines);
   AppState.isOnline = true;
@@ -771,6 +801,8 @@ async function startDashboard() {
     AppState.weights = Array.isArray(cached.weights) ? cached.weights : [];
     AppState.coachLogs = Array.isArray(cached.coachLogs) ? cached.coachLogs : [];
     AppState.coachSettings = pickCoachSettings(cached.coachSettings);
+    AppState.analyses = Array.isArray(cached.analyses) ? cached.analyses : [];
+    AppState.analysisFailures = pickAnalysisFailures(cached.analysisFailures);
     AppState.guidelines = pickGuidelines(cached.guidelines);
     AppState.isOnline = true;
     AppState.dataSource = 'cache';
@@ -932,6 +964,8 @@ async function loadAllData() {
   AppState.weights = JSON.parse(JSON.stringify(MOCK_DB.weights));
   AppState.coachLogs = JSON.parse(JSON.stringify(MOCK_DB.coachLogs));
   AppState.coachSettings = pickCoachSettings(MOCK_DB.coachSettings);
+  AppState.analyses = JSON.parse(JSON.stringify(MOCK_DB.analyses));
+  AppState.analysisFailures = {};
   AppState.guidelines = JSON.parse(JSON.stringify(MOCK_DB.guidelines));
   AppState.isOnline = false;
   AppState.dataSource = 'mock';
@@ -1419,6 +1453,14 @@ function simulateMockAction(payload) {
 
   if (action === 'getCoachLogHistory') {
     return { status: 'success', memberNo: payload.memberNo, logs: AppState.coachLogs.filter(r => r['회원번호'] === payload.memberNo) };
+  }
+
+  // [미리보기 전용] AI 분석 결과를 흉내 내지 않음
+  if (action === 'analyzeMember') {
+    return { status: 'error', code: 'preview_mode', message: '시트 미연동 미리보기 모드에서는 AI 분석을 할 수 없습니다. [API 설정]에서 구글 시트를 연결해 주세요.' };
+  }
+  if (action === 'getAnalysisHistory') {
+    return { status: 'success', memberNo: payload.memberNo, analyses: AppState.analyses.filter(r => r['회원번호'] === payload.memberNo) };
   }
 
   // [미리보기 전용] 시트 미연동 Mock 모드에서는 AI 생성 결과를 흉내 내지 않음 (모달에 채우거나 저장할 내용 없음)
@@ -2063,10 +2105,11 @@ function populateInlineGuidelines() {
   setInputValue('gdInlinePhilosophy', AppState.guidelines.philosophy || '');
   setInputValue('gdInlineExercise', AppState.guidelines.exercise || '');
   setInputValue('gdInlineDiet', AppState.guidelines.diet || '');
+  setInputValue('gdInlineAnalysis', AppState.guidelines.analysis || '');
 }
 
 /**
- * 지침서 3종(코칭 철학·운동·식단) 대시보드 인라인 저장 로직
+ * 지침서 4종(코칭 철학·운동·식단·회원 분석) 대시보드 인라인 저장 로직
  */
 function initInlineGuidelinesActions() {
   const btnSaveAll = document.getElementById('btnSaveAllGuidelinesInline');
@@ -2075,7 +2118,8 @@ function initInlineGuidelinesActions() {
       const updated = {
         philosophy: getInputValue('gdInlinePhilosophy'),
         exercise: getInputValue('gdInlineExercise'),
-        diet: getInputValue('gdInlineDiet')
+        diet: getInputValue('gdInlineDiet'),
+        analysis: getInputValue('gdInlineAnalysis')
       };
 
       showLoadingOverlay('코칭 지침서를 구글 시트(Guidelines)에 저장 중...');
@@ -2105,7 +2149,8 @@ async function saveSingleGuidelineInline(key, title) {
   const inputIdMap = {
     philosophy: 'gdInlinePhilosophy',
     exercise: 'gdInlineExercise',
-    diet: 'gdInlineDiet'
+    diet: 'gdInlineDiet',
+    analysis: 'gdInlineAnalysis'
   };
 
   const val = getInputValue(inputIdMap[key]);
@@ -2471,7 +2516,7 @@ function omitGuideAndSelfEditFields(mem) {
   const out = {};
   Object.keys(mem || {}).forEach(k => {
     const clean = String(k).replace(/\s+/g, '');
-    if (clean.includes('지침') || selfEdit.includes(clean)) return;
+    if (clean.includes('지침') || clean.includes('분석') || selfEdit.includes(clean)) return;
     out[k] = mem[k];
   });
   return out;
@@ -3584,6 +3629,7 @@ function updateWeightSection(mem) {
   renderMemberWeightSummary(trend);
   renderMemberWeightChart(trend);
   renderMemberWeightTable(rows);
+  renderMemberAiReport(mem);
   renderMemberCoachTimeline(mem);
 }
 
@@ -3847,10 +3893,148 @@ function memberPassesStatusTagFilter(m) {
   return true;
 }
 
-// 4단계에서 AI 특이사항이 들어갈 자리 (지금은 항상 없음)
-function hasCoachAiAlert(mem, dateKey) {
-  return false;
+/* ------------------------------ AI 회원 분석 (코치 전용) ------------------------------ */
+
+function isAnalysisFlagged(a) {
+  return !!a && (a['특이사항_있음'] === true || String(a['특이사항_있음']).toUpperCase() === 'TRUE');
 }
+
+// 회원의 분석 보고 (분석일시 오름차순)
+function getMemberAnalyses(memberNo) {
+  if (!memberNo) return [];
+  return AppState.analyses.filter(a => a['회원번호'] === memberNo)
+    .sort((a, b) => (a['분석일시'] < b['분석일시'] ? -1 : (a['분석일시'] > b['분석일시'] ? 1 : 0)));
+}
+
+// 그 날짜(포함)까지 한 분석 중 가장 최근 보고
+function getAnalysisAsOf(memberNo, dateKey) {
+  const list = getMemberAnalyses(memberNo).filter(a => String(a['분석일시']).slice(0, 10) <= dateKey);
+  return list.length ? list[list.length - 1] : null;
+}
+
+function getAnalysisSummary(a) {
+  if (!a) return '';
+  if (a['요약']) return a['요약'];
+  const line = String(a['보고'] || '').split('\n').map(l => l.replace(/^[\s#*\-•]+/, '').trim()).find(l => l);
+  return line || '';
+}
+
+// 오늘 보드 맨 위로 올릴 AI 특이사항 (그 날짜 기준 가장 최근 분석이 특이사항 있음일 때)
+function hasCoachAiAlert(mem, dateKey) {
+  return isAnalysisFlagged(getAnalysisAsOf(getMemberNo(mem), dateKey));
+}
+
+function upsertAnalysisLocal(a) {
+  if (!a || !a['회원번호'] || !a['분석일시']) return;
+  AppState.analyses = AppState.analyses.filter(x => !(x['회원번호'] === a['회원번호'] && x['분석일시'] === a['분석일시']));
+  AppState.analyses.push(a);
+}
+
+function renderMemberAiReport(mem) {
+  const el = document.getElementById('memberAiReportSlot');
+  if (!el) return;
+  const memberNo = getMemberNo(mem);
+  const running = !!AppState.analysisRunning[memberNo];
+  const list = getMemberAnalyses(memberNo);
+  const latest = list.length ? list[list.length - 1] : null;
+  const failure = memberNo ? AppState.analysisFailures[memberNo] : null;
+  // 실패가 최근 보고보다 나중일 때만 표시 (이전 보고는 그대로 보여 줌)
+  const showFailure = failure && (failure.local || !latest || String(failure.at || '') > String(latest['분석일시']));
+  const canRun = !!memberNo && AppState.dataSource !== 'mock';
+  const btn = memberNo
+    ? `<button type="button" class="btn btn-sm btn-outline-primary" data-ai-analyze="${escapeHtml(memberNo)}" ${running || !canRun ? 'disabled' : ''} ${canRun ? '' : 'title="시트 연결 후 사용할 수 있습니다"'}>
+        ${running ? '<span class="spinner-border spinner-border-sm me-1"></span>분석 중...' : `<i class="bi ${showFailure ? 'bi-arrow-clockwise' : 'bi-stars'} me-1"></i>${showFailure ? '다시 시도' : '분석 업데이트'}`}
+      </button>`
+    : '';
+  const head = `<div class="ai-report-head">
+      <h6><i class="bi bi-stars"></i>AI 분석 리포트 <span class="ai-report-private"><i class="bi bi-lock-fill"></i>코치 전용</span></h6>
+      ${btn}
+    </div>`;
+  let body = '';
+  if (!memberNo) {
+    body = '<div class="ai-report-empty">회원번호가 없어 분석할 수 없습니다.</div>';
+  } else if (!latest) {
+    body = `<div class="ai-report-empty">아직 분석 보고가 없습니다. 매일 밤 11시에 자동으로 분석하거나 [분석 업데이트]로 바로 분석할 수 있습니다.</div>`;
+  } else {
+    const flagged = isAnalysisFlagged(latest);
+    const older = list.slice(0, -1).reverse();
+    const canLoadOlder = AppState.dataSource !== 'mock' && !AppState.analysisHistoryLoaded[memberNo];
+    const olderItems = older.map(a => `<div class="ai-report-old">
+        <div class="ai-report-old-meta">${isAnalysisFlagged(a) ? '<span class="ai-flag-badge">⚠ 특이사항</span>' : '<span class="ai-ok-badge">특이사항 없음</span>'}${escapeHtml(String(a['분석일시']).slice(0, 16))}</div>
+        <div class="ai-report-text">${escapeHtml(a['보고'] || getAnalysisSummary(a))}</div>
+      </div>`).join('');
+    body = `<div class="ai-report-latest ${flagged ? 'is-flagged' : ''}">
+        <div class="ai-report-meta">${flagged ? '<span class="ai-flag-badge">⚠ 특이사항</span>' : '<span class="ai-ok-badge">특이사항 없음</span>'}<span>${escapeHtml(String(latest['분석일시']).slice(0, 16))} 분석</span></div>
+        <div class="ai-report-text">${escapeHtml(latest['보고'] || getAnalysisSummary(latest))}</div>
+      </div>` +
+      ((older.length || canLoadOlder) ? `<details class="ai-report-history" ${AppState.analysisHistoryLoaded[memberNo] ? 'open' : ''} data-ai-history="${escapeHtml(memberNo)}">
+        <summary>이전 보고 ${AppState.analysisHistoryLoaded[memberNo] ? `${older.length}개` : '펼쳐보기'}</summary>
+        ${canLoadOlder ? '<div class="ai-report-empty"><span class="spinner-border spinner-border-sm me-1"></span>이전 보고를 불러오는 중...</div>' : (olderItems || '<div class="ai-report-empty">이전 보고가 없습니다.</div>')}
+      </details>` : '');
+  }
+  const failHtml = showFailure
+    ? `<div class="ai-report-fail"><i class="bi bi-exclamation-triangle-fill"></i>분석 실패 (${escapeHtml(String(failure.at || '').slice(0, 16))}): ${escapeHtml(failure.reason || '')}</div>`
+    : '';
+  el.className = 'coach-ai-report mb-3';
+  el.innerHTML = head + failHtml + body;
+}
+
+async function runMemberAnalysis(memberNo) {
+  if (!memberNo || AppState.analysisRunning[memberNo]) return;
+  AppState.analysisRunning[memberNo] = true;
+  const rerender = () => {
+    if (AppState.selectedMember && getMemberNo(AppState.selectedMember) === memberNo) renderMemberAiReport(AppState.selectedMember);
+  };
+  rerender();
+  let res = null;
+  try {
+    res = await postToGasBackend({ action: 'analyzeMember', memberNo }, { silent: true, noAbort: true });
+  } finally {
+    AppState.analysisRunning[memberNo] = false;
+  }
+  if (res && res.status === 'success' && res.analysis) {
+    upsertAnalysisLocal(res.analysis);
+    delete AppState.analysisFailures[memberNo];
+    showToast(isAnalysisFlagged(res.analysis) ? '분석 완료: 특이사항이 있습니다.' : '분석 완료: 특이사항이 없습니다.', 'success');
+  } else {
+    const reason = (res && res.message) || '서버 응답이 없습니다.';
+    // 서버에 기록되지 않은 실패(지침 미인식·연결 오류 등)도 이번 화면에서는 표시 (다음 최신화 때 서버 값으로 바뀜)
+    AppState.analysisFailures[memberNo] = (res && res.failure) ||
+      { at: `${localDateKey()} ${new Date().toTimeString().slice(0, 8)}`, reason, local: true };
+    showToast(`분석 실패: ${reason}`, 'danger');
+  }
+  saveCoachDataCache();
+  rerender();
+  renderTodayBoard();
+}
+
+async function loadAnalysisHistory(memberNo) {
+  if (!memberNo || AppState.analysisHistoryLoaded[memberNo] === 'loading') return;
+  AppState.analysisHistoryLoaded[memberNo] = 'loading';
+  const res = await postToGasBackend({ action: 'getAnalysisHistory', memberNo }, { silent: true, noAbort: true });
+  if (res && res.status === 'success' && Array.isArray(res.analyses)) {
+    res.analyses.forEach(a => upsertAnalysisLocal(a));
+    AppState.analysisHistoryLoaded[memberNo] = true;
+  } else {
+    delete AppState.analysisHistoryLoaded[memberNo];
+    showRetryToast(`이전 보고를 불러오지 못했습니다: ${(res && res.message) || '서버 오류'}`, () => loadAnalysisHistory(memberNo));
+  }
+  if (AppState.selectedMember && getMemberNo(AppState.selectedMember) === memberNo) renderMemberAiReport(AppState.selectedMember);
+}
+
+document.addEventListener('click', (e) => {
+  const t = e.target && e.target.closest ? e.target : null;
+  if (!t) return;
+  const btn = t.closest('#memberAiReportSlot [data-ai-analyze]');
+  if (btn) runMemberAnalysis(btn.getAttribute('data-ai-analyze'));
+});
+
+document.addEventListener('toggle', (e) => {
+  const el = e.target;
+  if (!el || !el.matches || !el.matches('#memberAiReportSlot details[data-ai-history]') || !el.open) return;
+  const memberNo = el.getAttribute('data-ai-history');
+  if (AppState.dataSource !== 'mock' && !AppState.analysisHistoryLoaded[memberNo]) loadAnalysisHistory(memberNo);
+}, true);
 
 // 정렬: AI 특이사항 → 미기록 → 기록 완료 → 회원번호 없음, 같은 묶음은 이름순
 function getTodayBoardEntries() {
@@ -3858,9 +4042,10 @@ function getTodayBoardEntries() {
   return AppState.members.filter(memberPassesStatusTagFilter).map(mem => {
     const memberNo = getMemberNo(mem);
     const log = getCoachLog(memberNo, date);
-    const aiAlert = memberNo ? hasCoachAiAlert(mem, date) : false;
+    const analysis = memberNo ? getAnalysisAsOf(memberNo, date) : null;
+    const aiAlert = isAnalysisFlagged(analysis);
     const group = !memberNo ? 3 : (aiAlert ? 0 : (log ? 2 : 1));
-    return { mem, key: getMemberKey(mem), memberNo, name: getMemberName(mem), log, group, aiAlert };
+    return { mem, key: getMemberKey(mem), memberNo, name: getMemberName(mem), log, group, aiAlert, aiSummary: aiAlert ? getAnalysisSummary(analysis) : '' };
   }).sort((a, b) => a.group - b.group || a.name.localeCompare(b.name, 'ko'));
 }
 
@@ -3927,9 +4112,13 @@ function renderTodayBoard() {
     const statusHtml = e.log
       ? `<span class="today-done"><i class="bi bi-check-circle-fill"></i>기록</span>${['식단 상태', '운동 상태'].map(k => e.log[k] ? `<span class="today-status-dot ${COACH_LOG_STATUS_CLASS[e.log[k]] || ''}" title="${k}: ${escapeHtml(e.log[k])}"></span>` : '').join('')}`
       : '<span class="today-todo">미기록</span>';
-    return `<button type="button" class="today-row ${e.log ? 'is-done' : 'is-todo'}" data-board-member="${escapeHtml(e.key)}">
+    const aiHtml = e.aiAlert
+      ? `<div class="today-row-ai" title="AI 분석 특이사항 (코치 전용)"><i class="bi bi-stars"></i><span class="text-truncate">${escapeHtml(e.aiSummary || '특이사항 있음')}</span></div>`
+      : '';
+    return `<button type="button" class="today-row ${e.log ? 'is-done' : 'is-todo'}${e.aiAlert ? ' is-ai-alert' : ''}" data-board-member="${escapeHtml(e.key)}">
       <div class="today-row-main">
-        <div class="today-row-name">${escapeHtml(e.name)}${e.aiAlert ? '<span class="today-ai-flag">AI</span>' : ''}<small>${escapeHtml(getMemberTag(e.mem))}</small></div>
+        <div class="today-row-name">${e.aiAlert ? '<span class="today-ai-flag">⚠</span>' : ''}${escapeHtml(e.name)}<small>${escapeHtml(getMemberTag(e.mem))}</small></div>
+        ${aiHtml}
         ${checkHtml}
       </div>
       <div class="today-row-weight">

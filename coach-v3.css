@@ -449,7 +449,10 @@ body.cv3 {
   min-width: 0;
 }
 .today-row-check b { flex-shrink: 0; font-size: 0.7rem; background: #fff1e6; border-radius: 999px; padding: 0 6px; }
-.today-ai-flag { font-size: 0.65rem; font-weight: 800; color: #fff; background: #7048e8; border-radius: 6px; padding: 1px 5px; }
+.today-ai-flag { font-size: 0.7rem; font-weight: 800; color: #fff; background: #e03131; border-radius: 6px; padding: 0 5px; margin-right: 2px; }
+.today-row.is-ai-alert { border-color: #ffc9c9; background: #fffafa; }
+.today-row-ai { display: flex; align-items: center; gap: 4px; margin-top: 3px; font-size: 0.78rem; font-weight: 600; color: #c92a2a; min-width: 0; }
+.today-row-ai > i { flex-shrink: 0; }
 .today-row-weight { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; font-size: 0.85rem; white-space: nowrap; }
 .today-weight-missing { color: var(--cv-ink-3); font-size: 0.78rem; background: var(--cv-surface-2); border-radius: 6px; padding: 1px 6px; }
 .today-trend { font-size: 0.72rem; font-weight: 700; display: inline-flex; align-items: center; gap: 2px; }
@@ -570,18 +573,27 @@ body.cv3 {
 /* ========================================================================= */
 /* [회원 상세] 날짜별 코치 기록 타임라인 · AI 리포트 자리 */
 /* ========================================================================= */
-.coach-ai-report-slot {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  border: 1.5px dashed #d0bfff;
-  background: #f8f5ff;
-  color: #5f3dc4;
+.coach-ai-report {
+  border: 1.5px solid #e5dbff;
+  background: #faf8ff;
   border-radius: var(--cv-radius-sm);
   padding: 12px 14px;
 }
-.coach-ai-report-slot > i { font-size: 1.3rem; }
-.coach-ai-report-slot .small { color: #7950f2; opacity: 0.85; }
+.ai-report-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.ai-report-head h6 { margin: 0; font-weight: 800; display: flex; align-items: center; gap: 6px; color: #5f3dc4; }
+.ai-report-private { font-size: 0.68rem; font-weight: 700; color: #7950f2; background: #f3f0ff; border-radius: 999px; padding: 1px 7px; }
+.ai-report-empty { color: var(--cv-ink-3); font-size: 0.85rem; background: #fff; border-radius: 10px; padding: 12px; text-align: center; }
+.ai-report-latest { background: #fff; border: 1px solid #ede7ff; border-radius: 10px; padding: 10px 12px; }
+.ai-report-latest.is-flagged { border-color: #ffc9c9; background: #fffafa; }
+.ai-report-meta, .ai-report-old-meta { display: flex; align-items: center; gap: 6px; font-size: 0.74rem; color: var(--cv-ink-3); margin-bottom: 6px; }
+.ai-report-text { white-space: pre-wrap; word-break: break-word; font-size: 0.86rem; line-height: 1.55; color: var(--cv-ink, #212529); }
+.ai-flag-badge { font-size: 0.7rem; font-weight: 800; color: #c92a2a; background: #ffe3e3; border-radius: 6px; padding: 1px 6px; }
+.ai-ok-badge { font-size: 0.7rem; font-weight: 700; color: #2b8a3e; background: #ebfbee; border-radius: 6px; padding: 1px 6px; }
+.ai-report-fail { display: flex; gap: 6px; align-items: flex-start; font-size: 0.8rem; color: #c92a2a; background: #fff5f5; border: 1px solid #ffc9c9; border-radius: 10px; padding: 8px 10px; margin-bottom: 8px; word-break: break-word; }
+.ai-report-history { margin-top: 8px; }
+.ai-report-history > summary { cursor: pointer; font-size: 0.8rem; font-weight: 700; color: #7950f2; padding: 4px 0; }
+.ai-report-old { background: #fff; border-radius: 10px; padding: 8px 10px; margin-top: 6px; border: 1px solid #f1f3f5; }
+.ai-report-old .ai-report-text { font-size: 0.8rem; color: var(--cv-ink-2, #495057); }
 
 .coach-timeline-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
 .coach-timeline-head h6 { margin: 0; font-weight: 800; display: flex; align-items: center; gap: 6px; }
