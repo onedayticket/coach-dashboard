@@ -224,12 +224,6 @@ body.cv3 {
   overflow: hidden;
 }
 
-.cv3 .feedback-table thead th {
-  background: var(--cv-surface-2);
-  color: var(--cv-ink-2);
-  border-bottom: 1px solid var(--cv-line);
-}
-
 .cv3 .notification-dropdown-menu {
   border: none;
   border-radius: 18px;
@@ -246,8 +240,8 @@ body.cv3 {
   border-radius: 12px;
 }
 
+.cv3-seg.cv3-seg-2 { grid-template-columns: repeat(2, 1fr); }
 .cv3-seg.cv3-seg-3 { grid-template-columns: repeat(3, 1fr); }
-.cv3-seg.cv3-seg-4 { grid-template-columns: repeat(4, 1fr); }
 
 /* 태그별 그래프: 회원 여러 명 + 범례가 들어가도록 높게 */
 .cv3 .tagstats-chart-card { height: 420px; }
@@ -261,6 +255,17 @@ body.cv3 {
   font-size: 0.85rem;
 }
 .tagstats-table td, .tagstats-table th { white-space: nowrap; }
+
+/* 회원 상세 - 공복 체중 기록 (요약 칸은 태그별 그래프 카드와 같은 모양) */
+.member-weight-summary {
+  grid-template-columns: repeat(4, 1fr);
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--cv-surface-2);
+  border-radius: var(--cv-radius-sm);
+}
+.cv3 .member-weight-chart-card { height: 300px; position: relative; }
+.member-weight-table-wrap { max-height: 260px; overflow-y: auto; }
 
 /* 태그별 그래프 - 체중: 회원별 작은 그래프 */
 .tagstats-member-grid {
@@ -422,11 +427,11 @@ body.cv3 {
   body.cv3:not([data-ctab="list"]) #sidebarColumn { display: none !important; }
 
   body.cv3[data-ctab="profile"] #panelGuidelineRoutine,
-  body.cv3[data-ctab="profile"] #panelFeedbackHistory,
+  body.cv3[data-ctab="profile"] #panelWeightHistory,
   body.cv3[data-ctab="routine"] #panelPersonalInfo,
-  body.cv3[data-ctab="routine"] #panelFeedbackHistory,
-  body.cv3[data-ctab="feedback"] #panelPersonalInfo,
-  body.cv3[data-ctab="feedback"] #panelGuidelineRoutine {
+  body.cv3[data-ctab="routine"] #panelWeightHistory,
+  body.cv3[data-ctab="weight"] #panelPersonalInfo,
+  body.cv3[data-ctab="weight"] #panelGuidelineRoutine {
     display: none !important;
   }
 
@@ -552,110 +557,11 @@ body.cv3 {
     flex-shrink: 0;
   }
 
-  /* 그래프: 한 번에 하나 */
-  .cv3-chart-col:not(.is-active) { display: none !important; }
+  /* 그래프 */
   .cv3 .chart-card { height: 230px; }
   .cv3 .tagstats-chart-card { height: 360px; }
-  .cv3 .cv3-seg-4 .cv3-seg-btn { font-size: 0.78rem; }
-
-  /* 피드백 기록: 표 → 카드 */
-  .cv3 .cv3-fb-table thead { display: none; }
-
-  .cv3 .table-responsive:has(.cv3-fb-table) {
-    border: none !important;
-    background: transparent !important;
-    overflow: visible;
-  }
-
-  .cv3 .cv3-fb-table,
-  .cv3 .cv3-fb-table tbody {
-    display: block;
-    width: 100%;
-  }
-
-  .cv3 .cv3-fb-table tr {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 8px;
-    background: var(--cv-surface) !important;
-    border: 1px solid var(--cv-line);
-    border-radius: 18px;
-    padding: 14px;
-    margin-bottom: 10px;
-  }
-
-  .cv3 .cv3-fb-table tr.is-todo { border-left: 4px solid var(--cv-primary); }
-  .cv3 .cv3-fb-table tr.is-draft { border-left: 4px solid #22b8cf; }
-  .cv3 .cv3-fb-table tr.is-failed { border-left: 4px solid #dc3545; }
-  .cv3 .cv3-fb-table tr.is-weight-only { padding: 10px 14px; background: var(--cv-surface-2, #f8f9fa) !important; }
-  .cv3 .cv3-fb-table tr.is-weight-only .cv3-c-ex,
-  .cv3 .cv3-fb-table tr.is-weight-only .cv3-c-diet,
-  .cv3 .cv3-fb-table tr.is-weight-only .cv3-c-summary { display: none !important; }
-
-  .cv3 .cv3-fb-table td {
-    display: block;
-    border: none !important;
-    padding: 0 !important;
-    background: transparent !important;
-    box-shadow: none !important;
-    min-width: 0 !important;
-    max-width: none !important;
-  }
-
-  .cv3 .cv3-fb-table td[colspan] {
-    flex: 1 1 100%;
-    padding: 24px 0 !important;
-  }
-
-  .cv3 .cv3-c-date { order: 1; font-size: 0.95rem !important; color: var(--cv-ink) !important; font-weight: 800 !important; }
-  .cv3 .cv3-c-name { order: 2; color: var(--cv-ink-3) !important; font-weight: 600 !important; }
-  .cv3 .cv3-c-weight { order: 3; margin-left: auto; font-size: 0.85rem; }
-  .cv3 .cv3-c-ex,
-  .cv3 .cv3-c-diet { order: 4; display: inline-flex !important; align-items: center; gap: 4px; }
-
-  .cv3 .cv3-c-ex::before,
-  .cv3 .cv3-c-diet::before {
-    content: attr(data-label);
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: var(--cv-ink-3);
-  }
-
-  .cv3 .cv3-c-summary,
-  .cv3 .cv3-c-good,
-  .cv3 .cv3-c-improve,
-  .cv3 .cv3-c-note {
-    order: 5;
-    flex: 1 1 100%;
-  }
-
-  .cv3 .cv3-c-summary::before,
-  .cv3 .cv3-c-good::before,
-  .cv3 .cv3-c-improve::before,
-  .cv3 .cv3-c-note::before {
-    content: attr(data-label);
-    display: block;
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: var(--cv-ink-3);
-    margin-bottom: 3px;
-  }
-
-  /* 피드백 카드: 글 전체 표시 (내부 스크롤·줄 자르기 없음) */
-  .cv3 .cv3-fb-table .feedback-text-cell {
-    min-height: 0;
-    max-height: none !important;
-    overflow: visible !important;
-    border-radius: 12px;
-  }
-
-  .cv3 .cv3-copy-btn {
-    width: 100%;
-    padding: 8px 12px !important;
-    border-radius: 10px;
-    margin-top: 6px !important;
-  }
+  .cv3 .member-weight-chart-card { height: 280px; }
+  .cv3 .member-weight-summary { grid-template-columns: repeat(2, 1fr); row-gap: 10px; }
 
   /* 모달: 화면 높이에 갇힌 내부 스크롤 대신 모달 전체가 아래로 자연스럽게 스크롤 */
   body.modal-open .cv3-navbar { z-index: 1020 !important; }
@@ -683,45 +589,6 @@ body.cv3 {
     z-index: 3;
     background: #fff;
     padding-bottom: calc(10px + var(--cv-safe-bottom));
-  }
-
-  /* 키패드가 열려 입력 중일 때: 고정 하단 버튼 바가 입력칸을 덮지 않게 풀고, 키패드 높이만큼 아래 여백 확보 */
-  .cv3 .modal:has(.modal-body textarea:focus) .modal-footer { position: static; }
-  .cv3 .modal:has(.modal-body textarea:focus) .modal-dialog {
-    margin-bottom: calc(8px + var(--cv-kb-inset, 0px));
-  }
-  .cv3 .modal-body textarea { scroll-margin-bottom: 24px; }
-
-  .cv3 .cv3-fb-table .feedback-text-cell { resize: none; }
-
-  /* 미작성 칸은 숨기고, 요약까지 비어 있으면 한 줄 안내만 */
-  .cv3 .cv3-c-good.is-empty,
-  .cv3 .cv3-c-improve.is-empty,
-  .cv3 .cv3-c-note.is-empty { display: none !important; }
-
-  .cv3 .cv3-c-summary.is-empty::before { display: none; }
-
-  .cv3 .cv3-c-summary.is-empty .feedback-text-cell {
-    background: transparent;
-    border: none;
-    padding: 0;
-    color: var(--cv-ink-3) !important;
-    font-size: 0.8rem;
-  }
-
-  .cv3 .cv3-c-summary.is-empty .feedback-text-cell::after { content: ' · 아래 버튼으로 작성'; }
-
-  .cv3 .cv3-c-action {
-    order: 6;
-    flex: 1 1 100%;
-    margin-top: 2px;
-  }
-
-  .cv3 .cv3-c-action .btn {
-    width: 100%;
-    padding: 10px 12px !important;
-    border-radius: 12px;
-    font-size: 0.9rem;
   }
 
   /* 지침서 화면 */

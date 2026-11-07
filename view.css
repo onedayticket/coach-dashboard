@@ -149,6 +149,7 @@ body.mp-body {
   gap: 6px;
   height: 38px;
   padding: 0 14px;
+  border: none;
   border-radius: 12px;
   background: var(--mp-primary);
   color: #fff !important;
@@ -321,7 +322,7 @@ body.mp-body {
 .mp-tab[data-tab-target="home"].is-active i { color: var(--mp-primary); }
 .mp-tab[data-tab-target="workout"].is-active i { color: var(--mp-workout); }
 .mp-tab[data-tab-target="diet"].is-active i { color: var(--mp-diet); }
-.mp-tab[data-tab-target="feedback"].is-active i { color: var(--mp-feedback); }
+.mp-tab[data-tab-target="weight"].is-active i { color: var(--mp-feedback); }
 
 /* ========================================================================= */
 /* [공통 컴포넌트] */
@@ -410,27 +411,6 @@ body.mp-body {
   color: var(--mp-ink-3);
   font-size: 0.75rem;
   padding: 4px;
-}
-
-.mp-more-btn {
-  border: none;
-  background: none;
-  padding: 6px 0 0;
-  color: var(--mp-primary);
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
-.mp-clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.mp-clamp.is-open {
-  display: block;
-  -webkit-line-clamp: unset;
 }
 
 /* ========================================================================= */
@@ -595,8 +575,6 @@ body.mp-body {
 .mp-shortcut.is-diet i { background: var(--mp-diet-soft); color: var(--mp-diet); }
 .mp-shortcut.is-feedback i { background: var(--mp-feedback-soft); color: var(--mp-feedback); }
 
-.mp-latest .mp-card-title i { color: #fab005; }
-.mp-latest .mp-card-head { margin-bottom: 8px; }
 
 .mp-info-list {
   margin: 0;
@@ -927,38 +905,8 @@ body.mp-body {
 .mp-note-box.is-warn { background: #fff9db; }
 
 /* ========================================================================= */
-/* [피드백 탭: 그래프 전환 + 카드형 기록] */
+/* [체중 탭: 그래프 + 날짜별 기록] */
 /* ========================================================================= */
-.mp-seg {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  background: var(--mp-surface-2);
-  border-radius: 12px;
-  padding: 4px;
-  gap: 4px;
-  margin-bottom: 12px;
-}
-
-.mp-seg-btn {
-  border: none;
-  background: transparent;
-  border-radius: 9px;
-  height: 34px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--mp-ink-3);
-  transition: background 0.15s ease, color 0.15s ease;
-}
-
-.mp-seg-btn.is-active {
-  background: #fff;
-  color: var(--mp-ink);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-}
-
-.mp-chart { display: none; }
-.mp-chart.is-active { display: block; }
-
 .mp-chart-caption {
   font-size: 0.74rem;
   color: var(--mp-ink-3);
@@ -972,155 +920,61 @@ body.mp-body {
   width: 100%;
 }
 
-.mp-feedback-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.mp-fb-card {
-  background: var(--mp-surface);
-  border-radius: var(--mp-radius);
-  padding: 16px;
-  box-shadow: var(--mp-shadow);
-}
-
-.mp-fb-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 10px;
-}
-
-.mp-fb-date {
-  font-weight: 800;
-  font-size: 0.92rem;
-  color: var(--mp-ink);
-}
-
-.mp-fb-metrics {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-.mp-metric,
-.mp-score {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 0.74rem;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: var(--mp-surface-2);
-  color: var(--mp-ink-2);
-  white-space: nowrap;
-}
-
-.mp-score.is-good { background: var(--mp-workout-soft); color: var(--mp-good); }
-.mp-score.is-mid { background: var(--mp-diet-soft); color: var(--mp-mid); }
-.mp-score.is-low { background: #fff5f5; color: var(--mp-low); }
-
-.feedback-comment-cell {
-  background: var(--mp-surface-2);
-  border-radius: var(--mp-radius-sm);
-  padding: 12px 14px;
-}
-
-.mp-fb-label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  color: var(--mp-primary);
-  margin-bottom: 4px;
-}
-
-.mp-fb-label i { color: #fab005; }
-
-.mp-fb-text {
-  font-size: 0.9rem;
-  line-height: 1.65;
-  color: var(--mp-ink);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.mp-fb-part + .mp-fb-part { margin-top: 10px; }
-
-.mp-fb-part-title {
-  font-size: 0.76rem;
-  font-weight: 800;
-  color: var(--mp-ink-3);
-  margin-bottom: 2px;
-}
-
-.mp-fb-pending {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.82rem;
-  color: var(--mp-ink-3);
-  background: var(--mp-surface-2);
-  border-radius: var(--mp-radius-sm);
-  padding: 12px 14px;
-}
-
-.mp-fb-note {
-  margin-top: 8px;
-}
-
-.mp-fb-note summary {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--mp-ink-2);
-  cursor: pointer;
-  padding: 6px 2px;
-  list-style: none;
-}
-
-.mp-fb-note summary::-webkit-details-marker { display: none; }
-.mp-fb-note summary::before {
-  content: '\F282';
-  font-family: 'bootstrap-icons';
-  display: inline-block;
-  margin-right: 6px;
-  font-size: 0.7rem;
-  transition: transform 0.15s ease;
-}
-
-.mp-fb-note[open] summary::before { transform: rotate(180deg); }
-
-.member-log-cell {
-  background: var(--mp-surface-2);
-  border-radius: var(--mp-radius-sm);
-  padding: 12px 14px;
-  font-size: 0.84rem;
-  color: var(--mp-ink-2);
-  line-height: 1.6;
-  word-break: break-word;
-}
-
-.mp-empty {
-  background: var(--mp-surface);
-  border-radius: var(--mp-radius);
-  padding: 32px 18px;
+.mp-empty-note {
+  padding: 18px 4px;
   text-align: center;
   color: var(--mp-ink-3);
-  font-size: 0.88rem;
+  font-size: 0.85rem;
   line-height: 1.6;
-  box-shadow: var(--mp-shadow);
 }
 
-.mp-empty > i {
-  font-size: 2rem;
-  display: block;
-  margin-bottom: 8px;
+.mp-weight-list {
+  padding: 6px 16px;
 }
+
+.mp-wlog-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 12px 0;
+  text-align: left;
+  border-bottom: 1px solid var(--mp-line, #eef0f3);
+}
+
+.mp-wlog-row:last-child { border-bottom: none; }
+
+.mp-wlog-row-date {
+  flex: 1;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--mp-ink);
+}
+
+.mp-wlog-row-date small {
+  font-weight: 500;
+  color: var(--mp-ink-3);
+  margin-left: 4px;
+}
+
+.mp-wlog-row-val {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: var(--mp-ink);
+}
+
+.mp-wlog-row-diff {
+  width: 52px;
+  text-align: right;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--mp-ink-3);
+}
+
+.mp-wlog-row-diff.is-down { color: #1b64da; }
+.mp-wlog-row-diff.is-up { color: #e03131; }
 
 /* ========================================================================= */
 /* [인증 모달] */

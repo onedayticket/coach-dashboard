@@ -434,93 +434,6 @@ body {
   width: 100%;
 }
 
-/* 피드백 테이블 */
-.feedback-table th {
-  background-color: #f8fafc;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #475569;
-  letter-spacing: 0.5px;
-  border-bottom: 2px solid #e2e8f0;
-  padding: 0.75rem 0.75rem;
-}
-
-.feedback-table td {
-  vertical-align: top;
-  font-size: 0.875rem;
-  padding: 0.65rem 0.75rem;
-}
-
-/* 피드백 요약 / 문제점 분석 / 보완점 및 개선방안 텍스트 박스: 적정 길이 자동 줄바꿈 및 창 길이(높이) 조절 */
-.feedback-text-cell {
-  white-space: pre-line !important; /* 여러 줄 피드백의 줄바꿈 유지 */
-  word-break: break-word;
-  overflow-wrap: break-word;
-  line-height: 1.5;
-  font-size: 0.835rem;
-  min-height: 48px;
-  max-height: 160px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  resize: vertical; /* 아래 모서리 핸들을 마우스로 드래그하여 상하 길이(높이) 자유 조절 */
-  padding: 6px 9px;
-  border-radius: 6px;
-  background-color: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #334155;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
-  transition: border-color 0.15s ease, background-color 0.15s ease;
-}
-
-.feedback-text-cell:hover,
-.feedback-text-cell:focus {
-  background-color: #ffffff;
-  border-color: #cbd5e1;
-}
-
-.feedback-text-cell.problem-cell {
-  background-color: #fffaf0;
-  border-color: #fed7aa;
-}
-
-.feedback-text-cell.solution-cell {
-  background-color: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.feedback-text-cell.coach-check-cell {
-  background-color: #fef2f2;
-  border-color: #fca5a5;
-  color: #b91c1c;
-}
-
-/* 데일리 피드백 모달: 내용 길이에 맞춰 높이가 늘어나는 입력칸 (app.js autoGrowTextarea) */
-textarea.df-autogrow {
-  overflow-y: hidden;
-  resize: vertical;
-  min-height: 2.6rem;
-}
-
-.feedback-text-cell::-webkit-scrollbar {
-  width: 5px;
-}
-.feedback-text-cell::-webkit-scrollbar-track {
-  background: transparent;
-}
-.feedback-text-cell::-webkit-scrollbar-thumb {
-  background-color: #cbd5e1;
-  border-radius: 4px;
-}
-.feedback-text-cell::-webkit-scrollbar-thumb:hover {
-  background-color: #94a3b8;
-}
-
-/* 모달 내 텍스트창 자유 조절 */
-#dailyFeedbackModal textarea.form-control {
-  resize: vertical;
-  min-height: 65px;
-}
-
 /* AI 제안 인디케이터 배지 */
 .ai-badge {
   background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
@@ -1094,22 +1007,11 @@ body.coach-locked .main-wrapper {
     padding: 0.5rem;
   }
 
-  /* 9. 차트 및 피드백 테이블 모바일 튜닝 */
+  /* 9. 차트 모바일 튜닝 */
   .chart-card {
     height: 210px;
     padding: 0.65rem;
     border-radius: 0.65rem;
-  }
-
-  .feedback-table th {
-    padding: 0.5rem 0.4rem;
-    font-size: 0.75rem;
-    white-space: nowrap;
-  }
-
-  .feedback-table td {
-    padding: 0.55rem 0.4rem;
-    font-size: 0.8rem;
   }
 
   /* 10. 모바일 뒤로가기 바 */

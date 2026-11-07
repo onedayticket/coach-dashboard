@@ -13,15 +13,15 @@
  * 3. 지능형 시트 및 지침서 2D 그리드 스캐너 (Fail-Safe Sheet Scanner):
  *    - 시트 탭 이름이 다르거나 띄어쓰기가 달라도 스마트 키워드 감지로 자동 탐색합니다.
  *    - Guidelines 시트의 '지침'/'내용' 열 순서나 행 구성에 구애받지 않고 
- *      '코칭 철학', '운동 제안 지침', '식단 제안 지침', '피드백 지침', '동기부여 지침'을 100% 완벽 식별합니다.
+ *      '코칭 철학', '운동 제안 지침', '식단 제안 지침'을 식별합니다. (예전 '피드백 지침'·'동기부여 지침' 행은 읽지도 쓰지도 않음)
  * 4. 식별자 매핑:
  *    - 회원 페이지 접속·본인 인증·셀프 수정은 '회원번호' 열 정확 일치로만 회원을 찾습니다.
- *    - 데일리 피드백(Feedbacks)은 폼에 이름만 있으므로 이름(앞뒤 공백 제외) 완전 일치로 회원과 연결합니다.
+ *    - 공복 체중은 WeightLog 시트에 회원번호+날짜 1행으로 저장합니다 (회원 마이페이지에서만 입력).
+ *    - Feedbacks 시트(예전 구글 폼 데일리 피드백)는 보관용이며, 시트 메뉴 '체중 기록 옮기기'만 1회 읽습니다.
  * 5. 보안 및 AI Gemini API 백엔드 실행:
  *    - Gemini API Key는 프론트엔드에 노출하지 않고 GAS 백엔드에서만 안전하게 호출합니다.
  *    - 스크립트 속성(Script Properties)의 'GEMINI_API_KEY'를 우선 사용합니다.
  *    - 키 미등록·호출 실패·응답 해석 실패 시 고정 문장을 만들지 않고 { status: 'error', code: 'ai_failed', message } 를 반환합니다.
- *      (폼 제출 트리거는 내용 칸을 비워 둔 채 '피드백 상태'에만 'AI실패'를 기록합니다)
  * ==============================================================================
  */
 
@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-11-04.1';
+const BACKEND_VERSION = '2026-11-07.3';
 
 /**
  * CORS 대응 (doOptions)
@@ -62,8 +62,8 @@ function doOptions(e) {
 /**
  * GET 요청 핸들러 (doGet)
  * - action 파라미터에 따라 데이터를 반환합니다.
- * - action: 'getAll' (기본값) -> 전체 회원 목록, 피드백 전체, 5대 지침서 반환
- * - action: 'getGuidelines' -> 5대 지침서만 반환
+ * - action: 'getAll' (기본값) -> 전체 회원 목록, 체중 기록(WeightLog) 전체, 지침서 반환
+ * - action: 'getGuidelines' -> 지침서만 반환
  */
 function doGet(e) {
   try {
@@ -102,7 +102,6 @@ function doGet(e) {
 
     if (action === 'getAll') {
       const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
-      const feedbackSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
       const guidelineSheet = ss.getSheetByName('Guidelines') || findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침', '지침', '내용']);
 
       return createJsonResponse({
@@ -110,7 +109,7 @@ function doGet(e) {
         data: {
           // 전송량 절감: 공백 제거 별칭 키 중복 없이 원본 헤더만 전송 (대시보드는 공백 무관 탐색으로 동일하게 읽음)
           members: getSheetDataWithHeaders(memberSheet, { noAliases: true }),
-          feedbacks: getSheetDataWithHeaders(feedbackSheet, { noAliases: true }),
+          weights: readWeightLog(ss),
           guidelines: getGuidelinesData(guidelineSheet)
         }
       });
@@ -144,13 +143,10 @@ function doGet(e) {
  * - 다양한 액션 처리:
  *   1. updateMemberStatusTag: 회원의 상태(유효/휴면) 및 태그 변경
  *   2. updateMemberGuidelineRoutine: 운동/식단 수정 제안 지침 및 현재 제안 루틴/식단 저장
- *   3. updateGuidelines: 5대 지침서 저장/업데이트
- *   4. updateFeedbackComment: 특정 날짜 피드백 코멘트 저장
- *   5. generateWorkoutRoutine: AI 운동 루틴 생성 (지침서 + 수정제안지침 최우선 반영)
- *   6. generateDietPlan: AI 식단 생성 (지침서 + 수정제안지침 최우선 반영)
- *   7. generateDailyFeedback: AI 데일리 피드백 초안 (요약·잘한 점·개선할 점·코치 한마디·코치 확인 필요)
- *   - buildAiPrompt: 코치 브라우저 직통 스트리밍용 프롬프트만 조립해 반환 (workout/diet/daily)
- *   8. generateComprehensiveFeedback: AI 기간별 종합 피드백 요약 및 자립 방안 생성
+ *   3. updateGuidelines: 지침서(코칭 철학·운동·식단) 저장/업데이트
+ *   4. generateWorkoutRoutine: AI 운동 루틴 생성 (지침서 + 수정제안지침 최우선 반영)
+ *   5. generateDietPlan: AI 식단 생성 (지침서 + 수정제안지침 최우선 반영)
+ *   - buildAiPrompt: 코치 브라우저 직통 스트리밍용 프롬프트만 조립해 반환 (workout/diet)
  */
 function doPost(e) {
   try {
@@ -179,7 +175,7 @@ function doPost(e) {
     if (action === 'memberRevertPlan') {
       return handleMemberRevertPlan(ss, payload);
     }
-    // [회원 마이페이지] 날짜별 아침 공복 체중만 입력/수정/삭제 (회원 토큰 필수, 본인 피드백 행만 기록)
+    // [회원 마이페이지] 날짜별 아침 공복 체중 입력/수정/삭제 (회원 토큰 필수, WeightLog의 본인 회원번호 행만 기록)
     if (action === 'memberSaveWeight') {
       return withMembersWriteLock(() => handleMemberSaveWeight(ss, payload));
     }
@@ -211,34 +207,19 @@ function doPost(e) {
       return withMembersWriteLock(() => handleUpdateMemberGuidelineRoutine(ss, payload));
     }
 
-    // 3. 5대 지침서(Guidelines) 업데이트
+    // 3. 지침서(Guidelines) 업데이트
     if (action === 'updateGuidelines') {
       return handleUpdateGuidelines(ss, payload);
     }
 
-    // 4. 피드백 코멘트 저장
-    if (action === 'updateFeedbackComment') {
-      return withMembersWriteLock(() => handleUpdateFeedbackComment(ss, payload));
-    }
-
-    // 5. [AI] 운동 루틴 생성
+    // 4. [AI] 운동 루틴 생성
     if (action === 'generateWorkoutRoutine') {
       return handleAiWorkoutRoutine(ss, payload);
     }
 
-    // 6. [AI] 식단 계획 생성
+    // 5. [AI] 식단 계획 생성
     if (action === 'generateDietPlan') {
       return handleAiDietPlan(ss, payload);
-    }
-
-    // 7. [AI] 데일리 피드백 도출 (체중 추이 분석 + 근거 기반 수정 제안 도출)
-    if (action === 'generateDailyFeedback') {
-      return handleAiDailyFeedback(ss, payload);
-    }
-
-    // 8. [AI] 종합 피드백 생성
-    if (action === 'generateComprehensiveFeedback') {
-      return handleAiComprehensiveFeedback(ss, payload);
     }
 
     return createJsonResponse({ status: 'error', message: '지원하지 않는 action입니다: ' + action });
@@ -417,7 +398,6 @@ function getOrAddColumn(sheet, colMap, standardHeaderName, candidateNames) {
   return col;
 }
 
-
 /**
  * 시트 데이터를 객체 배열로 반환
  * [핵심 보강] 원본 헤더 키(headers[j])와 함께 모든 공백이 제거된 정규화 키(headers[j].replace(/\s+/g, ''))를
@@ -502,7 +482,8 @@ function getGasField(obj, candidateKeys) {
  * Guidelines 시트 데이터 반환
  * [초강력 지능형 스캐너 - 본문 오매칭 원천 차단]
  * - 1행: '지침' 열과 '내용' 열 구조 완벽 지원
- * - 지침 항목 5개: '코칭 철학', '운동 제안 지침', '식단 제안 지침', '피드백 지침(데일리 피드백 지침)', '동기부여 지침'
+ * - 반환 지침 3개: '코칭 철학', '운동 제안 지침', '식단 제안 지침'
+ *   (예전 '피드백 지침'·'동기부여 지침' 행은 다른 지침으로 잘못 읽히지 않도록 판별만 하고 반환하지 않음)
  * - 핵심 방어: 본문 내용 셀(25자 초과)이 지침명으로 오인되는 버그 원천 차단
  * - 제목 열(titleCol)을 먼저 특정하여 해당 열의 지침명만 판별하므로 단어 중첩 100% 방지!
  */
@@ -510,9 +491,7 @@ function getGuidelinesData(sheet) {
   const guidelines = {
     philosophy: '', // 코칭 철학
     exercise: '',   // 운동 제안 지침
-    diet: '',       // 식단 제안 지침
-    feedback: '',   // 피드백 지침
-    motivation: ''  // 동기부여 지침
+    diet: ''        // 식단 제안 지침
   };
 
   if (!sheet) return guidelines;
@@ -626,28 +605,7 @@ function getGuidelinesData(sheet) {
     }
   }
 
-  // 5. [★핵심 2중 안전망] 만약 motivation 값이 '데일리 피드백 지침' 등 다른 지침 제목인 경우 즉시 자동 교정
-  const invalidTitles = ['데일리 피드백 지침', '데일리피드백지침', '피드백 지침', '피드백지침', '피드백지침서'];
-  if (invalidTitles.includes(guidelines.motivation.trim())) {
-    guidelines.motivation = '';
-    // 시트에서 '동기부여' 공식 행을 다시 엄격하게 스캔
-    for (let r = 0; r < values.length; r++) {
-      const rawTitle = String(values[r][titleCol - 1] || '').trim().replace(/\s+/g, '').toLowerCase();
-      if (rawTitle === '동기부여지침' || rawTitle === '동기부여지침서' || rawTitle === '동기부여' || rawTitle.includes('동기부여')) {
-        const actualContent = String(values[r][contentCol - 1] || '').trim();
-        if (actualContent && !invalidTitles.includes(actualContent)) {
-          guidelines.motivation = actualContent;
-          break;
-        }
-      }
-    }
-    // 시트에도 잘못 덮어씌워져 내용이 비어있는 경우 표준 동기부여 가이드 적용
-    if (!guidelines.motivation) {
-      guidelines.motivation = '회원이 슬럼프나 과식을 겪었을 때 자책하지 않도록 깊이 공감합니다. "한 끼의 실수가 4주의 실패는 아니다"라는 마인드셋을 심어주며 다음 끼니에서 자연스럽게 복귀하도록 격려합니다.';
-    }
-  }
-
-  return guidelines;
+  return { philosophy: guidelines.philosophy, exercise: guidelines.exercise, diet: guidelines.diet };
 }
 
 /**
@@ -768,9 +726,9 @@ function handleUpdateMemberGuidelineRoutine(ss, payload) {
 }
 
 /**
- * 3. 5대 지침서(Guidelines) 시트 업데이트
+ * 3. 지침서(Guidelines) 시트 업데이트
  * [초강력 지능형 저장 엔진]
- * - 기존 시트에서 각 지침 항목('코칭 철학', '운동 제안 지침', '식단 제안 지침', '피드백 지침', '동기부여 지침')의 
+ * - 기존 시트에서 각 지침 항목('코칭 철학', '운동 제안 지침', '식단 제안 지침')의 
  *   행을 정확히 찾아 해당 '내용' 셀에 안전하게 덮어씁니다.
  * - 시트에 없는 항목은 '지침', '내용' 열 구조에 맞춰 자동으로 추가합니다.
  */
@@ -782,7 +740,7 @@ function handleUpdateGuidelines(ss, payload) {
     sheet = ss.insertSheet('Guidelines');
   }
 
-  const guidelines = payload.guidelines; // { philosophy, exercise, diet, feedback, motivation }
+  const guidelines = payload.guidelines; // { philosophy, exercise, diet }
   if (!guidelines) {
     return createJsonResponse({ status: 'error', message: 'guidelines 데이터가 없습니다.' });
   }
@@ -803,16 +761,15 @@ function handleUpdateGuidelines(ss, payload) {
   const values = lastRow > 0 ? sheet.getRange(1, 1, lastRow, lastCol).getValues() : [];
   const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
 
-  // 저장 대상 5대 지침 공식 정의
+  // 저장 대상 지침 공식 정의 (보내지 않은 항목은 시트 값을 건드리지 않음)
   const targets = [
     { key: 'philosophy', officialTitle: '코칭 철학', matchKws: ['철학'], content: guidelines.philosophy },
-    { key: 'motivation', officialTitle: '동기부여 지침', matchKws: ['동기'], content: guidelines.motivation }, // 동기부여 우선 매칭
     { key: 'exercise', officialTitle: '운동 제안 지침', matchKws: ['운동'], content: guidelines.exercise },
-    { key: 'diet', officialTitle: '식단 제안 지침', matchKws: ['식단', '식사', '영양'], content: guidelines.diet },
-    { key: 'feedback', officialTitle: '피드백 지침', matchKws: ['피드백'], content: guidelines.feedback }
+    { key: 'diet', officialTitle: '식단 제안 지침', matchKws: ['식단', '식사', '영양'], content: guidelines.diet }
   ];
 
   targets.forEach(target => {
+    if (target.content === undefined) return;
     let found = false;
 
     // 1. 기존 행에서 매칭되는 지침 항목 탐색
@@ -824,14 +781,10 @@ function handleUpdateGuidelines(ss, payload) {
       let isMatch = false;
       if (target.key === 'exercise') {
         isMatch = (cleanCellTitle === '운동제안지침' || cleanCellTitle === '운동제안지침서' || cleanCellTitle === '운동지침' || (cleanCellTitle.includes('운동') && !cleanCellTitle.includes('동기')));
-      } else if (target.key === 'motivation') {
-        isMatch = (cleanCellTitle === '동기부여지침' || cleanCellTitle === '동기부여지침서' || cleanCellTitle === '동기부여' || cleanCellTitle.includes('동기부여'));
       } else if (target.key === 'diet') {
         isMatch = (cleanCellTitle === '식단제안지침' || cleanCellTitle === '식단제안지침서' || cleanCellTitle === '식단지침' || cleanCellTitle.includes('식단') || cleanCellTitle.includes('식사') || cleanCellTitle.includes('영양'));
       } else if (target.key === 'philosophy') {
         isMatch = (cleanCellTitle === '코칭철학' || cleanCellTitle.includes('철학'));
-      } else if (target.key === 'feedback') {
-        isMatch = (cleanCellTitle === '피드백지침' || cleanCellTitle === '피드백지침서' || cleanCellTitle === '데일리피드백지침' || cleanCellTitle.includes('피드백'));
       }
 
       if (isMatch) {
@@ -863,123 +816,8 @@ function handleUpdateGuidelines(ss, payload) {
 
   return createJsonResponse({
     status: 'success',
-    message: '5대 코칭 지침서가 구글 시트에 안전하게 저장되었습니다.',
+    message: '코칭 지침서가 구글 시트에 안전하게 저장되었습니다.',
     updatedAt: nowStr
-  });
-}
-
-/**
- * 4. 데일리 피드백 코멘트 저장
- */
-function handleUpdateFeedbackComment(ss, payload) {
-  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet) return createJsonResponse({ status: 'error', message: 'Feedbacks 시트를 찾을 수 없습니다.' });
-
-  const memberName = String(payload.memberName || payload.name || '').trim();
-  const dateStr = String(payload.date || '').trim();
-  const comment = payload.comment || '';
-  const reqRow = parseInt(payload.rowNumber || payload._rowNumber, 10);
-
-  const colMap = getHeaderColumnMap(sheet);
-
-  // [정확 매칭 원칙] 피드백 행의 이름(앞뒤 공백 제외)이 회원 이름과 완전히 같고,
-  // 회원이 폼에 입력한 '오늘 날짜'(없으면 타임스탬프 날짜)가 저장 대상 날짜와 같은 행에만 기록
-  // - 부분 일치/날짜 불일치 시 '최신 행'으로 대신 저장하던 방식은 다른 날짜·다른 회원 오기록 위험으로 제거
-  const targetDate = standardizeFeedbackDate(dateStr);
-  if (!memberName || !targetDate) {
-    return createJsonResponse({ status: 'error', code: 'bad_request', message: '회원 이름 또는 피드백 날짜가 없어 저장할 수 없습니다.' });
-  }
-  const rows = getSheetDataWithHeaders(sheet);
-  const isTargetRow = (r) => getFeedbackRowName(r) === memberName && getFeedbackRowDate(r) === targetDate;
-
-  let targetRow = -1;
-  // 1순위: 화면에서 전달된 행 번호가 여전히 같은 회원·같은 날짜인 경우 (같은 날 2회 제출도 정확히 구분)
-  if (reqRow) {
-    const r = rows.find(x => x._rowNumber === reqRow);
-    if (r && isTargetRow(r)) targetRow = reqRow;
-  }
-  // 2순위: 행 번호가 바뀐 경우(시트 정렬 등) 이름+날짜가 정확히 일치하는 유일한 행
-  if (targetRow === -1) {
-    const matches = rows.filter(isTargetRow);
-    if (matches.length === 1) {
-      targetRow = matches[0]._rowNumber;
-    } else if (matches.length > 1) {
-      return createJsonResponse({
-        status: 'error',
-        code: 'duplicate_feedback',
-        message: `'${memberName}' 회원의 ${targetDate} 피드백이 ${matches.length}건(행 ${matches.map(m => m._rowNumber).join(', ')}) 있어 어느 행인지 확정할 수 없습니다. 새로고침 후 해당 행에서 다시 저장해 주세요.`
-      });
-    }
-  }
-
-  if (targetRow === -1) {
-    return createJsonResponse({
-      status: 'error',
-      code: 'not_found',
-      message: `'${memberName}' 회원(이름 완전 일치)의 ${targetDate} 일자 피드백 행을 찾을 수 없어 저장하지 않았습니다. 시트의 이름·오늘 날짜를 확인해 주세요.`
-    });
-  }
-
-  // 0. 회원용 칸(잘한 점·개선할 점·코치 한마디)과 코치 확인 필요 저장 (이름 정확 일치 열만, 빈 값도 그대로 저장)
-  const hasMemberParts = FEEDBACK_MEMBER_PARTS.some(p => payload[p.key] !== undefined);
-  FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => {
-    writeFeedbackPart(sheet, colMap, targetRow, p, payload[p.key]);
-  });
-
-  // 1. [방어 로직] 피드백 코멘트 저장 (회원용 칸이 전달되면 서버가 합쳐서 회원용 최종본 생성)
-  const finalComment = hasMemberParts
-    ? composeMemberFeedbackComment(payload[FEEDBACK_MEMBER_PARTS[0].key], payload[FEEDBACK_MEMBER_PARTS[1].key], payload[FEEDBACK_MEMBER_PARTS[2].key])
-    : comment;
-  if (finalComment || hasMemberParts) {
-    const commentCol = getOrAddColumn(sheet, colMap, '피드백 코멘트', [
-      '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용',
-      '코치 피드백', '코치피드백', '코칭 코멘트', '코칭코멘트',
-      '코치 코멘트', '코치코멘트', '코칭 내용', '코칭내용',
-      '코치답변', '코치 답변', '답변', 'feedbackComment', 'coachComment'
-    ]);
-    sheet.getRange(targetRow, commentCol).setValue(finalComment);
-  }
-
-  // 2. [방어 로직] 운동_실행률_점수 저장 (열이 없으면 시트 마지막에 자동 추가)
-  const exScoreVal = payload.운동_실행률_점수 !== undefined ? payload.운동_실행률_점수 : payload.exerciseScore;
-  if (exScoreVal !== undefined && exScoreVal !== null && exScoreVal !== '') {
-    const exScoreCol = getOrAddColumn(sheet, colMap, '운동_실행률_점수', [
-      '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
-    ]);
-    sheet.getRange(targetRow, exScoreCol).setValue(exScoreVal);
-  }
-
-  // 3. [방어 로직] 식단_실행률_점수 저장 (열이 없으면 시트 마지막에 자동 추가)
-  const dietScoreVal = payload.식단_실행률_점수 !== undefined ? payload.식단_실행률_점수 : payload.dietScore;
-  if (dietScoreVal !== undefined && dietScoreVal !== null && dietScoreVal !== '') {
-    const dietScoreCol = getOrAddColumn(sheet, colMap, '식단_실행률_점수', [
-      '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
-    ]);
-    sheet.getRange(targetRow, dietScoreCol).setValue(dietScoreVal);
-  }
-
-  // 4. [방어 로직] 피드백_요약 저장 (열이 없으면 시트 마지막에 자동 추가)
-  const summaryVal = payload.피드백_요약 !== undefined ? payload.피드백_요약 : (payload.feedbackSummary || payload.summary || '');
-  if (summaryVal) {
-    const summaryCol = getOrAddColumn(sheet, colMap, '피드백_요약', [
-      '피드백_요약', '피드백 요약', '피드백요약', '요약', 'feedbackSummary', 'summary'
-    ]);
-    sheet.getRange(targetRow, summaryCol).setValue(summaryVal);
-  }
-
-  // (문제점_분석·운동/식단 수정 제안·보완점_및_개선방안은 더 이상 저장하지 않음 - 이전 화면이 보내도 무시)
-
-  // 7. [방어 로직] 피드백 상태 컬럼 자동 업데이트 (열이 없으면 시트 마지막에 자동 추가)
-  const statusCol = getOrAddColumn(sheet, colMap, '피드백 상태', [
-    '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
-  ]);
-  sheet.getRange(targetRow, statusCol).setValue('완료');
-
-  return createJsonResponse({
-    status: 'success',
-    targetRow: targetRow,
-    comment: finalComment,
-    message: `${dateStr} 일자의 피드백 코멘트가 시트 ${targetRow}행에 성공적으로 저장되었습니다.`
   });
 }
 
@@ -1151,7 +989,7 @@ function diagnoseGeminiLatency() {
 
 /**
  * [Google 공식 권장 초고속 Flash 클러스터 직행] Gemini API 호출 엔진
- * - options.maxOutputTokens: 최대 출력 토큰 (기본 4096, 데일리 피드백은 DAILY_FEEDBACK_MAX_OUTPUT_TOKENS)
+ * - options.maxOutputTokens: 최대 출력 토큰 (기본 4096)
  */
 function callGemini(prompt, systemInstruction, payload, options) {
   const startGasTime = new Date().getTime();
@@ -1616,609 +1454,22 @@ function buildAiFailureResponse(debug, fallbackReason) {
   };
 }
 
-/**
- * 점수 값 정규화: 숫자면 0~5 범위로, 비어 있거나 숫자가 아니면 빈 문자열 (기본값 추정 금지)
- */
-function normalizeScoreValue(raw) {
-  if (raw === '' || raw === null || raw === undefined) return '';
-  const n = parseFloat(raw);
-  return isNaN(n) ? '' : Math.max(0, Math.min(5, n));
-}
-
-/**
- * ==============================================================================
- * [점수 계산 - AI가 아니라 코드가 계산] 폼 답변 -> 운동_실행률_점수 / 식단_실행률_점수
- * - 운동 점수 = (시간 점수 + 강도 점수) / 2
- *   · 시간: ~30분 1 / 30~40분 2 / 40~50분 3 / 50~60분 4 / 60분 이상 5
- *   · 강도(1~10 직접 입력): 1~3 → 1 / 4~5 → 2 / 6~7 → 3 / 8 → 4 / 9~10 → 5
- *   · '오늘 운동 하셨나요?'가 '아니오'면 0점, '오늘은 계획된 쉬는 날이에요'면 빈칸
- * - 식단 점수 = '식단 대비 수행률(5점 만점)' 답변 숫자 그대로 (0~5 밖이면 빈칸)
- * - 해석하지 못한 답변은 추측하지 않고 빈칸 + 사유(warnings)
- * ==============================================================================
- */
-const SCORE_ANSWER_KEYS = {
-  didExercise: { inc: ['운동', '하셨'], exc: ['시간', '강도', '점수', '실행률', '내용', '힘들', '궁금'] },
-  minutes: { inc: ['운동', '시간'], exc: ['점수', '실행률'] },
-  intensity: { inc: ['운동', '강도'], exc: ['점수', '실행률'] },
-  diet: { inc: ['식단', '수행률'], exc: ['점수', '실행률'] }
-};
-const EXERCISE_SCORE_HEADERS = ['운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동 점수', '운동점수', 'exerciseScore'];
-const DIET_SCORE_HEADERS = ['식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단 점수', '식단점수', 'dietScore'];
-
-function getScoreAnswer(feedback, kind) {
-  const spec = SCORE_ANSWER_KEYS[kind];
-  const val = memberViewFindVal(feedback || {}, spec.inc, spec.exc);
-  return (val === null || val === undefined) ? '' : String(val).trim();
-}
-
-// 운동 시간 답변 -> 1~5 (예: '~30 분', '30분 ~ 40분', '60분 이상', '45분', '1시간'), 해석 불가 시 null
-function scoreExerciseMinutes(raw) {
-  const s = String(raw === null || raw === undefined ? '' : raw).replace(/\s+/g, '');
-  if (!s) return null;
-  const nums = [];
-  const re = /(\d+(?:\.\d+)?)(시간|분)?/g;
-  let m;
-  while ((m = re.exec(s)) !== null) nums.push({ n: parseFloat(m[1]), unit: m[2] || '' });
-  if (nums.length === 0 || nums.length > 2) return null;
-  // 단위가 없는 앞 숫자는 뒤 숫자의 단위를 따름 (예: '30~40분'), 모두 없으면 분
-  const lastUnit = nums[nums.length - 1].unit || '분';
-  const minutes = nums.map(x => (x.unit || lastUnit) === '시간' ? x.n * 60 : x.n);
-  const bucket = (min) => min < 30 ? 1 : min < 40 ? 2 : min < 50 ? 3 : min < 60 ? 4 : 5;
-  // '~30분'·'30분 미만/이하'는 상한값 바로 아래 구간, 범위는 하한값 구간, 단일 값·'이상'은 그 값의 구간
-  const isUpperOnly = nums.length === 1 && (/^~/.test(s) || /미만|이하/.test(s));
-  return bucket(isUpperOnly ? minutes[0] - 0.001 : minutes[0]);
-}
-
-// 운동 강도(1~10 직접 입력) -> 1~5, 해석 불가 시 null (예: '7', '7점', '7/10' 허용, '6~7' 등 숫자 2개 이상은 불가)
-function scoreExerciseIntensity(raw) {
-  const s = String(raw === null || raw === undefined ? '' : raw).replace(/\s+/g, '').replace(/\/10(?:점)?$/, '');
-  const nums = s.match(/\d+(?:\.\d+)?/g);
-  if (!nums || nums.length !== 1) return null;
-  const n = parseFloat(nums[0]);
-  if (!(n > 0 && n <= 10)) return null;
-  return n <= 3 ? 1 : n <= 5 ? 2 : n <= 7 ? 3 : n <= 8 ? 4 : 5;
-}
-
-// 식단 수행률(5점 만점) -> 0~5, 해석 불가·범위 밖이면 null (예: '3.7', '4점', '4/5' 허용)
-function scoreDietAnswer(raw) {
-  const s = String(raw === null || raw === undefined ? '' : raw).replace(/\s+/g, '').replace(/\/5(?:점)?$/, '');
-  const nums = s.match(/\d+(?:\.\d+)?/g);
-  if (!nums || nums.length !== 1) return null;
-  const n = parseFloat(nums[0]);
-  return (n >= 0 && n <= 5) ? n : null;
-}
-
-/**
- * 폼 답변으로 두 점수 계산 (시트 저장값은 보지 않음)
- * @return {{exercise: number|'', diet: number|'', detail: {exerciseStatus: string, timeScore: number|null, intensityScore: number|null, warnings: string[]}}}
- */
-function computeFeedbackScores(feedback) {
-  const detail = { exerciseStatus: '', timeScore: null, intensityScore: null, warnings: [] };
-  let exercise = '';
-
-  const did = getScoreAnswer(feedback, 'didExercise').replace(/\s+/g, '');
-  if (did.includes('쉬는')) {
-    detail.exerciseStatus = 'rest';
-  } else if (/^(아니|안했|no)/i.test(did)) {
-    detail.exerciseStatus = 'no';
-    exercise = 0;
-  } else {
-    detail.exerciseStatus = did ? 'yes' : 'unknown';
-    const minutesRaw = getScoreAnswer(feedback, 'minutes');
-    const intensityRaw = getScoreAnswer(feedback, 'intensity');
-    detail.timeScore = scoreExerciseMinutes(minutesRaw);
-    detail.intensityScore = scoreExerciseIntensity(intensityRaw);
-    if (detail.timeScore === null) detail.warnings.push(`운동 시간 답변 해석 불가: '${minutesRaw}'`);
-    if (detail.intensityScore === null) detail.warnings.push(`운동 강도 답변 해석 불가: '${intensityRaw}'`);
-    if (detail.timeScore !== null && detail.intensityScore !== null) {
-      exercise = (detail.timeScore + detail.intensityScore) / 2;
-    }
-  }
-
-  const dietRaw = getScoreAnswer(feedback, 'diet');
-  const dietScore = scoreDietAnswer(dietRaw);
-  if (dietScore === null) detail.warnings.push(`식단 수행률 답변 해석 불가: '${dietRaw}'`);
-
-  return { exercise: exercise, diet: dietScore === null ? '' : dietScore, detail: detail };
-}
-
-/**
- * 피드백에 쓸 최종 점수: 시트에 저장된 점수(코치 수정값 포함)가 있으면 그 값, 없으면 computeFeedbackScores 계산값
- */
-function resolveFeedbackScores(feedback) {
-  const computed = computeFeedbackScores(feedback);
-  const storedEx = normalizeScoreValue(getGasField(feedback || {}, EXERCISE_SCORE_HEADERS));
-  const storedDiet = normalizeScoreValue(getGasField(feedback || {}, DIET_SCORE_HEADERS));
-  return {
-    exercise: storedEx !== '' ? storedEx : computed.exercise,
-    diet: storedDiet !== '' ? storedDiet : computed.diet,
-    exerciseFromSheet: storedEx !== '',
-    dietFromSheet: storedDiet !== '',
-    detail: computed.detail
-  };
-}
-
-// 프롬프트용 점수 문장 (확정값)
-function describeScoresForPrompt(scores) {
-  const d = scores.detail || {};
-  let ex;
-  if (scores.exercise === '') {
-    ex = d.exerciseStatus === 'rest' ? '해당 없음 (오늘은 계획된 쉬는 날)' : '기록 없음';
-  } else if (!scores.exerciseFromSheet && d.exerciseStatus === 'no') {
-    ex = '0점 (오늘 운동하지 않음)';
-  } else if (!scores.exerciseFromSheet && d.timeScore !== null && d.intensityScore !== null) {
-    ex = `${scores.exercise}점 (운동 시간 ${d.timeScore}점 + 운동 강도 ${d.intensityScore}점의 평균, 5점 만점)`;
-  } else {
-    ex = `${scores.exercise}점 (5점 만점)`;
-  }
-  const diet = scores.diet === '' ? '기록 없음' : `${scores.diet}점 (5점 만점)`;
-  return `- 운동 점수: ${ex}\n- 식단 점수: ${diet}`;
-}
-
-/**
- * ==============================================================================
- * [데일리 피드백 출력 칸] 회원용(잘한 점·개선할 점·코치 한마디) / 코치 전용(코치 확인 필요)
- * - 열은 이름 정확 일치(공백·밑줄 무시)로만 찾음 (폼 질문 열 오기록 방지)
- * - '코치 한마디'는 이름 변경 전 열 '보완점_및_개선방안'도 같은 열로 인정
- * ==============================================================================
- */
-const FEEDBACK_MEMBER_PARTS = [
-  { key: '잘한_점', header: '잘한 점', aliases: [] },
-  { key: '개선할_점', header: '개선할 점', aliases: [] },
-  { key: '코치_한마디', header: '코치 한마디', aliases: ['보완점_및_개선방안'] }
-];
-const FEEDBACK_COACH_CHECK = { key: '코치_확인_필요', header: '코치 확인 필요', aliases: [] };
-
 function normalizeHeaderName(name) {
   return String(name === null || name === undefined ? '' : name).replace(/[\s_]+/g, '').toLowerCase();
 }
 
-function findFeedbackPartColumn(colMap, part) {
-  const wanted = [part.header].concat(part.aliases).map(normalizeHeaderName);
-  for (let i = 0; i < wanted.length; i++) {
-    const key = Object.keys(colMap).find(k => normalizeHeaderName(k) === wanted[i]);
-    if (key) return colMap[key];
-  }
-  return null;
-}
-
-function getFeedbackPart(fb, part) {
-  if (!fb || typeof fb !== 'object') return '';
-  const wanted = [part.header].concat(part.aliases).map(normalizeHeaderName);
-  const keys = Object.keys(fb);
-  for (let i = 0; i < wanted.length; i++) {
-    for (let j = 0; j < keys.length; j++) {
-      if (normalizeHeaderName(keys[j]) !== wanted[i]) continue;
-      const v = fb[keys[j]];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-    }
-  }
-  return '';
-}
-
-// 값이 undefined면 건너뜀, 빈 값은 열이 있을 때만 기록 (빈 값 때문에 새 열을 만들지 않음)
-function writeFeedbackPart(sheet, colMap, row, part, value) {
-  if (value === undefined) return;
-  const val = value === null ? '' : String(value);
-  let col = findFeedbackPartColumn(colMap, part);
-  if (!col) {
-    if (!val.trim()) return;
-    col = getOrAddExactColumn(sheet, colMap, part.header);
-  }
-  sheet.getRange(row, col).setValue(val);
-}
-
-// 회원용 최종본 = [잘한 점] + [개선할 점] + [코치 한마디] (빈 칸은 제목째 생략) - app.js composeMemberFeedbackComment와 동일 형식
-function composeMemberFeedbackComment(good, improve, note) {
-  return [['잘한 점', good], ['개선할 점', improve], ['코치 한마디', note]]
-    .map(([title, v]) => [title, String(v === null || v === undefined ? '' : v).trim()])
-    .filter(([, v]) => v)
-    .map(([title, v]) => `[${title}]\n${v}`)
-    .join('\n\n');
-}
-
-/**
- * 데일리 피드백 프롬프트의 [공복 체중 기록]: 그 회원의 모든 공복 체중 기록 중 오늘(현재 피드백 날짜)까지
- * (지난 날짜 피드백을 다시 만들 때 그 이후 기록이 섞이지 않도록 오늘 이후는 제외)
- */
-function selectWeightHistoryForPrompt(currentFeedback, feedbacks) {
-  const cur = currentFeedback || {};
-  const curDate = getFeedbackRowDate(cur);
-  const curRow = cur._rowNumber || cur.rowNumber;
-  const weightOf = (f) => {
-    const w = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
-    return (w === '' || w === null || w === undefined) ? '' : String(w).trim();
-  };
-  const entries = (Array.isArray(feedbacks) ? feedbacks : [])
-    .filter(f => f !== cur && !(curRow && (f._rowNumber || f.rowNumber) === curRow))
-    .map(f => ({ date: getFeedbackRowDate(f), weight: weightOf(f), isToday: false }))
-    .filter(x => x.date && x.weight && (!curDate || x.date <= curDate));
-  if (weightOf(cur)) entries.push({ date: curDate || '오늘', weight: weightOf(cur), isToday: true });
-  return entries.sort((a, b) => a.date.localeCompare(b.date));
-}
-
-/**
- * [최근 코치 피드백 예시] 피드백 상태가 '완료'인 최근 피드백 코멘트 (회원 구분 없이 최신순)
- * - 말투 참고용. 예시 속 해당 회원 이름은 '회원님'으로 가림
- */
-const STYLE_EXAMPLE_COUNT = 10;
-const STYLE_EXAMPLE_MAX_CHARS = 1500;
-
-function selectStyleExamplesForPrompt(feedbacks, currentFeedback) {
-  const curRow = currentFeedback && (currentFeedback._rowNumber || currentFeedback.rowNumber);
-  const statusOf = (f) => String(getFeedbackPart(f, { header: '피드백 상태', aliases: ['완료 여부', '진행상태'] }) || '').trim();
-  const commentOf = (f) => getFeedbackPart(f, { header: '피드백 코멘트', aliases: [] });
-  return (Array.isArray(feedbacks) ? feedbacks : [])
-    .filter(f => statusOf(f) === '완료' && commentOf(f) && !(curRow && (f._rowNumber || f.rowNumber) === curRow))
-    .map(f => ({ f: f, date: getFeedbackRowDate(f), row: f._rowNumber || f.rowNumber || 0 }))
-    .sort((a, b) => (b.date || '').localeCompare(a.date || '') || b.row - a.row)
-    .slice(0, STYLE_EXAMPLE_COUNT)
-    .map(x => {
-      let text = commentOf(x.f);
-      const name = getFeedbackRowName(x.f);
-      if (name && name.length >= 2) text = text.split(name).join('회원님');
-      return text.length > STYLE_EXAMPLE_MAX_CHARS ? text.slice(0, STYLE_EXAMPLE_MAX_CHARS) + '…' : text;
-    });
-}
-
-// Feedbacks 시트에서 말투 예시 읽기 (시트를 못 읽으면 예시 없이 진행)
-function loadStyleExamplesFromSheet(ss, currentFeedback) {
-  try {
-    if (!ss) return [];
-    const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-    return selectStyleExamplesForPrompt(getSheetDataWithHeaders(sheet), currentFeedback);
-  } catch (e) {
-    Logger.log('[말투 예시 읽기 실패] ' + e.toString());
-    return [];
-  }
-}
-
-// 데일리 피드백 프롬프트의 [참여자 정보]에서 뺄 회원 열 (현재 처방은 따로, 셀프 수정 이력·코치 수정 지침은 제외)
-function isMemberKeyExcludedFromDailyProfile(key) {
-  const k = normalizeHeaderName(key);
-  const planHeaders = [];
-  Object.keys(MEMBER_PLAN_FIELDS).forEach(kind => {
-    const f = MEMBER_PLAN_FIELDS[kind];
-    planHeaders.push(f.current, f.request, f.previous, f.changedAt, f.note);
-  });
-  if (planHeaders.some(h => normalizeHeaderName(h) === k)) return true;
-  return k.includes('수정제안지침') || k.includes('수정지침');
-}
-
-// 오늘 기록에서 뺄 열 (코치·AI가 쓰는 칸과 점수 칸 - 점수는 [오늘 점수]로 따로 전달)
-const DAILY_FEEDBACK_EXCLUDED_HEADERS = [
-  '피드백 코멘트', '피드백 내용', '코치 피드백', '코치 코멘트', '피드백_요약', '피드백 상태', 'AI초안_생성일시',
-  '잘한 점', '개선할 점', '코치 한마디', '코치 확인 필요', '보완점_및_개선방안', '문제점_분석', '운동_수정_제안', '식단_수정_제안',
-  '운동_실행률_점수', '식단_실행률_점수'
-].map(normalizeHeaderName);
-
-const DAILY_FEEDBACK_MAX_OUTPUT_TOKENS = 8192;
-
-/**
- * [프롬프트 단일 출처] 데일리 피드백 프롬프트 - 코치 대시보드(직통/GAS)·폼 제출 트리거 공통
- * - 작성 규칙(분량·말투·쓸 내용)은 코드에 두지 않고 Guidelines 시트의 '데일리 피드백 지침'을 따름
- * - memberFeedbacks: 해당 회원의 피드백 목록 (공복 체중 기록만 사용)
- * - styleExamples: selectStyleExamplesForPrompt 결과 (말투 참고용)
- * - options.onlyKeys: 출력 JSON 항목 제한 (기존 피드백 보충 시 ['잘한_점', '개선할_점'])
- * - options.existingNote: 이미 작성되어 그대로 유지되는 코치 한마디 (참고용으로 전달)
- * @return {{prompt: string, systemInstruction: string, scores: {exercise, diet}}}
- */
-const DAILY_FEEDBACK_OUTPUT_FIELDS = [
-  ['피드백_요약', '코치만 보는 칸: 오늘 기록의 요약'],
-  ['잘한_점', '회원에게 보이는 칸'],
-  ['개선할_점', '회원에게 보이는 칸'],
-  ['코치_한마디', '회원에게 보이는 칸'],
-  ['코치_확인_필요', '코치만 보는 칸: 코치가 직접 확인해야 할 사항. 없으면 빈 문자열']
-];
-
-function buildDailyFeedbackPrompt(member, feedback, memberFeedbacks, guidelines, styleExamples, options) {
-  const opts = options || {};
-  const currentFeedback = feedback || {};
-  const m = member || {};
-  const feedbackGuideline = String((guidelines && guidelines.feedback) || '').trim();
-  // [점수는 코드가 계산] 시트 저장값 우선, 없으면 폼 답변으로 계산 (AI에게는 확정값으로만 전달)
-  const scores = resolveFeedbackScores(currentFeedback);
-
-  const profile = {};
-  Object.keys(m).forEach(k => {
-    if (!isMemberKeyExcludedFromDailyProfile(k)) profile[k] = m[k];
-  });
-  const currentRoutine = String(getFeedbackPart(m, { header: MEMBER_PLAN_FIELDS.exercise.current, aliases: [] }) || '').trim();
-  const currentDiet = String(getFeedbackPart(m, { header: MEMBER_PLAN_FIELDS.diet.current, aliases: [] }) || '').trim();
-
-  const todayRecord = {};
-  Object.keys(currentFeedback).forEach(k => {
-    if (!DAILY_FEEDBACK_EXCLUDED_HEADERS.includes(normalizeHeaderName(k))) todayRecord[k] = currentFeedback[k];
-  });
-
-  const weightLines = selectWeightHistoryForPrompt(currentFeedback, memberFeedbacks)
-    .map(x => `- ${x.date}: ${x.weight}kg${x.isToday ? ' (오늘)' : ''}`).join('\n') || '- 기록 없음';
-
-  const examples = (Array.isArray(styleExamples) ? styleExamples : []).filter(Boolean);
-  const exampleBlock = examples.length > 0 ? `
-[최근 코치 피드백 예시 (다른 회원 포함, 최신순)]
-※ 아래 예시는 코치의 말투와 문체만 참고하십시오. 예시의 내용(사실·수치·조언)은 절대 가져오지 마십시오.
-${examples.map((t, i) => `<예시 ${i + 1}>\n${t}`).join('\n\n')}
-` : '';
-  const guidelineBlock = feedbackGuideline ? `
-[데일리 피드백 지침 (작성 규칙 - 분량·말투·쓸 내용은 이 지침을 따름)]
-${feedbackGuideline}
-` : '';
-  const existingNote = String(opts.existingNote || '').trim();
-  const existingNoteBlock = existingNote ? `
-[이미 회원에게 보낸 코치 한마디 (그대로 유지 - 다시 쓰지 않음)]
-${existingNote}
-※ 아래 항목은 이 코치 한마디와 내용이 겹치거나 어긋나지 않게 작성하십시오.
-` : '';
-  const outputFields = Array.isArray(opts.onlyKeys)
-    ? DAILY_FEEDBACK_OUTPUT_FIELDS.filter(([k]) => opts.onlyKeys.includes(k))
-    : DAILY_FEEDBACK_OUTPUT_FIELDS;
-  const outputJson = '{\n' + outputFields.map(([k, d]) => `  "${k}": "${d}"`).join(',\n') + '\n}';
-
-  const prompt = `
-'4주 온라인 운동/식단 습관화 코칭 프로그램'의 데일리 피드백 초안을 작성해 주세요.
-
-[참여자 정보]
-${formatObjectAsFullProfile(profile)}
-
-[현재 처방]
-- 현재 제안 운동 루틴:
-${currentRoutine || '(없음)'}
-- 현재 제안 식단:
-${currentDiet || '(없음)'}
-
-[오늘 기록]
-${formatObjectAsFullProfile(todayRecord)}
-
-[오늘 점수 (코드가 계산한 확정값 - 다시 계산하거나 바꾸지 마십시오)]
-${describeScoresForPrompt(scores)}
-
-[공복 체중 기록 (날짜순)]
-${weightLines}
-${exampleBlock}${guidelineBlock}${existingNoteBlock}
-[출력 형식]
-아래 JSON 객체 하나만 출력하십시오. 다른 설명이나 마크다운은 쓰지 마십시오.
-${outputJson}
-`;
-
-  return {
-    prompt: prompt,
-    systemInstruction: '당신은 온라인 습관화 코칭 프로그램에서 코치의 데일리 피드백 초안을 작성합니다. 작성 규칙(분량·말투·쓸 내용)은 [데일리 피드백 지침]을 따릅니다. You must respond ONLY with a valid JSON object. Do not include any markdown formatting like ```json or any conversational text.',
-    scores: { exercise: scores.exercise, diet: scores.diet },
-    maxOutputTokens: DAILY_FEEDBACK_MAX_OUTPUT_TOKENS
-  };
-}
-
 /**
  * [AI 프롬프트 내려주기] 코치 브라우저 직통 스트리밍용 - 프롬프트는 서버 build 함수에서만 조립
- * - kind: 'workout' | 'diet' | 'daily'
+ * - kind: 'workout' | 'diet'
  */
 function handleBuildAiPrompt(ss, payload) {
   let built = null;
   if (payload.kind === 'workout') built = buildWorkoutPromptFromPayload(ss, payload);
   else if (payload.kind === 'diet') built = buildDietPromptFromPayload(ss, payload);
-  else if (payload.kind === 'daily') built = buildDailyFeedbackPromptFromPayload(ss, payload);
   if (!built) {
     return createJsonResponse({ status: 'error', code: 'bad_request', message: '알 수 없는 프롬프트 종류입니다: ' + payload.kind });
   }
-  const res = { status: 'success', prompt: built.prompt, systemInstruction: built.systemInstruction };
-  if (built.scores) res.scores = built.scores;
-  if (built.maxOutputTokens) res.maxOutputTokens = built.maxOutputTokens;
-  return createJsonResponse(res);
-}
-
-// 요청 payload에서 데일리 피드백 프롬프트 재료(지침서·회원 피드백·말투 예시)를 모아 buildDailyFeedbackPrompt 호출
-// - 말투 예시는 다른 회원 데이터이므로 브라우저에서 받지 않고 서버가 시트에서 직접 읽음 (폼 트리거는 이미 읽은 목록 전달)
-function buildDailyFeedbackPromptFromPayload(ss, payload) {
-  const guidelines = payload.guidelines || getGuidelinesData(findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
-  const feedback = payload.feedback || {};
-  const styleExamples = Array.isArray(payload._styleExamples) ? payload._styleExamples : loadStyleExamplesFromSheet(ss, feedback);
-  return buildDailyFeedbackPrompt(payload.member || {}, feedback, payload.recentFeedbacks || [], guidelines, styleExamples, payload._promptOptions);
-}
-
-/**
- * AI 응답 문자열에서 JSON 객체 하나를 꺼냄 (```json 감싸기·문자열 안 줄바꿈·끝 쉼표 보정), 해석 불가 시 예외
- */
-function parseAiJsonObject(text) {
-  let str = text.replace(/```json/gi, '').replace(/```/g, '').trim();
-  const firstBrace = str.indexOf('{');
-  const lastBrace = str.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-    str = str.substring(firstBrace, lastBrace + 1);
-  }
-  let rawJson = null;
-  try {
-    rawJson = JSON.parse(str);
-  } catch (e1) {
-    let inString = false;
-    let escaped = false;
-    let out = '';
-    for (let i = 0; i < str.length; i++) {
-      const c = str[i];
-      if (c === '"' && !escaped) {
-        inString = !inString;
-        out += c;
-      } else if (c === '\\' && inString) {
-        escaped = !escaped;
-        out += c;
-      } else {
-        if (inString) {
-          if (c === '\n') out += '\\n';
-          else if (c === '\r') out += '\\r';
-          else if (c === '\t') out += '\\t';
-          else out += c;
-        } else {
-          out += c;
-        }
-        escaped = false;
-      }
-    }
-    out = out.replace(/,\s*([\}\]])/g, '$1');
-    rawJson = JSON.parse(out);
-  }
-  return rawJson;
-}
-
-/**
- * 7. [AI] 데일리 피드백 도출 (공통 생성 코어)
- * - 웹앱 API 요청(handleAiDailyFeedback) 및 구글 폼 제출 트리거(onFormSubmitHandler) 양쪽에서 공통 사용
- * - 출력: 피드백_요약(코치용), 잘한_점·개선할_점·코치_한마디(회원용), 코치_확인_필요(코치용) + 코드 계산 점수
- * - 응답이 최대 길이에서 잘리면 실패로 처리
- */
-function generateDailyFeedbackCore(ss, payload) {
-  const built = buildDailyFeedbackPromptFromPayload(ss, payload);
-  // [점수는 코드가 계산] buildDailyFeedbackPrompt가 resolveFeedbackScores로 정한 확정값 사용 (AI 응답의 점수는 받지 않음)
-  const curExScore = built.scores.exercise;
-  const curDietScore = built.scores.diet;
-  const aiResult = callGemini(built.prompt, built.systemInstruction, payload, { maxOutputTokens: built.maxOutputTokens });
-
-  let parsed = null;
-  if (aiResult.text) {
-    try {
-      const rawJson = parseAiJsonObject(aiResult.text);
-      if (rawJson) {
-        // 누락 항목에 기본 문장을 채우지 않음 (빈 값 유지)
-        const pick = (names) => {
-          for (let i = 0; i < names.length; i++) {
-            const v = rawJson[names[i]];
-            if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-          }
-          return '';
-        };
-        const good = pick(['잘한_점', '잘한 점', '잘한점']);
-        const improve = pick(['개선할_점', '개선할 점', '개선할점']);
-        const note = pick(['코치_한마디', '코치 한마디', '코치한마디']);
-        parsed = {
-          "피드백_요약": pick(['피드백_요약', '피드백 요약', '피드백요약', '요약']),
-          "잘한_점": good,
-          "개선할_점": improve,
-          "코치_한마디": note,
-          "코치_확인_필요": pick(['코치_확인_필요', '코치 확인 필요', '코치확인필요']),
-          "피드백_코멘트": composeMemberFeedbackComment(good, improve, note),
-          "운동_실행률_점수": curExScore,
-          "식단_실행률_점수": curDietScore
-        };
-      }
-    } catch (e) {
-      Logger.log('JSON 파싱 실패: ' + e.toString());
-    }
-  }
-
-  // [실패는 실패로] AI 호출 실패·JSON 해석 실패·요약 누락 시 고정 템플릿을 만들지 않고 data:null + 사유 반환
-  // 응답이 최대 길이에서 잘린 경우도 실패 (잘린 문장을 저장하지 않음)
-  const isTruncated = !!(aiResult.debug && aiResult.debug.isTruncated);
-  if (isTruncated || !parsed || !parsed.피드백_요약 || !parsed.피드백_코멘트) {
-    const reason = isTruncated ? 'AI 응답이 최대 길이에서 잘렸습니다.' : (aiResult.text ? 'AI 응답 형식을 해석하지 못했습니다.' : '');
-    const failure = buildAiFailureResponse(isTruncated ? Object.assign({}, aiResult.debug, { errorMessage: reason }) : aiResult.debug, reason);
-    failure.data = null;
-    failure.scores = built.scores;
-    return failure;
-  }
-
-  return {
-    status: 'success',
-    data: parsed,
-    isAiGenerated: true,
-    debug: aiResult.debug
-  };
-}
-
-function handleAiDailyFeedback(ss, payload) {
-  const result = generateDailyFeedbackCore(ss, payload);
-  return createJsonResponse(result);
-}
-
-/**
- * 8. [AI] 종합 피드백 생성
- * - 기간(startDate~endDate) 안의 데일리 피드백을 날짜순으로 프롬프트에 포함
- * - AI 실패 시 고정 리포트 대신 오류 반환
- */
-const COMPREHENSIVE_FIELD_MAX_CHARS = 300;
-
-function clipForPrompt(value) {
-  const str = String(value === null || value === undefined ? '' : value).replace(/\s+\n/g, '\n').trim();
-  return str.length > COMPREHENSIVE_FIELD_MAX_CHARS ? str.slice(0, COMPREHENSIVE_FIELD_MAX_CHARS) + '…' : str;
-}
-
-function toIsoDateOrEmpty(raw) {
-  const d = standardizeFeedbackDate(raw);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : '';
-}
-
-function formatFeedbackForComprehensive(f) {
-  const scores = resolveFeedbackScores(f);
-  const scoreLabel = (v) => v === '' ? '-' : v + '점';
-  const weight = getGasField(f, ['공복 몸무게', '공복몸무게', '체중', 'weight']);
-  const lines = [
-    `■ ${getFeedbackRowDate(f) || '날짜 미상'} | 공복 체중: ${weight !== '' && weight !== null && weight !== undefined ? weight + 'kg' : '-'} | 운동 점수: ${scoreLabel(scores.exercise)} | 식단 점수: ${scoreLabel(scores.diet)}`
-  ];
-  const addLine = (label, value) => {
-    const clipped = clipForPrompt(value);
-    if (clipped) lines.push(`- ${label}: ${clipped}`);
-  };
-  addLine('운동 내용', getGasField(f, ['운동내용', '운동 내용', '오늘의 운동', 'exerciseContent']) || memberViewFindVal(f, ['운동', '내용'], ['힘들', '점수', '수정', '제안']));
-  addLine('식단 내용', getGasField(f, ['식단내용', '식단 내용', '오늘의 식단', 'dietContent']) || memberViewFindVal(f, ['식단', '내용'], ['힘들', '점수', '수정', '제안']));
-  addLine('운동 중 힘들었던 점', memberViewFindVal(f, ['운동', '힘들었던']));
-  addLine('식단 중 힘들었던 점', memberViewFindVal(f, ['식단', '힘들었던']));
-  addLine('코치 코멘트', getGasField(f, ['피드백 코멘트', '피드백코멘트', '코치 피드백', '코치피드백', '코치 코멘트', '코치코멘트']));
-  return lines.join('\n');
-}
-
-function handleAiComprehensiveFeedback(ss, payload) {
-  const member = payload.member || {};
-  const startIso = toIsoDateOrEmpty(payload.startDate);
-  const endIso = toIsoDateOrEmpty(payload.endDate);
-  const startLabel = startIso || '프로그램 시작일';
-  const endLabel = endIso || '오늘';
-
-  // 기간 필터 + 날짜순 정렬 (날짜를 알 수 없는 기록은 기간 지정 시 제외)
-  const feedbacks = (Array.isArray(payload.feedbacks) ? payload.feedbacks : [])
-    .map(f => ({ f: f, date: getFeedbackRowDate(f) }))
-    .filter(x => (!startIso || (x.date && x.date >= startIso)) && (!endIso || (x.date && x.date <= endIso)))
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)))
-    .map(x => x.f);
-
-  if (feedbacks.length === 0) {
-    return createJsonResponse({
-      status: 'error',
-      code: 'no_feedbacks',
-      message: `선택한 기간(${startLabel} ~ ${endLabel})에 데일리 피드백 기록이 없어 종합 피드백을 만들 수 없습니다. 기간을 다시 선택해 주세요.`
-    });
-  }
-
-  const memberName = getGasField(member, ['이름', 'name', '성명', '참여자이름', '회원명']) || '참여자';
-  // [요구사항 1] 전체 사전 응답 프로필 동적 매핑
-  const memberFullProfile = formatObjectAsFullProfile(member);
-  const feedbackLog = feedbacks.map(formatFeedbackForComprehensive).join('\n\n');
-
-  const prompt = `
-당신은 '4주 온라인 운동/식단 습관화 코칭 프로그램'의 총괄 디렉터입니다.
-참여자 [${memberName}]의 기간(${startLabel} ~ ${endLabel}) 동안의 데일리 피드백 기록 총 ${feedbacks.length}건을 종합 분석하여 다음 2가지를 작성해 주세요:
-1. 해당 기간 동안의 식단/운동/체중 변화 종합 요약 및 성과 평가
-2. 4주 프로그램 종료 후에도 요요 없이 스스로 습관을 유지할 수 있는 [추후 자립 방안(Action Plan)]
-
-[참여자 프로필 전체 (사전 설문 전 항목)]
-${memberFullProfile}
-
-[기간 내 데일리 피드백 기록 (날짜순)]
-${feedbackLog}
-
-[작성 원칙]
-- 위 기록에 있는 사실(날짜·체중·점수·내용·힘들었던 점·코치 코멘트)만 근거로 분석하고, 기록에 없는 수치나 사건은 만들지 마십시오.
-`;
-
-  const aiResult = callGemini(prompt, '당신은 종합 습관 코칭 전문가입니다.', payload);
-  if (!aiResult.text) {
-    return createJsonResponse(buildAiFailureResponse(aiResult.debug));
-  }
-
-  return createJsonResponse({
-    status: 'success',
-    comprehensiveFeedback: aiResult.text,
-    feedbackCount: feedbacks.length,
-    isAiGenerated: true,
-    debug: aiResult.debug
-  });
+  return createJsonResponse({ status: 'success', prompt: built.prompt, systemInstruction: built.systemInstruction });
 }
 
 /**
@@ -2258,51 +1509,14 @@ function setupInitialSheets() {
     ]);
   }
 
-  // 2. Feedbacks 시트
-  let fbSheet = ss.getSheetByName('Feedbacks');
-  if (!fbSheet) fbSheet = ss.insertSheet('Feedbacks');
-  if (fbSheet.getLastRow() === 0) {
-    fbSheet.appendRow([
-      '피드백번호', '날짜', '이름', '공복 몸무게', '운동 점수', '식단 점수',
-      '운동 내용', '식단 내용', '회원 일기/코멘트', '피드백 코멘트',
-      '운동_실행률_점수', '식단_실행률_점수', '피드백_요약', '잘한 점', '개선할 점', '코치 한마디', '코치 확인 필요', '피드백 상태'
-    ]);
-    fbSheet.appendRow([
-      'FB01', '2026-10-08', '김민수', 82.5, 8, 7,
-      '스쿼트 4세트 + 런지 3세트 + 스트레칭 15분', '아침 그릭요거트, 점심 소불고기 백반(밥 절반), 저녁 닭가슴살',
-      '첫날이라 의욕이 넘칩니다. 물 2L 마셨습니다.', '첫날 루틴 완벽히 수행하셨네요! 멋진 출발입니다.'
-    ]);
-    fbSheet.appendRow([
-      'FB02', '2026-10-09', '김민수', 82.1, 9, 8,
-      '야외 인터벌 러닝 30분', '아침 프로틴 쉐이크, 점심 서브웨이 위트, 저녁 연어 샐러드',
-      '러닝 후 땀 흘리니 개운합니다. 야식 참았습니다.', '야식 유혹을 이겨낸 의지가 대단합니다. 수면 푹 취하세요!'
-    ]);
-    fbSheet.appendRow([
-      'FB03', '2026-10-10', '김민수', 81.9, 6, 6,
-      '야근으로 폼롤러 스트레칭 20분만 진행', '점심 김치찌개 건더기 위주, 저녁 단호박+소시지',
-      '업무가 바빠 운동을 적게 해 아쉽습니다.', ''
-    ]);
-    fbSheet.appendRow([
-      'FB04', '2026-10-11', '김민수', 81.6, 9, 9,
-      '상체 웨이트 40분 (체스트프레스, 랫풀다운)', '아침 오트밀, 점심 닭가슴살 볶음밥, 저녁 우둔살 샐러드',
-      '식단 클린하게 하니 오후에 졸리지 않습니다.', ''
-    ]);
-    fbSheet.appendRow([
-      'FB05', '2026-10-12', '김민수', 81.4, 8, 8,
-      '실내 사이클 35분', '아침 바나나+계란, 점심 포케, 저녁 프로틴볼',
-      '몸이 한결 가벼워졌습니다!', ''
-    ]);
-
-    // 이지원 피드백
-    fbSheet.appendRow([
-      'FB06', '2026-10-10', '이지원', 58.2, 8, 7,
-      '필라테스 코어 35분', '아침 사과, 점심 일반식(구내식당), 저녁 샐러드',
-      '디저트 참았습니다!', '디저트 방어 성공 축하드립니다!'
-    ]);
-    fbSheet.appendRow([
-      'FB07', '2026-10-11', '이지원', 58.0, 9, 8,
-      '만보 걷기 (50분)', '아침 요거트, 점심 현미 포케, 저녁 닭가슴살 볼',
-      '퇴근길 걸어오니 개운해요.', ''
+  // 2. WeightLog 시트 (공복 체중 기록)
+  const wlSheet = getWeightLogSheet(ss, true);
+  if (wlSheet.getLastRow() === 1) {
+    wlSheet.getRange(2, 1, 4, WEIGHT_LOG_HEADERS.length).setValues([
+      ['2026-10-08', 'M001', '김민수', 82.5, '회원', '2026-10-08 07:30:00'],
+      ['2026-10-09', 'M001', '김민수', 82.1, '회원', '2026-10-09 07:41:00'],
+      ['2026-10-10', 'M002', '이지원', 58.2, '회원', '2026-10-10 08:02:00'],
+      ['2026-10-11', 'M002', '이지원', 58.0, '회원', '2026-10-11 07:55:00']
     ]);
   }
 
@@ -2315,8 +1529,6 @@ function setupInitialSheets() {
     gdSheet.appendRow(['코칭 철학', '완벽함보다는 지속 가능성에 집중합니다. 단기간 극단적 절식 대신 평생 유지할 수 있는 작은 습관의 복리 효과를 지향합니다. 실패한 날도 과정의 일부입니다.', nowStr]);
     gdSheet.appendRow(['운동 제안 지침', '초보자는 주 3~4회, 하루 20~30분 저강도~중강도 루틴으로 성공 경험을 축적합니다. 점진적 과부하와 관절 부상 방지(스트레칭 10분 필수)를 최우선 원칙으로 합니다.', nowStr]);
     gdSheet.appendRow(['식단 제안 지침', '극단적 탄수화물 제한을 지양하고, 매 끼니 양질의 단백질 20~30g과 식이섬유를 기본 탑재합니다. 가공식품과 단순당을 줄이고 수분 1.5~2L 섭취를 강조합니다.', nowStr]);
-    gdSheet.appendRow(['피드백 지침', '피드백은 24시간 이내에 제공하며, 지적보다는 잘한 점에 대한 구체적 칭찬(Positive Reinforcement)을 선행한 뒤 1개의 실천 가능한 개선점을 제안합니다.', nowStr]);
-    gdSheet.appendRow(['동기부여 지침', '회원이 슬럼프나 과식을 겪었을 때 자책하지 않도록 깊이 공감합니다. "한 끼의 실수가 4주의 실패는 아니다"라는 마인드셋을 심어주며 다음 끼니에서 자연스럽게 복귀하도록 격려합니다.', nowStr]);
   }
 
   Logger.log('초기 표준 시트 구성이 완료되었습니다!');
@@ -2328,40 +1540,6 @@ function setupInitialSheets() {
 function createJsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
-}
-
-/**
- * ==============================================================================
- * [구글 폼 제출 시 백그라운드 AI 초안 자동 생성 트리거 시스템]
- * ==============================================================================
- */
-
-/**
- * 스프레드시트 양식 제출(onFormSubmit) 트리거를 원클릭으로 설치하는 함수
- * - Apps Script 상단 함수 드롭다운에서 'installFormSubmitTrigger'를 선택 후 [실행] 클릭 시 등록 완료
- */
-function installFormSubmitTrigger() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) {
-    Logger.log('[트리거 설치 실패] 활성화된 스프레드시트를 찾을 수 없습니다.');
-    return;
-  }
-
-  // 기존 동일 트리거 중복 설치 방지 정리
-  const triggers = ScriptApp.getProjectTriggers();
-  for (let i = 0; i < triggers.length; i++) {
-    if (triggers[i].getHandlerFunction() === 'onFormSubmitHandler') {
-      ScriptApp.deleteTrigger(triggers[i]);
-    }
-  }
-
-  // 스프레드시트 양식 제출 이벤트 트리거 생성
-  ScriptApp.newTrigger('onFormSubmitHandler')
-    .forSpreadsheet(ss)
-    .onFormSubmit()
-    .create();
-
-  Logger.log('[트리거 설치 완료] 구글 폼 양식 제출 트리거(onFormSubmitHandler)가 성공적으로 설치되었습니다.');
 }
 
 /**
@@ -2386,240 +1564,6 @@ function installKeepWarmTrigger() {
 }
 
 /**
- * 구글 폼 제출 시 백그라운드 자동 실행되는 핸들러 함수
- * - 회원 제출 즉시 AI 초안을 생성하여 Feedbacks 시트에 'AI초안' 상태로 안전하게 기록
- * - 외부 발송 기능은 배제하고 시트 초안 기록에만 집중
- */
-function onFormSubmitHandler(e) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    if (!ss) {
-      Logger.log('[onFormSubmitHandler] 활성 스프레드시트 없음');
-      return { status: 'error', message: '활성 스프레드시트 없음' };
-    }
-
-    // [핵심 1] 폼 응답이 기록된 실제 시트 특정 및 '신청리스트' 등 비피드백 시트 완전 무시
-    let feedbackSheet = null;
-    let submittedSheet = null;
-    if (e && e.range) {
-      try {
-        submittedSheet = e.range.getSheet();
-      } catch (se) {}
-    }
-
-    if (submittedSheet) {
-      const sheetName = submittedSheet.getName().toLowerCase();
-      // [핵심 원칙] 신청리스트 sheet의 데이터는 아무런 역할을 하지 않으며 순전히 신청자 식별용임.
-      // 신청리스트, members, 회원, guidelines 등 피드백 일지가 아닌 시트에서 발생한 제출 트리거는 무조건 스킵
-      if (
-        sheetName.includes('신청') ||
-        sheetName.includes('apply') ||
-        sheetName.includes('application') ||
-        sheetName.includes('member') ||
-        sheetName.includes('회원') ||
-        sheetName.includes('guideline') ||
-        sheetName.includes('지침')
-      ) {
-        Logger.log(`[onFormSubmitHandler 스킵] 피드백 시트가 아닌 시트('${submittedSheet.getName()}')에서 폼 제출 감지 -> 피드백 생성 무시함`);
-        return { status: 'skipped', message: `'${submittedSheet.getName()}' 시트는 피드백 시트가 아니므로 피드백 생성을 스킵합니다.` };
-      }
-
-      // 제출된 시트가 피드백 관련 시트인지 명시적으로 확인 (feedbacks, 피드백, 일지 등)
-      const isFeedbackSheet = sheetName.includes('feedback') || sheetName.includes('피드백') || sheetName.includes('일지') || sheetName.includes('데일리');
-      if (!isFeedbackSheet) {
-        // 혹시 헤더를 확인하여 피드백 시트의 필수 열(공복몸무게, 운동, 식단 등)이 없으면 스킵
-        const firstRowHeaders = submittedSheet.getRange(1, 1, 1, Math.min(submittedSheet.getLastColumn(), 20)).getValues()[0].map(h => String(h).toLowerCase());
-        const hasFeedbackField = firstRowHeaders.some(h => h.includes('몸무게') || h.includes('운동') || h.includes('식단') || h.includes('체중'));
-        if (!hasFeedbackField) {
-          Logger.log(`[onFormSubmitHandler 스킵] 피드백 관련 열이 없는 시트('${submittedSheet.getName()}') 제출 감지 -> 무시함`);
-          return { status: 'skipped', message: `'${submittedSheet.getName()}' 시트는 피드백 시트가 아닙니다.` };
-        }
-      }
-      feedbackSheet = submittedSheet;
-    }
-
-    if (!feedbackSheet) {
-      feedbackSheet = ss.getSheetByName('feedbacks') || ss.getSheetByName('Feedbacks')
-        || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-    }
-
-    const memberSheet = ss.getSheetByName('Members') || ss.getSheetByName('members')
-      || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
-    const guidelineSheet = ss.getSheetByName('Guidelines') || ss.getSheetByName('guidelines')
-      || findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']);
-
-    if (!feedbackSheet) {
-      Logger.log('[onFormSubmitHandler] Feedbacks 시트 탐색 실패');
-      return { status: 'error', message: 'Feedbacks 시트를 찾을 수 없음' };
-    }
-
-    // 1. 방금 제출된 행 번호 감지
-    let targetRow = (e && e.range) ? e.range.getRow() : feedbackSheet.getLastRow();
-    if (targetRow <= 1) targetRow = feedbackSheet.getLastRow();
-    if (targetRow <= 1) {
-      Logger.log('[onFormSubmitHandler] 유효한 피드백 데이터 행이 없습니다.');
-      return { status: 'error', message: '데이터 행 없음' };
-    }
-
-    // 마이페이지에서 체중만 입력한 행은 피드백 대상이 아님 (일괄 초안 생성 메뉴에서 호출돼도 건너뜀)
-    // 폼 제출 행이면, 같은 회원·같은 날짜의 '체중만' 행을 이 행으로 합침 (한 날짜 = 한 행)
-    const merged = withMembersWriteLock(() => mergeWeightOnlyRowsIntoSubmission(feedbackSheet, targetRow));
-    if (merged.skip) {
-      Logger.log(`[onFormSubmitHandler 스킵] Row ${targetRow}는 마이페이지 체중만 입력 행입니다.`);
-      return { status: 'skipped', message: '체중만 입력한 행은 피드백을 만들지 않습니다.' };
-    }
-    targetRow = merged.row;
-
-    const lastCol = Math.max(feedbackSheet.getLastColumn(), 1);
-    const headers = feedbackSheet.getRange(1, 1, 1, lastCol).getValues()[0];
-    const rowValues = feedbackSheet.getRange(targetRow, 1, 1, lastCol).getValues()[0];
-
-    // 행 데이터를 객체로 매핑
-    const currentFeedback = {};
-
-    // (A) e.namedValues가 있으면 먼저 반영 (폼 제출 즉시 전달된 답변 배열)
-    if (e && e.namedValues) {
-      for (const k in e.namedValues) {
-        const val = Array.isArray(e.namedValues[k]) ? e.namedValues[k][0] : e.namedValues[k];
-        currentFeedback[k] = val;
-        currentFeedback[String(k).trim().replace(/\s+/g, '')] = val;
-      }
-    }
-
-    // (B) 시트 셀 값으로 보완 매핑
-    for (let j = 0; j < headers.length; j++) {
-      const h = String(headers[j]).trim();
-      if (!h) continue;
-      if (currentFeedback[h] === undefined || currentFeedback[h] === '') {
-        currentFeedback[h] = rowValues[j];
-      }
-      currentFeedback[h.replace(/\s+/g, '')] = rowValues[j];
-    }
-
-    // 회원 이름 추출 (다양한 헤더 동의어 및 부분 매칭)
-    let memberName = getGasField(currentFeedback, [
-      '이름', 'name', '성명', '성함', '회원명', '참여자이름', '회원이름', '참여자명', '참가자이름', '사용자이름'
-    ]);
-
-    // 헤더 직접 스캔 백업
-    if (!memberName) {
-      for (let j = 0; j < headers.length; j++) {
-        const hClean = String(headers[j]).replace(/\s+/g, '').toLowerCase();
-        if (hClean.includes('이름') || hClean.includes('성명') || hClean.includes('성함')) {
-          const val = rowValues[j];
-          if (val && String(val).trim()) {
-            memberName = String(val).trim();
-            break;
-          }
-        }
-      }
-    }
-
-    if (!memberName) {
-      Logger.log(`[onFormSubmitHandler 경고] Row ${targetRow}에서 회원 이름을 특정할 수 없어 임시 명칭을 사용합니다.`);
-      memberName = '회원';
-    }
-
-    Logger.log(`[onFormSubmitHandler 시작] Row ${targetRow} 회원 '${memberName}' (시트: ${feedbackSheet.getName()}) AI 초안 자동 생성 개시`);
-
-    // [점수는 코드가 계산] AI 호출 전에 운동/식단 점수를 먼저 기록 (AI가 실패해도 점수는 남음)
-    const colMap = getHeaderColumnMap(feedbackSheet);
-    writeFeedbackScores(feedbackSheet, colMap, targetRow, resolveFeedbackScores(currentFeedback));
-    SpreadsheetApp.flush();
-
-    // 2. Members 시트에서 해당 회원의 사전 설문 프로필 조회
-    let memberProfile = { '이름': memberName };
-    if (memberSheet) {
-      const allMembers = getSheetDataWithHeaders(memberSheet);
-      // [정확 매칭] 이름(앞뒤 공백 제외) 완전 일치 회원만 프로필로 사용
-      const exactName = String(memberName).trim();
-      const found = allMembers.find(m => String(memberViewGetName(m) || '').trim() === exactName);
-      if (found) {
-        memberProfile = found;
-      }
-    }
-
-    // 3. Feedbacks 시트에서 해당 회원의 기록 추출
-    const allFeedbacks = getSheetDataWithHeaders(feedbackSheet);
-    const exactTargetName = String(memberName).trim();
-    const memberFeedbacks = allFeedbacks.filter(f => getFeedbackRowName(f) === exactTargetName);
-
-    // 공복 체중 기록은 이 회원의 전체 피드백에서, 말투 예시는 전체 피드백(회원 구분 없음)에서 buildDailyFeedbackPrompt가 선택
-    const recentFeedbacks = memberFeedbacks;
-
-    // 4. Guidelines 시트에서 데일리 피드백 지침 가져오기
-    const guidelines = getGuidelinesData(guidelineSheet);
-
-    // 5. AI 피드백 생성 코어 호출 (callGemini 기반 JSON 도출)
-    const aiPayload = {
-      member: memberProfile,
-      feedback: currentFeedback,
-      recentFeedbacks: recentFeedbacks,
-      guidelines: guidelines,
-      _styleExamples: selectStyleExamplesForPrompt(allFeedbacks, currentFeedback)
-    };
-
-    const aiRes = generateDailyFeedbackCore(ss, aiPayload);
-    const draftData = aiRes.data;
-
-    if (!draftData) {
-      // [실패는 실패로] 내용 칸에는 아무것도 쓰지 않고 '피드백 상태'에만 AI실패 기록 (코치 대시보드에서 재생성)
-      const failStatusCol = getOrAddColumn(feedbackSheet, colMap, '피드백 상태', [
-        '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
-      ]);
-      const prevStatus = String(feedbackSheet.getRange(targetRow, failStatusCol).getValue() || '').trim();
-      if (prevStatus !== '완료') {
-        feedbackSheet.getRange(targetRow, failStatusCol).setValue('AI실패');
-        SpreadsheetApp.flush();
-      }
-      Logger.log(`[onFormSubmitHandler] Row ${targetRow} AI 초안 도출 실패 -> 'AI실패' 기록: ${aiRes.message || ''}`);
-      return { status: 'error', code: 'ai_failed', row: targetRow, message: aiRes.message || 'AI 초안 데이터 도출 실패' };
-    }
-
-    // 6. Feedbacks 시트에 초안 기록 (점수는 위에서 AI 호출 전에 이미 기록)
-
-    // (1) 피드백_요약 (코치용)
-    const summaryCol = getOrAddColumn(feedbackSheet, colMap, '피드백_요약', [
-      '피드백_요약', '피드백 요약', '피드백요약', '요약', 'summary', 'feedbackSummary'
-    ]);
-    feedbackSheet.getRange(targetRow, summaryCol).setValue(draftData.피드백_요약 || '');
-
-    // (2) 잘한 점 / 개선할 점 / 코치 한마디 (회원용) + 코치 확인 필요 (코치용) - 이름 정확 일치 열에만 기록
-    FEEDBACK_MEMBER_PARTS.concat([FEEDBACK_COACH_CHECK]).forEach(p => {
-      writeFeedbackPart(feedbackSheet, colMap, targetRow, p, draftData[p.key] || '');
-    });
-
-    // (3) 피드백 코멘트 = 회원용 최종본 (빈 칸은 제목째 생략)
-    const commentCol = getOrAddColumn(feedbackSheet, colMap, '피드백 코멘트', [
-      '피드백 코멘트', '피드백코멘트', '피드백 내용', '피드백내용', '코치 피드백', '코치피드백'
-    ]);
-    feedbackSheet.getRange(targetRow, commentCol).setValue(draftData.피드백_코멘트 || '');
-
-    // (9) ★핵심: 피드백 상태 컬럼에 'AI초안' 기록
-    const statusCol = getOrAddColumn(feedbackSheet, colMap, '피드백 상태', [
-      '피드백 상태', '피드백상태', '완료 여부', '완료여부', '피드백완료', '피드백 완료', '진행상태', '상태'
-    ]);
-    feedbackSheet.getRange(targetRow, statusCol).setValue('AI초안');
-
-    // (10) AI초안_생성일시 컬럼 기록
-    const nowStr = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
-    const aiCreatedCol = getOrAddColumn(feedbackSheet, colMap, 'AI초안_생성일시', [
-      'AI초안_생성일시', 'AI초안 생성일시', 'AI초안생성일시', 'AI생성일시', '초안생성일시'
-    ]);
-    feedbackSheet.getRange(targetRow, aiCreatedCol).setValue(nowStr);
-
-    // ★중요: 변경 사항 즉시 시트에 영구 커밋 (버퍼 플러시)
-    SpreadsheetApp.flush();
-
-    Logger.log(`[onFormSubmitHandler 성공] Row ${targetRow} 회원 '${memberName}' AI초안 정상 기록 완료 (${nowStr})`);
-    return { status: 'success', row: targetRow, member: memberName, date: nowStr };
-  } catch (err) {
-    Logger.log('[onFormSubmitHandler 예외 발생] ' + err.toString());
-    return { status: 'error', error: err.toString() };
-  }
-}
-
-/**
  * ==============================================================================
  * [스프레드시트 커스텀 메뉴 & 수동 진단/배치 도구]
  * ==============================================================================
@@ -2632,549 +1576,16 @@ function onOpen() {
   try {
     const ui = SpreadsheetApp.getUi();
     ui.createMenu('🤖 코칭 자동화')
-      .addItem('⚡ 폼 제출 트리거 설치/점검', 'installFormSubmitTrigger')
       .addItem('🔥 서버 응답 지연 방지(웜업) 트리거 설치', 'installKeepWarmTrigger')
       .addSeparator()
-      .addItem('🧪 마지막 추가된 행 AI 초안 생성 테스트', 'testGenerateDraftForLatestRow')
-      .addItem('📝 미처리 피드백 전체 AI 초안 일괄 생성', 'processPendingAiDrafts')
-      .addItem('🧮 빈 점수 다시 계산', 'fillMissingFeedbackScores')
-      .addItem('📋 점수 답변값 점검', 'inspectScoreAnswers')
-      .addItem('🧹 피드백 열 정리 (1회)', 'cleanupFeedbackColumns')
-      .addItem('✍️ 기존 피드백 잘한 점·개선할 점 채우기', 'backfillFeedbackGoodImprove')
-      .addSeparator()
-      .addItem('🔍 feedbacks 시트 헤더/데이터 진단', 'debugInspectFeedbacksSheet')
+      .addItem('⚖️ 체중 기록 옮기기 (Feedbacks·MemberPlanLog → WeightLog, 1회)', 'migrateWeightsToWeightLog')
+      .addItem('🧯 폼 제출 트리거 삭제 (예전 데일리 피드백)', 'removeLegacyFeedbackTriggers')
       .addSeparator()
       .addItem('🔑 코치 마스터 비밀번호 설정/확인', 'promptChangeCoachPassword')
       .addToUi();
   } catch (e) {
     Logger.log('[onOpen 메뉴 생성 실패 (비대화형 모드 등)] ' + e.toString());
   }
-}
-
-/**
- * [수동 테스트 함수] 스프레드시트의 마지막 피드백 행에 대해 AI 초안 강제 생성
- * - Apps Script 상단 함수 드롭다운에서 'testGenerateDraftForLatestRow' 선택 후 [실행] 클릭 시 바로 테스트 가능
- */
-function testGenerateDraftForLatestRow() {
-  Logger.log('=== [수동 테스트] 마지막 피드백 행 AI 초안 생성 시작 ===');
-  const res = onFormSubmitHandler(null);
-  Logger.log('=== [수동 테스트 결과] ' + JSON.stringify(res) + ' ===');
-
-  try {
-    const ui = SpreadsheetApp.getUi();
-    if (res && res.status === 'success') {
-      ui.alert('✓ 테스트 성공', `Row ${res.row} (${res.member} 회원)에 AI 초안이 성공적으로 기록되었습니다!`, ui.ButtonSet.OK);
-    } else {
-      ui.alert('⚠️ 테스트 실패/확인 필요', `결과: ${JSON.stringify(res)}\nApps Script [실행 로그]를 확인해 주세요.`, ui.ButtonSet.OK);
-    }
-  } catch (e) {
-    // UI 없을 경우 로거로만 남김
-  }
-}
-
-/**
- * [디버그 함수] feedbacks 시트의 1행 헤더와 마지막 행 데이터를 상세 출력
- */
-function debugInspectFeedbacksSheet() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('feedbacks') || ss.getSheetByName('Feedbacks')
-    || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet) {
-    Logger.log('[debugInspectFeedbacksSheet] feedbacks 시트를 찾을 수 없습니다.');
-    return;
-  }
-
-  const lastCol = sheet.getLastColumn();
-  const lastRow = sheet.getLastRow();
-  const headers = sheet.getRange(1, 1, 1, Math.max(lastCol, 1)).getValues()[0];
-
-  Logger.log(`=== [시트명: ${sheet.getName()}, 총 ${lastRow}행 x ${lastCol}열] ===`);
-  Logger.log('--- 1행 헤더(컬럼명) 목록 ---');
-  headers.forEach((h, idx) => {
-    Logger.log(`Col ${idx + 1} (${String.fromCharCode(65 + (idx % 26))}열): "${h}"`);
-  });
-
-  if (lastRow >= 2) {
-    const rowVals = sheet.getRange(lastRow, 1, 1, Math.max(lastCol, 1)).getValues()[0];
-    Logger.log(`--- 마지막 행 (Row ${lastRow}) 셀 데이터 ---`);
-    rowVals.forEach((val, idx) => {
-      Logger.log(`Col ${idx + 1} [${headers[idx]}]: "${val}"`);
-    });
-  }
-}
-
-// 계산된 점수를 피드백 행에 기록 (빈 점수는 쓰지 않음, 열이 없으면 맨 오른쪽에 추가)
-function writeFeedbackScores(sheet, colMap, row, scores) {
-  if (scores.exercise !== '') {
-    const exScoreCol = getOrAddColumn(sheet, colMap, '운동_실행률_점수', [
-      '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
-    ]);
-    sheet.getRange(row, exScoreCol).setValue(scores.exercise);
-  }
-  if (scores.diet !== '') {
-    const dietScoreCol = getOrAddColumn(sheet, colMap, '식단_실행률_점수', [
-      '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
-    ]);
-    sheet.getRange(row, dietScoreCol).setValue(scores.diet);
-  }
-  if (scores.detail && scores.detail.warnings.length > 0) {
-    Logger.log(`[점수 계산] Row ${row}: ${scores.detail.warnings.join(' / ')}`);
-  }
-}
-
-/**
- * [시트 메뉴] 빈 점수 다시 계산 - 운동/식단 점수 칸이 빈 행만 폼 답변으로 계산해 채움 (이미 있는 값은 그대로)
- */
-function fillMissingFeedbackScores() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet || sheet.getLastRow() < 2) {
-    Logger.log('[fillMissingFeedbackScores] 피드백 데이터가 없습니다.');
-    return;
-  }
-
-  const counts = { ex: 0, diet: 0, rest: 0, exFail: 0, dietFail: 0 };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    const rows = getSheetDataWithHeaders(sheet);
-    const colMap = getHeaderColumnMap(sheet);
-    const exCol = getOrAddColumn(sheet, colMap, '운동_실행률_점수', [
-      '운동_실행률_점수', '운동실행률점수', '운동_실행률', '운동실행률', '운동 점수', '운동점수', 'exerciseScore'
-    ]);
-    const dietCol = getOrAddColumn(sheet, colMap, '식단_실행률_점수', [
-      '식단_실행률_점수', '식단실행률점수', '식단_실행률', '식단실행률', '식단 점수', '식단점수', 'dietScore'
-    ]);
-    const lastRow = sheet.getLastRow();
-    const exVals = sheet.getRange(2, exCol, lastRow - 1, 1).getValues();
-    const dietVals = sheet.getRange(2, dietCol, lastRow - 1, 1).getValues();
-    const isBlank = (v) => v === '' || v === null || v === undefined || String(v).trim() === '';
-
-    rows.forEach(r => {
-      if (isWeightOnlyFeedbackRow(r)) return;
-      const i = r._rowNumber - 2;
-      const exBlank = isBlank(exVals[i] && exVals[i][0]);
-      const dietBlank = isBlank(dietVals[i] && dietVals[i][0]);
-      if (!exBlank && !dietBlank) return;
-
-      const c = computeFeedbackScores(r);
-      if (exBlank) {
-        if (c.exercise !== '') {
-          sheet.getRange(r._rowNumber, exCol).setValue(c.exercise);
-          counts.ex++;
-        } else if (c.detail.exerciseStatus === 'rest') {
-          counts.rest++;
-        } else {
-          counts.exFail++;
-        }
-      }
-      if (dietBlank) {
-        if (c.diet !== '') {
-          sheet.getRange(r._rowNumber, dietCol).setValue(c.diet);
-          counts.diet++;
-        } else {
-          counts.dietFail++;
-        }
-      }
-      if (c.detail.warnings.length > 0) {
-        Logger.log(`[빈 점수 다시 계산] Row ${r._rowNumber}: ${c.detail.warnings.join(' / ')}`);
-      }
-    });
-    SpreadsheetApp.flush();
-  } finally {
-    lock.releaseLock();
-  }
-
-  const msg = `운동 점수 ${counts.ex}칸, 식단 점수 ${counts.diet}칸을 채웠습니다.\n` +
-    `- 쉬는 날이라 비워 둔 운동 점수: ${counts.rest}칸\n` +
-    `- 답변을 해석하지 못해 비워 둔 칸: 운동 ${counts.exFail} / 식단 ${counts.dietFail}\n` +
-    `(해석하지 못한 답변은 [실행 로그] 또는 '📋 점수 답변값 점검'에서 확인하세요)`;
-  Logger.log('[fillMissingFeedbackScores] ' + msg);
-  try {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('빈 점수 다시 계산', msg, ui.ButtonSet.OK);
-  } catch (e) {}
-}
-
-/**
- * [시트 메뉴] 점수 답변값 점검 - 점수 계산에 쓰는 폼 답변의 서로 다른 값과 건수, 계산 결과만 표시 (이름 등 개인정보 미포함)
- */
-function inspectScoreAnswers() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet) return;
-  const rows = getSheetDataWithHeaders(sheet);
-  const sections = [
-    { kind: 'didExercise', label: '오늘 운동 하셨나요?', map: (v) => v.replace(/\s+/g, '').includes('쉬는') ? '빈칸(쉬는 날)' : /^(아니|안했|no)/i.test(v.replace(/\s+/g, '')) ? '0점' : '시간·강도로 계산' },
-    { kind: 'minutes', label: '운동 시간', map: (v) => { const s = scoreExerciseMinutes(v); return s === null ? '해석 불가' : s + '점'; } },
-    { kind: 'intensity', label: '운동 강도', map: (v) => { const s = scoreExerciseIntensity(v); return s === null ? '해석 불가' : s + '점'; } },
-    { kind: 'diet', label: '식단 수행률', map: (v) => { const s = scoreDietAnswer(v); return s === null ? '해석 불가' : s + '점'; } }
-  ];
-  const lines = [];
-  sections.forEach(sec => {
-    const tally = {};
-    rows.forEach(r => {
-      const v = getScoreAnswer(r, sec.kind);
-      tally[v] = (tally[v] || 0) + 1;
-    });
-    lines.push(`■ ${sec.label}`);
-    Object.keys(tally).sort().forEach(v => {
-      lines.push(`  '${v || '(빈칸)'}' → ${v ? sec.map(v) : '-'} (${tally[v]}건)`);
-    });
-  });
-  const text = lines.join('\n');
-  Logger.log('=== 점수 답변값 점검 ===\n' + text);
-  try {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('점수 답변값 점검', text.length > 1800 ? text.slice(0, 1800) + '\n…(나머지는 실행 로그 확인)' : text, ui.ButtonSet.OK);
-  } catch (e) {}
-}
-
-/**
- * [시트 메뉴] 피드백 열 정리 (1회 실행, 코치 요청에 따른 열 삭제·이름 변경 예외 - 실행 전 확인 창 + 시트 백업)
- * - 이름 변경: '보완점_및_개선방안' → '코치 한마디' (데이터 유지)
- * - 추가: '잘한 점', '개선할 점', '코치 확인 필요' (맨 오른쪽)
- * - 삭제: '문제점_분석', '운동_수정_제안', '식단_수정_제안' (이름 정확 일치, 연결된 구글 폼 질문과 같은 이름이면 삭제 안 함)
- */
-const FEEDBACK_COLUMN_CLEANUP = {
-  rename: { from: '보완점_및_개선방안', to: '코치 한마디' },
-  add: ['잘한 점', '개선할 점', '코치 확인 필요'],
-  remove: ['문제점_분석', '운동_수정_제안', '식단_수정_제안']
-};
-
-function planFeedbackColumnCleanup(sheet) {
-  const lastCol = sheet.getLastColumn();
-  const lastRow = sheet.getLastRow();
-  const headers = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim()) : [];
-  const colOf = (name) => headers.findIndex(h => normalizeHeaderName(h) === normalizeHeaderName(name)) + 1;
-  const filledCount = (col) => {
-    if (lastRow < 2) return 0;
-    return sheet.getRange(2, col, lastRow - 1, 1).getValues().filter(r => String(r[0] === null || r[0] === undefined ? '' : r[0]).trim() !== '').length;
-  };
-
-  // 연결된 구글 폼 질문 제목 (폼 질문 열은 절대 삭제하지 않음)
-  let formTitles = null;
-  let formNote = '';
-  try {
-    const formUrl = sheet.getFormUrl ? sheet.getFormUrl() : null;
-    if (formUrl) {
-      formTitles = FormApp.openByUrl(formUrl).getItems().map(it => normalizeHeaderName(it.getTitle()));
-      formNote = '연결된 구글 폼 질문과 비교했습니다.';
-    } else {
-      formTitles = [];
-      formNote = '이 시트는 구글 폼에 연결되어 있지 않습니다.';
-    }
-  } catch (e) {
-    formTitles = null;
-    formNote = '⚠️ 연결된 구글 폼을 확인하지 못했습니다(' + String(e).slice(0, 80) + '). 삭제 대상은 스크립트가 만든 열 이름과 정확히 같은 열만입니다.';
-  }
-
-  const plan = { rename: null, add: [], remove: [], blocked: [], notes: [], formNote: formNote };
-  const fromCol = colOf(FEEDBACK_COLUMN_CLEANUP.rename.from);
-  const toCol = colOf(FEEDBACK_COLUMN_CLEANUP.rename.to);
-  if (fromCol && toCol) {
-    plan.notes.push(`'${FEEDBACK_COLUMN_CLEANUP.rename.from}'와 '${FEEDBACK_COLUMN_CLEANUP.rename.to}' 열이 모두 있어 이름 변경은 하지 않습니다. 시트에서 직접 정리해 주세요.`);
-  } else if (fromCol) {
-    plan.rename = { col: fromCol, filled: filledCount(fromCol) };
-  }
-  FEEDBACK_COLUMN_CLEANUP.add.forEach(name => {
-    if (!colOf(name) && !(name === FEEDBACK_COLUMN_CLEANUP.rename.to && plan.rename)) plan.add.push(name);
-  });
-  headers.forEach((h, i) => {
-    const n = normalizeHeaderName(h);
-    if (!FEEDBACK_COLUMN_CLEANUP.remove.some(r => normalizeHeaderName(r) === n)) return;
-    const item = { col: i + 1, name: h, filled: filledCount(i + 1) };
-    if (formTitles && formTitles.includes(n)) plan.blocked.push(item);
-    else plan.remove.push(item);
-  });
-  return plan;
-}
-
-function columnLetter(col) {
-  let s = '';
-  while (col > 0) {
-    const m = (col - 1) % 26;
-    s = String.fromCharCode(65 + m) + s;
-    col = Math.floor((col - 1) / 26);
-  }
-  return s;
-}
-
-function cleanupFeedbackColumns() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet) {
-    ui.alert('피드백 열 정리', 'Feedbacks 시트를 찾을 수 없습니다.', ui.ButtonSet.OK);
-    return { status: 'error' };
-  }
-
-  const plan = planFeedbackColumnCleanup(sheet);
-  const blockedText = plan.blocked.length ? `\n\n[삭제하지 않음 - 구글 폼 질문 열]\n${plan.blocked.map(b => `- ${columnLetter(b.col)}열 '${b.name}'`).join('\n')}` : '';
-  const notesText = plan.notes.length ? `\n\n[참고]\n${plan.notes.join('\n')}` : '';
-  if (!plan.rename && plan.add.length === 0 && plan.remove.length === 0) {
-    ui.alert('피드백 열 정리', `이미 정리되어 있어 바꿀 열이 없습니다.${blockedText}${notesText}`, ui.ButtonSet.OK);
-    return { status: 'noop' };
-  }
-
-  const lines = [`'${sheet.getName()}' 시트의 열을 아래와 같이 바꿉니다. 실행 전에 시트 전체를 백업 시트로 복사합니다.`];
-  if (plan.rename) lines.push(`\n[이름 변경] ${columnLetter(plan.rename.col)}열 '${FEEDBACK_COLUMN_CLEANUP.rename.from}' → '${FEEDBACK_COLUMN_CLEANUP.rename.to}' (내용 ${plan.rename.filled}칸 그대로 유지)`);
-  if (plan.add.length) lines.push(`\n[추가 - 맨 오른쪽] ${plan.add.map(n => `'${n}'`).join(', ')}`);
-  if (plan.remove.length) lines.push(`\n[삭제]\n${plan.remove.map(r => `- ${columnLetter(r.col)}열 '${r.name}' (내용 있는 칸 ${r.filled}개)`).join('\n')}`);
-  lines.push(`\n${plan.formNote}${blockedText}${notesText}\n\n진행할까요?`);
-  if (ui.alert('🧹 피드백 열 정리', lines.join('\n'), ui.ButtonSet.YES_NO) !== ui.Button.YES) {
-    return { status: 'cancelled' };
-  }
-
-  const lock = LockService.getScriptLock();
-  lock.waitLock(30000);
-  let backupName = '';
-  try {
-    // 1. 백업 (시트 통째로 복사)
-    backupName = `${sheet.getName()}_백업_${Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyyMMdd-HHmm')}`;
-    sheet.copyTo(ss).setName(backupName);
-
-    // 2. 이름 변경 → 3. 삭제(오른쪽 열부터) → 4. 추가(맨 오른쪽)
-    if (plan.rename) sheet.getRange(1, plan.rename.col).setValue(FEEDBACK_COLUMN_CLEANUP.rename.to);
-    plan.remove.map(r => r.col).sort((a, b) => b - a).forEach(col => sheet.deleteColumn(col));
-    plan.add.forEach(name => sheet.getRange(1, sheet.getLastColumn() + 1).setValue(name));
-    SpreadsheetApp.flush();
-  } finally {
-    lock.releaseLock();
-  }
-
-  const done = `완료했습니다. 백업 시트: '${backupName}'\n- 이름 변경 ${plan.rename ? 1 : 0}개, 추가 ${plan.add.length}개, 삭제 ${plan.remove.length}개`;
-  Logger.log('[cleanupFeedbackColumns] ' + done);
-  ui.alert('피드백 열 정리', done, ui.ButtonSet.OK);
-  return { status: 'success', backupName: backupName };
-}
-
-/**
- * [시트 메뉴] 기존 피드백 잘한 점·개선할 점 채우기
- * - 대상: 잘한 점·개선할 점이 둘 다 비어 있고, 코치가 쓴 내용(코치 한마디·피드백 코멘트·요약) 또는 '완료' 상태가 있는 행
- * - AI로 잘한 점·개선할 점만 만들어 기록. 코치 한마디·피드백 코멘트·피드백 상태는 건드리지 않음
- * - 이미 쓴 코치 한마디(없으면 예전 형식 피드백 코멘트)는 겹치지 않도록 AI에게 참고로 전달
- * - 실행 시간 제한(6분) 때문에 4분마다 끊고, 남은 행은 1분 뒤 자동으로 이어서 처리
- * - AI 실패 행은 비워 둔 채 건너뜀 (메뉴를 다시 실행하면 재시도)
- */
-const PARTS_BACKFILL_STATE_KEY = 'FEEDBACK_PARTS_BACKFILL_STATE';
-const PARTS_BACKFILL_HANDLER = 'continueFeedbackPartsBackfill';
-const PARTS_BACKFILL_RUN_BUDGET_MS = 240000;
-const PARTS_BACKFILL_KEYS = ['잘한_점', '개선할_점'];
-
-// 예전 형식 피드백 코멘트에서 회원에게 보낸 코치 글만 (새 형식 [잘한 점]… 이면 빈 값, [문제점 분석] 블록 제외)
-function legacyCoachNoteFromComment(comment) {
-  const text = String(comment || '');
-  if (/\[(잘한 점|개선할 점|코치 한마디)\]/.test(text)) return '';
-  return text.replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '').trim();
-}
-
-function getExistingCoachNote(fb) {
-  return getFeedbackPart(fb, FEEDBACK_MEMBER_PARTS[2]) ||
-    legacyCoachNoteFromComment(getFeedbackPart(fb, { header: '피드백 코멘트', aliases: [] }));
-}
-
-function isFeedbackPartsBackfillTarget(fb) {
-  if (getFeedbackPart(fb, FEEDBACK_MEMBER_PARTS[0]) || getFeedbackPart(fb, FEEDBACK_MEMBER_PARTS[1])) return false;
-  const status = getFeedbackPart(fb, { header: '피드백 상태', aliases: [] });
-  return status === '완료' || !!getExistingCoachNote(fb) || !!getFeedbackPart(fb, { header: '피드백_요약', aliases: [] });
-}
-
-// 잘한 점·개선할 점만 AI로 생성 (프롬프트는 buildDailyFeedbackPrompt 공용, 출력 항목만 제한)
-function generateFeedbackPartsBackfill(ss, payload) {
-  const built = buildDailyFeedbackPromptFromPayload(ss, payload);
-  const aiResult = callGemini(built.prompt, built.systemInstruction, payload, { maxOutputTokens: built.maxOutputTokens });
-  if (!aiResult.text) return { ok: false, message: (aiResult.debug && aiResult.debug.errorMessage) || 'AI 응답 없음' };
-  if (aiResult.debug && aiResult.debug.isTruncated) return { ok: false, message: 'AI 응답이 최대 길이에서 잘렸습니다.' };
-  let rawJson = null;
-  try {
-    rawJson = parseAiJsonObject(aiResult.text);
-  } catch (e) {
-    return { ok: false, message: 'AI 응답 형식을 해석하지 못했습니다.' };
-  }
-  const pick = (names) => {
-    for (let i = 0; i < names.length; i++) {
-      const v = rawJson && rawJson[names[i]];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-    }
-    return '';
-  };
-  const good = pick(['잘한_점', '잘한 점', '잘한점']);
-  const improve = pick(['개선할_점', '개선할 점', '개선할점']);
-  if (!good && !improve) return { ok: false, message: 'AI 응답에 잘한 점·개선할 점이 없습니다.' };
-  return { ok: true, good: good, improve: improve };
-}
-
-function deletePartsBackfillTriggers() {
-  ScriptApp.getProjectTriggers().forEach(t => {
-    if (t.getHandlerFunction() === PARTS_BACKFILL_HANDLER) ScriptApp.deleteTrigger(t);
-  });
-}
-
-function backfillFeedbackGoodImprove() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const ui = SpreadsheetApp.getUi();
-  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet) {
-    ui.alert('잘한 점·개선할 점 채우기', 'Feedbacks 시트를 찾을 수 없습니다.', ui.ButtonSet.OK);
-    return;
-  }
-  const count = getSheetDataWithHeaders(sheet).filter(isFeedbackPartsBackfillTarget).length;
-  if (count === 0) {
-    ui.alert('잘한 점·개선할 점 채우기', '채울 행이 없습니다. (잘한 점·개선할 점이 비어 있는 기존 피드백 없음)', ui.ButtonSet.OK);
-    return;
-  }
-  const msg = `잘한 점·개선할 점이 비어 있는 기존 피드백 ${count}건에 AI로 두 칸만 채웁니다.\n\n` +
-    `- 코치 한마디·피드백 코멘트·피드백 상태는 바꾸지 않습니다.\n` +
-    `- 4분마다 끊고 1분 뒤 자동으로 이어서 처리합니다 (창을 닫아도 계속 진행).\n` +
-    `- AI가 실패한 행은 비워 둡니다. 끝난 뒤 메뉴를 다시 실행하면 재시도합니다.\n\n진행할까요?`;
-  if (ui.alert('✍️ 잘한 점·개선할 점 채우기', msg, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
-
-  PropertiesService.getScriptProperties().setProperty(PARTS_BACKFILL_STATE_KEY, JSON.stringify({ failed: [], filled: 0, skipped: 0 }));
-  const result = runFeedbackPartsBackfill();
-  ui.alert('잘한 점·개선할 점 채우기', result.message, ui.ButtonSet.OK);
-}
-
-// 시간 트리거로 이어서 실행
-function continueFeedbackPartsBackfill() {
-  runFeedbackPartsBackfill();
-}
-
-function runFeedbackPartsBackfill() {
-  const startMs = new Date().getTime();
-  deletePartsBackfillTriggers();
-  const props = PropertiesService.getScriptProperties();
-  let state = { failed: [], filled: 0, skipped: 0 };
-  try {
-    state = Object.assign(state, JSON.parse(props.getProperty(PARTS_BACKFILL_STATE_KEY) || '{}'));
-  } catch (e) {}
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
-  const guidelines = getGuidelinesData(ss.getSheetByName('Guidelines') || findSheetSmartly(ss, SHEET_NAMES.GUIDELINES, ['코칭철학', '운동제안지침', '식단제안지침', '피드백지침', '동기부여지침']));
-  const allFeedbacks = getSheetDataWithHeaders(sheet);
-  const allMembers = memberSheet ? getSheetDataWithHeaders(memberSheet) : [];
-  const targets = allFeedbacks.filter(f => isFeedbackPartsBackfillTarget(f) && !state.failed.includes(f._rowNumber));
-  const colMap = getHeaderColumnMap(sheet);
-
-  let index = 0;
-  for (; index < targets.length; index++) {
-    if (new Date().getTime() - startMs > PARTS_BACKFILL_RUN_BUDGET_MS) break;
-    const fb = targets[index];
-    const row = fb._rowNumber;
-    const name = getFeedbackRowName(fb);
-    const date = getFeedbackRowDate(fb);
-    // [정확 매칭] 회원 프로필·체중 기록은 이름(앞뒤 공백 제외) 완전 일치 (폼 제출 트리거와 동일)
-    const member = allMembers.find(m => String(memberViewGetName(m) || '').trim() === name) || { '이름': name };
-    const res = generateFeedbackPartsBackfill(ss, {
-      member: member,
-      feedback: fb,
-      recentFeedbacks: allFeedbacks.filter(f => getFeedbackRowName(f) === name),
-      guidelines: guidelines,
-      _styleExamples: selectStyleExamplesForPrompt(allFeedbacks, fb),
-      _promptOptions: { onlyKeys: PARTS_BACKFILL_KEYS, existingNote: getExistingCoachNote(fb) }
-    });
-    if (!res.ok) {
-      state.failed.push(row);
-      Logger.log(`[잘한 점·개선할 점 채우기] Row ${row} 실패: ${res.message}`);
-      continue;
-    }
-
-    // AI 생성 동안 행이 바뀌었는지(정렬·코치 저장) 다시 확인한 뒤 같은 행·두 칸 모두 빈 경우에만 기록
-    const lock = LockService.getScriptLock();
-    lock.waitLock(20000);
-    try {
-      const lastCol = sheet.getLastColumn();
-      const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
-      const vals = sheet.getRange(row, 1, 1, lastCol).getValues()[0];
-      const now = {};
-      headers.forEach((h, i) => { if (String(h).trim()) now[String(h).trim()] = vals[i]; });
-      const sameRow = getFeedbackRowName(now) === name && getFeedbackRowDate(now) === date;
-      const stillEmpty = !getFeedbackPart(now, FEEDBACK_MEMBER_PARTS[0]) && !getFeedbackPart(now, FEEDBACK_MEMBER_PARTS[1]);
-      if (sameRow && stillEmpty) {
-        writeFeedbackPart(sheet, colMap, row, FEEDBACK_MEMBER_PARTS[0], res.good);
-        writeFeedbackPart(sheet, colMap, row, FEEDBACK_MEMBER_PARTS[1], res.improve);
-        SpreadsheetApp.flush();
-        state.filled++;
-      } else {
-        state.skipped++;
-        Logger.log(`[잘한 점·개선할 점 채우기] Row ${row} 건너뜀 (${sameRow ? '그사이 내용이 채워짐' : '행 위치가 바뀜'})`);
-      }
-    } finally {
-      lock.releaseLock();
-    }
-    Utilities.sleep(600);
-  }
-
-  const remaining = targets.length - index;
-  let message;
-  if (remaining > 0) {
-    props.setProperty(PARTS_BACKFILL_STATE_KEY, JSON.stringify(state));
-    ScriptApp.newTrigger(PARTS_BACKFILL_HANDLER).timeBased().after(60 * 1000).create();
-    message = `지금까지 ${state.filled}건 채움, 실패 ${state.failed.length}건. 남은 ${remaining}건은 1분 뒤 자동으로 이어서 처리합니다.`;
-  } else {
-    props.deleteProperty(PARTS_BACKFILL_STATE_KEY);
-    message = `완료: ${state.filled}건 채움, 실패 ${state.failed.length}건, 건너뜀 ${state.skipped}건.` +
-      (state.failed.length ? `\n실패 행: ${state.failed.join(', ')} (메뉴를 다시 실행하면 재시도)` : '');
-  }
-  Logger.log('[잘한 점·개선할 점 채우기] ' + message);
-  return { message: message, remaining: remaining };
-}
-
-/**
- * [배치 처리 함수] Feedbacks 시트의 미처리 피드백(상태가 '완료'가 아닌 행) 전체 AI 초안 일괄 생성
- */
-function processPendingAiDrafts() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  if (!ss) return;
-
-  const feedbackSheet = findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!feedbackSheet) {
-    Logger.log('[processPendingAiDrafts] Feedbacks 시트를 찾을 수 없습니다.');
-    return;
-  }
-
-  const lastRow = feedbackSheet.getLastRow();
-  if (lastRow <= 1) {
-    Logger.log('[processPendingAiDrafts] 피드백 데이터 행이 없습니다.');
-    return;
-  }
-
-  const colMap = getHeaderColumnMap(feedbackSheet);
-  const statusCol = colMap['피드백상태'] || colMap['피드백 상태'] || colMap['완료여부'] || colMap['상태'];
-  const summaryCol = colMap['피드백요약'] || colMap['피드백_요약'] || colMap['요약'];
-
-  // 상태/요약 열을 행마다 getValue()로 읽지 않고 루프 전에 한 번에 일괄 조회 (시트 RPC 호출 최소화)
-  const statusValues = statusCol ? feedbackSheet.getRange(2, statusCol, lastRow - 1, 1).getValues() : null;
-  const summaryValues = summaryCol ? feedbackSheet.getRange(2, summaryCol, lastRow - 1, 1).getValues() : null;
-
-  let processedCount = 0;
-  let failedCount = 0;
-  for (let r = 2; r <= lastRow; r++) {
-    const currentStatus = statusValues ? String(statusValues[r - 2][0] || '').trim() : '';
-    const currentSummary = summaryValues ? String(summaryValues[r - 2][0] || '').trim() : '';
-
-    // 아직 코치가 완료하지 않았고, AI 초안도 안 채워진 행 탐색
-    if (currentStatus !== '완료' && (!currentStatus || currentStatus === '대기' || !currentSummary)) {
-      Logger.log(`[processPendingAiDrafts] Row ${r} 초안 생성 시도...`);
-      const fakeEvent = {
-        range: feedbackSheet.getRange(r, 1, 1, feedbackSheet.getLastColumn())
-      };
-      const result = onFormSubmitHandler(fakeEvent);
-      processedCount++;
-      if (result && result.status === 'error') failedCount++;
-      Utilities.sleep(600); // API Rate Limit 방어
-    }
-  }
-
-  const successCount = processedCount - failedCount;
-  Logger.log(`[processPendingAiDrafts 완료] 총 ${processedCount}건 시도: 성공 ${successCount}건, 실패 ${failedCount}건`);
-
-  try {
-    const ui = SpreadsheetApp.getUi();
-    ui.alert('일괄 생성 결과', `총 ${processedCount}건 시도\n- 성공: ${successCount}건\n- 실패(AI실패로 표시): ${failedCount}건\n\n실패한 항목은 메뉴를 다시 실행하거나 코치 대시보드에서 재생성해 주세요.`, ui.ButtonSet.OK);
-  } catch (e) {}
 }
 
 /**
@@ -3326,7 +1737,7 @@ function createUnauthorizedResponse() {
  * ==============================================================================
  * [회원 마이페이지 전용 API] getMemberView
  * - 회원 식별(view.js와 동일한 매칭 규칙) -> 휴대폰 뒷 4자리 또는 회원 토큰 서버 검증
- * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처/피드백 요약/코치 확인 필요 열 제외)
+ * - 인증 성공 시 해당 회원 본인 데이터만 반환 (코치 전용 지침/연락처 열 제외, 체중은 WeightLog의 본인 회원번호 행만)
  * - 휴대폰 번호 미등록 회원은 인증 불가 (비상 비밀번호 없음)
  * ==============================================================================
  */
@@ -3388,35 +1799,19 @@ function handleGetMemberView(ss, payload) {
     return createJsonResponse({ status: 'error', code: 'auth_required', message: '본인 인증이 필요합니다.' });
   }
 
-  const feedbackSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  const allFeedbacks = getSheetDataWithHeaders(feedbackSheet);
-  const myFeedbacks = memberViewFilterFeedbacks(allFeedbacks, member);
+  const weights = readWeightLog(ss)
+    .filter(r => r['회원번호'] === memberKey)
+    .map(r => ({ '날짜': r['날짜'], '체중': r['체중'] }));
 
   return createJsonResponse({
     status: 'success',
     data: {
       member: memberViewSanitize(member, ['지침']),
-      // 피드백 요약·코치 확인 필요는 코치 전용, 코치가 완료하지 않은 피드백 내용(AI초안 등)은 회원에게 보내지 않음
-      feedbacks: myFeedbacks.map(f => hideUnreviewedFeedbackForMember(memberViewSanitize(f, ['문제점', '수정제안', '피드백요약', '코치확인필요']))),
-      feedbackTotal: allFeedbacks.length,
+      weights: weights,
       regenRemaining: getMemberRegenRemaining(memberKey)
     },
     memberToken: issueMemberToken(memberKey, phoneLast4)
   });
-}
-
-// 회원에게 보이는 코치 작성 칸 - 피드백 상태가 '완료'일 때만 보냄 (회원이 제출한 기록·점수는 항상 보냄)
-const MEMBER_HIDDEN_UNTIL_DONE_HEADERS = ['피드백 코멘트', '피드백 내용', '코치 피드백', '코치 코멘트', 'AI초안_생성일시']
-  .concat(FEEDBACK_MEMBER_PARTS.map(p => p.header), FEEDBACK_MEMBER_PARTS[2].aliases)
-  .map(normalizeHeaderName);
-
-function hideUnreviewedFeedbackForMember(fb) {
-  if (getFeedbackPart(fb, { header: '피드백 상태', aliases: [] }) === '완료') return fb;
-  const out = {};
-  Object.keys(fb || {}).forEach(k => {
-    if (!MEMBER_HIDDEN_UNTIL_DONE_HEADERS.includes(normalizeHeaderName(k))) out[k] = fb[k];
-  });
-  return out;
 }
 
 // 회원 화면에 불필요한 코치 전용/개인 연락처 열 제거
@@ -3521,19 +1916,6 @@ function memberViewFindMember(members, targetId) {
   // 같은 회원번호가 2명 이상이면 다른 회원 화면이 열리지 않도록 매칭하지 않음
   const matches = members.filter(m => memberViewGetNo(m) === target);
   return matches.length === 1 ? matches[0] : null;
-}
-
-function memberViewFilterFeedbacks(feedbacks, member) {
-  if (!feedbacks || !Array.isArray(feedbacks) || !member) return [];
-  // [정확 매칭] 이름(앞뒤 공백 제외) 완전 일치 또는 회원번호 완전 일치만 본인 피드백으로 인정
-  // (부분 일치·휴대폰 뒷자리 일치로 다른 회원 피드백이 보이던 위험 제거)
-  const memberName = String(memberViewGetName(member) || '').trim();
-  const memberNo = memberViewGetNo(member).trim();
-  return feedbacks.filter(f => {
-    const fNo = String(memberViewFindVal(f, ['회원번호']) || memberViewFindVal(f, ['회원id']) || memberViewFindVal(f, ['고유번호']) || '').trim();
-    if (memberNo && fNo) return fNo === memberNo;
-    return !!memberName && getFeedbackRowName(f) === memberName;
-  });
 }
 
 /**
@@ -3934,9 +2316,169 @@ function appendMemberPlanLog(ss, auth, kind, actionLabel, row, request, requestN
 
 /**
  * ==============================================================================
- * [피드백 행 식별 헬퍼] 코치 대시보드(app.js getMemberName/getFeedbackDate)와 동일한 규칙
- * - 이름: 이름 열 값의 앞뒤 공백만 제거 (완전 일치 비교용)
- * - 날짜: 폼의 '오늘 날짜' 우선, 비어 있으면 타임스탬프 → yyyy-MM-dd
+ * [공복 체중 기록] WeightLog 시트 - 회원번호+날짜 1행
+ * - 열: 날짜 | 회원번호 | 이름 | 체중 | 입력자 | 기록시각 (처음 저장할 때 자동 생성)
+ * - 회원 마이페이지에서 본인 체중만 입력·수정·삭제 (같은 날 다시 입력하면 덮어쓰기)
+ * - 회원 식별은 회원번호 정확 일치만 사용, 이름은 시트를 사람이 알아보기 위한 값
+ * - 날짜·회원번호 열은 글자 서식으로 둬 시트 자동 날짜 변환·앞자리 0 손실을 막음
+ * ==============================================================================
+ */
+const WEIGHT_LOG_SHEET = 'WeightLog';
+const WEIGHT_LOG_HEADERS = ['날짜', '회원번호', '이름', '체중', '입력자', '기록시각'];
+const WEIGHT_LOG_ENTERED_BY_MEMBER = '회원';
+const MEMBER_WEIGHT_MIN = 20;
+const MEMBER_WEIGHT_MAX = 250;
+
+function getWeightLogSheet(ss, create) {
+  let sheet = ss.getSheetByName(WEIGHT_LOG_SHEET);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(WEIGHT_LOG_SHEET);
+    sheet.getRange(1, 1, 1, WEIGHT_LOG_HEADERS.length).setValues([WEIGHT_LOG_HEADERS]);
+    sheet.setFrozenRows(1);
+    sheet.getRange('A:B').setNumberFormat('@');
+  }
+  return sheet;
+}
+
+// 1행 헤더에서 WeightLog 열 번호를 찾음 (하나라도 없으면 오류 - 다른 칸에 쓰지 않도록)
+function locateWeightLogColumns(sheet) {
+  const colMap = getHeaderColumnMap(sheet);
+  const cols = {};
+  const missing = [];
+  [['date', '날짜'], ['memberNo', '회원번호'], ['name', '이름'], ['weight', '체중'], ['enteredBy', '입력자'], ['recordedAt', '기록시각']]
+    .forEach(([key, header]) => {
+      cols[key] = findExactColumn(colMap, [header]);
+      if (!cols[key]) missing.push(header);
+    });
+  if (missing.length) return { error: `WeightLog 시트에서 '${missing.join("', '")}' 열을 찾지 못했습니다.` };
+  cols.width = Math.max(sheet.getLastColumn(), cols.date, cols.memberNo, cols.name, cols.weight, cols.enteredBy, cols.recordedAt);
+  return cols;
+}
+
+function weightLogRowValues(cols, entry) {
+  const row = new Array(cols.width).fill('');
+  row[cols.date - 1] = entry.date;
+  row[cols.memberNo - 1] = entry.memberNo;
+  row[cols.name - 1] = entry.name;
+  row[cols.weight - 1] = entry.weight;
+  row[cols.enteredBy - 1] = entry.enteredBy;
+  row[cols.recordedAt - 1] = entry.recordedAt;
+  return row;
+}
+
+// WeightLog 전체를 { 날짜, 회원번호, 이름, 체중, 입력자, 기록시각 } 배열로 읽음 (날짜·회원번호·체중이 올바른 행만)
+function readWeightLog(ss) {
+  const sheet = getWeightLogSheet(ss, false);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const cols = locateWeightLogColumns(sheet);
+  if (cols.error) {
+    Logger.log('[readWeightLog] ' + cols.error);
+    return [];
+  }
+  const tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  const out = [];
+  values.forEach((row, i) => {
+    const rawDate = row[cols.date - 1];
+    const date = rawDate instanceof Date ? Utilities.formatDate(rawDate, tz, 'yyyy-MM-dd') : String(rawDate || '').trim();
+    const memberNo = String(row[cols.memberNo - 1] || '').trim();
+    const weight = parseFloat(row[cols.weight - 1]);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !memberNo || isNaN(weight) || weight <= 0) return;
+    const recordedAt = row[cols.recordedAt - 1];
+    out.push({
+      '날짜': date,
+      '회원번호': memberNo,
+      '이름': String(row[cols.name - 1] || '').trim(),
+      '체중': Math.round(weight * 10) / 10,
+      '입력자': String(row[cols.enteredBy - 1] || '').trim(),
+      '기록시각': recordedAt instanceof Date ? Utilities.formatDate(recordedAt, tz, 'yyyy-MM-dd HH:mm:ss') : String(recordedAt || '').trim(),
+      _rowNumber: i + 2
+    });
+  });
+  return out;
+}
+
+function parseMemberWeightInput(raw) {
+  const str = String(raw === null || raw === undefined ? '' : raw).trim();
+  if (!str) return { value: '' };
+  if (!/^\d{1,3}(\.\d{1,2})?$/.test(str)) return { error: '체중은 숫자로 입력해 주세요. 예) 72.4' };
+  const num = Math.round(parseFloat(str) * 10) / 10;
+  if (num < MEMBER_WEIGHT_MIN || num > MEMBER_WEIGHT_MAX) return { error: `체중은 ${MEMBER_WEIGHT_MIN}~${MEMBER_WEIGHT_MAX}kg 사이로 입력해 주세요.` };
+  return { value: num };
+}
+
+function handleMemberSaveWeight(ss, payload) {
+  const auth = resolveAuthorizedMember(ss, payload);
+  if (auth.error) return createJsonResponse(auth.error);
+
+  const date = String(payload.date || '').trim();
+  const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const check = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+  if (!check || check.getUTCMonth() !== +m[2] - 1 || check.getUTCDate() !== +m[3]) {
+    return createJsonResponse({ status: 'error', code: 'bad_request', message: '날짜를 다시 선택해 주세요.' });
+  }
+  if (date > Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd')) {
+    return createJsonResponse({ status: 'error', code: 'future_date', message: '오늘 이후 날짜에는 체중을 기록할 수 없어요.' });
+  }
+  const weight = parseMemberWeightInput(payload.weight);
+  if (weight.error) return createJsonResponse({ status: 'error', code: 'bad_weight', message: weight.error });
+
+  // 저장 직전 본인 행 재확인 (회원번호 정확 일치 1행 + 휴대폰 뒷자리 일치)
+  const self = locateSelfEditRow(auth.sheet, auth.memberKey, auth.phoneLast4);
+  if (self.error) return createJsonResponse({ status: 'error', code: self.code, message: self.error.replace(' (횟수는 차감되지 않았습니다)', '') });
+
+  const sheet = getWeightLogSheet(ss, true);
+  const cols = locateWeightLogColumns(sheet);
+  if (cols.error) {
+    Logger.log('[memberSaveWeight] ' + cols.error);
+    return createJsonResponse({ status: 'error', code: 'no_column', message: '체중을 기록할 칸을 찾지 못했습니다. 담당 코치님께 문의해 주세요.' });
+  }
+
+  const rows = readWeightLog(ss).filter(r => r['회원번호'] === auth.memberKey && r['날짜'] === date).map(r => r._rowNumber);
+  let mode;
+  if (weight.value === '') {
+    rows.sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
+    mode = rows.length ? 'deleted' : 'none';
+  } else {
+    const values = {
+      name: memberViewGetName(auth.member),
+      weight: weight.value,
+      enteredBy: WEIGHT_LOG_ENTERED_BY_MEMBER,
+      recordedAt: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss')
+    };
+    if (rows.length) {
+      // 같은 회원·날짜가 여러 행이면 첫 행만 남기고 정리 (회원번호+날짜 1행 유지), 코치가 덧붙인 다른 열은 건드리지 않음
+      const keep = rows[0];
+      Object.keys(values).forEach(key => sheet.getRange(keep, cols[key]).setValue(values[key]));
+      rows.slice(1).sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
+      mode = 'updated';
+    } else {
+      const entry = weightLogRowValues(cols, Object.assign({ date: date, memberNo: auth.memberKey }, values));
+      const newRow = sheet.getLastRow() + 1;
+      sheet.getRange(newRow, cols.date).setNumberFormat('@');
+      sheet.getRange(newRow, cols.memberNo).setNumberFormat('@');
+      sheet.getRange(newRow, 1, 1, entry.length).setValues([entry]);
+      mode = 'created';
+    }
+  }
+  SpreadsheetApp.flush();
+
+  if (mode !== 'none') {
+    appendMemberPlanLog(ss, auth, '공복 체중', mode === 'created' ? '체중 새로 기록' : (mode === 'updated' ? '체중 수정' : '체중 삭제'),
+      WEIGHT_LOG_SHEET, `${date} ${weight.value === '' ? '(삭제)' : weight.value + 'kg'}`, '');
+  }
+
+  return createJsonResponse({ status: 'success', memberKey: auth.memberKey, date: date, weight: weight.value, mode: mode });
+}
+
+/**
+ * ==============================================================================
+ * [시트 메뉴] 예전 체중 기록을 WeightLog로 1회 옮기기 (Feedbacks·MemberPlanLog는 읽기만 함)
+ * - 웹앱(마이페이지) 입력: MemberPlanLog의 '공복 체중' 기록(회원번호·날짜·체중/삭제)
+ * - 구글 폼 입력: Feedbacks의 공복 체중 칸. 폼에 회원번호가 없으므로 이번 1회만
+ *   이름이 Members 이름과 정확히 같은 회원 1명의 회원번호로 연결 (0명·2명 이상이면 실패 목록)
+ * - 같은 회원·날짜에 여러 기록이 있으면 가장 늦게 기록된 것 사용 (마지막이 삭제면 옮기지 않음)
+ * - WeightLog에 같은 회원번호·날짜가 이미 있으면 건너뜀 → 여러 번 실행해도 중복 없음
  * ==============================================================================
  */
 const FEEDBACK_NAME_CANDIDATES = ['이름', 'name', '성명', '회원명', '참여자이름', '참여자 이름'];
@@ -3969,163 +2511,173 @@ function getFeedbackRowDate(row) {
   return ts ? standardizeFeedbackDate(ts) : '';
 }
 
-/**
- * ==============================================================================
- * [회원 마이페이지 체중 입력] 날짜를 골라 아침 공복 체중만 기록
- * - 그 날짜에 본인 피드백 행(폼 제출 또는 체중만 행)이 있으면 그 행의 공복 몸무게 칸만 고침
- * - 없으면 Feedbacks 맨 아래에 '체중만' 행을 새로 씀 (이름·날짜·공복 몸무게·입력 구분)
- * - 나중에 같은 날짜로 폼을 제출하면 onFormSubmitHandler가 '체중만' 행을 폼 행으로 합침
- *   (폼 체중 칸이 비어 있으면 마이페이지 체중을 옮기고, 폼에 체중이 있으면 나중에 낸 폼 값을 씀)
- * - 회원↔피드백 연결은 기존 회원 화면과 같은 규칙(memberViewFilterFeedbacks: 회원번호 열이 있으면 회원번호, 없으면 이름 완전 일치)
- * ==============================================================================
- */
-const WEIGHT_ONLY_MARKER_HEADER = '입력 구분';
-const WEIGHT_ONLY_MARKER = '체중만';
-const MEMBER_WEIGHT_MIN = 20;
-const MEMBER_WEIGHT_MAX = 250;
-
-function isWeightOnlyFeedbackRow(row) {
-  return getFeedbackPart(row, { header: WEIGHT_ONLY_MARKER_HEADER, aliases: [] }) === WEIGHT_ONLY_MARKER;
-}
-
-// 1행 헤더에서 조건에 맞는 열이 정확히 1개일 때만 열 번호 반환 (0개·2개 이상이면 오류 메시지)
-function findUniqueFeedbackColumn(headers, label, test) {
-  const cols = [];
-  headers.forEach((h, i) => {
-    if (test(normalizeHeaderName(h))) cols.push(i + 1);
-  });
-  if (cols.length === 1) return { col: cols[0] };
-  return { error: cols.length === 0 ? `피드백 시트에서 '${label}' 열을 찾지 못했습니다.` : `피드백 시트에 '${label}' 열이 ${cols.length}개 있어 어느 칸에 쓸지 정할 수 없습니다.` };
-}
-
-function locateFeedbackWeightColumns(sheet) {
-  const lastCol = Math.max(sheet.getLastColumn(), 1);
-  const headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(h => String(h).trim());
-  const weight = findUniqueFeedbackColumn(headers, '아침 공복 몸무게', k => k.includes('공복') && (k.includes('몸무게') || k.includes('체중')));
-  if (weight.error) return weight;
-  let date = findUniqueFeedbackColumn(headers, '오늘 날짜', k => k.startsWith('오늘날짜'));
-  if (date.error && !headers.some(h => normalizeHeaderName(h).startsWith('오늘날짜'))) {
-    date = findUniqueFeedbackColumn(headers, '날짜', k => k === '날짜');
+// MemberPlanLog '일시' 값 → 밀리초 (시트 날짜 값, 'yyyy-MM-dd HH:mm:ss', '2026. 11. 4 오후 3:20:11' 등 KST 글자 모두 허용)
+// - 시트 날짜 값은 시트 시간대 기준으로 화면에 보이는 시각을 다시 KST 글자로 읽음 (시트 시간대가 서울이 아니어도 적힌 시각 그대로)
+function parseLogTimestamp(raw, sheetTz) {
+  if (raw instanceof Date) {
+    if (isNaN(raw.getTime())) return null;
+    raw = Utilities.formatDate(raw, sheetTz || 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
   }
-  if (date.error) return date;
-  const name = findUniqueFeedbackColumn(headers, '이름', k => k.startsWith('이름'));
-  if (name.error) return name;
-  return { headers: headers, weightCol: weight.col, dateCol: date.col, nameCol: name.col };
-}
-
-function parseMemberWeightInput(raw) {
   const str = String(raw === null || raw === undefined ? '' : raw).trim();
-  if (!str) return { value: '' };
-  if (!/^\d{1,3}(\.\d{1,2})?$/.test(str)) return { error: '체중은 숫자로 입력해 주세요. 예) 72.4' };
-  const num = Math.round(parseFloat(str) * 10) / 10;
-  if (num < MEMBER_WEIGHT_MIN || num > MEMBER_WEIGHT_MAX) return { error: `체중은 ${MEMBER_WEIGHT_MIN}~${MEMBER_WEIGHT_MAX}kg 사이로 입력해 주세요.` };
-  return { value: num };
+  const m = str.match(/(\d{4})\D+(\d{1,2})\D+(\d{1,2})(?:\D*?(오전|오후|AM|PM)?\s*(\d{1,2}):(\d{2})(?::(\d{2}))?)?/i);
+  if (!m) return null;
+  let hour = m[5] ? +m[5] : 0;
+  const ampm = String(m[4] || '').toUpperCase();
+  if ((ampm === '오후' || ampm === 'PM') && hour < 12) hour += 12;
+  if ((ampm === '오전' || ampm === 'AM') && hour === 12) hour = 0;
+  // KST(UTC+9) 기준 시각
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], hour - 9, m[6] ? +m[6] : 0, m[7] ? +m[7] : 0);
 }
 
-function handleMemberSaveWeight(ss, payload) {
-  const auth = resolveAuthorizedMember(ss, payload);
-  if (auth.error) return createJsonResponse(auth.error);
+function migrateWeightsToWeightLog() {
+  const ui = SpreadsheetApp.getUi();
+  const confirm = ui.alert('⚖️ 체중 기록 옮기기',
+    'Feedbacks 시트와 MemberPlanLog의 예전 체중 기록을 WeightLog 시트로 복사합니다.\n' +
+    'Feedbacks·MemberPlanLog는 수정하지 않고, WeightLog에 이미 있는 회원·날짜는 건너뜁니다.\n\n계속할까요?',
+    ui.ButtonSet.OK_CANCEL);
+  if (confirm !== ui.Button.OK) return;
 
-  const date = String(payload.date || '').trim();
-  const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const check = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
-  if (!check || check.getUTCMonth() !== +m[2] - 1 || check.getUTCDate() !== +m[3]) {
-    return createJsonResponse({ status: 'error', code: 'bad_request', message: '날짜를 다시 선택해 주세요.' });
+  const result = withMembersWriteLock(() => runWeightMigration(SpreadsheetApp.getActiveSpreadsheet()));
+  if (result.error) {
+    ui.alert('⚖️ 체중 기록 옮기기', result.error, ui.ButtonSet.OK);
+    return;
   }
-  if (date > Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd')) {
-    return createJsonResponse({ status: 'error', code: 'future_date', message: '오늘 이후 날짜에는 체중을 기록할 수 없어요.' });
-  }
-  const weight = parseMemberWeightInput(payload.weight);
-  if (weight.error) return createJsonResponse({ status: 'error', code: 'bad_weight', message: weight.error });
+  Logger.log('[체중 기록 옮기기] 실패 목록\n' + result.failures.join('\n'));
+  const shown = result.failures.slice(0, 40);
+  ui.alert('⚖️ 체중 기록 옮기기 완료',
+    `복사: ${result.copied}건\n` +
+    `건너뜀(WeightLog에 이미 있음): ${result.skippedExisting}건\n` +
+    `건너뜀(마지막 기록이 삭제): ${result.skippedDeleted}건\n` +
+    `실패: ${result.failures.length}건` +
+    (shown.length ? '\n\n[실패 목록]\n' + shown.join('\n') + (result.failures.length > shown.length ? `\n…외 ${result.failures.length - shown.length}건 (전체는 Apps Script 실행 로그)` : '') : ''),
+    ui.ButtonSet.OK);
+}
 
-  // 저장 직전 본인 행 재확인 (회원번호 정확 일치 1행 + 휴대폰 뒷자리 일치)
-  const self = locateSelfEditRow(auth.sheet, auth.memberKey, auth.phoneLast4);
-  if (self.error) return createJsonResponse({ status: 'error', code: self.code, message: self.error.replace(' (횟수는 차감되지 않았습니다)', '') });
+function runWeightMigration(ss) {
+  const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+  const members = getSheetDataWithHeaders(memberSheet);
+  if (!members.length) return { error: 'Members 시트에서 회원을 찾지 못했습니다.' };
+  const nameByNo = {};
+  const noByName = {};
+  members.forEach(mem => {
+    const no = memberViewGetNo(mem);
+    const name = String(memberViewGetField(mem, FEEDBACK_NAME_CANDIDATES) || '').trim();
+    if (!no) return;
+    nameByNo[no] = name;
+    if (name) (noByName[name] = noByName[name] || []).push(no);
+  });
 
-  // 피드백은 이름으로 연결되므로 같은 이름 회원이 2명 이상이면 기록하지 않음
-  const memberName = memberViewGetName(auth.member);
-  const sameName = getSheetDataWithHeaders(auth.sheet).filter(r => memberViewGetName(r) === memberName);
-  if (sameName.length !== 1) {
-    return createJsonResponse({ status: 'error', code: 'duplicate_member', message: '같은 이름의 회원이 있어 체중을 기록하지 않았습니다. 담당 코치님께 문의해 주세요.' });
-  }
+  const failures = [];
+  const latest = {}; // '회원번호|날짜' -> { memberNo, date, weight(null이면 삭제), time }
+  const consider = (ev) => {
+    const key = ev.memberNo + '|' + ev.date;
+    if (!latest[key] || ev.time >= latest[key].time) latest[key] = ev;
+  };
 
-  const sheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
-  if (!sheet) return createJsonResponse({ status: 'error', code: 'no_sheet', message: '피드백 시트를 찾지 못했습니다. 담당 코치님께 문의해 주세요.' });
-  const cols = locateFeedbackWeightColumns(sheet);
-  if (cols.error) {
-    Logger.log('[memberSaveWeight] ' + cols.error);
-    return createJsonResponse({ status: 'error', code: 'no_column', message: '체중을 기록할 칸을 찾지 못했습니다. 담당 코치님께 문의해 주세요.' });
-  }
-
-  const rows = memberViewFilterFeedbacks(getSheetDataWithHeaders(sheet), auth.member)
-    .filter(r => getFeedbackRowDate(r) === date);
-  let mode;
-  if (rows.length === 0) {
-    if (weight.value === '') {
-      mode = 'none';
-    } else {
-      const colMap = getHeaderColumnMap(sheet);
-      const markerCol = getOrAddExactColumn(sheet, colMap, WEIGHT_ONLY_MARKER_HEADER);
-      const noCol = findExactColumn(colMap, MEMBER_NO_HEADERS);
-      const values = new Array(Math.max(sheet.getLastColumn(), markerCol)).fill('');
-      values[cols.nameCol - 1] = memberName;
-      values[cols.dateCol - 1] = Utilities.parseDate(date, ss.getSpreadsheetTimeZone() || 'Asia/Seoul', 'yyyy-MM-dd');
-      values[cols.weightCol - 1] = weight.value;
-      values[markerCol - 1] = WEIGHT_ONLY_MARKER;
-      if (noCol) values[noCol - 1] = auth.memberKey;
-      sheet.appendRow(values);
-      mode = 'created';
+  // 1) Feedbacks (구글 폼 + 예전 '체중만' 행) - 이름 → Members 회원번호 (이번 1회 이관 전용)
+  const fbSheet = ss.getSheetByName('Feedbacks') || findSheetSmartly(ss, SHEET_NAMES.FEEDBACKS, ['공복몸무게', '운동점수', '식단점수', '운동내용']);
+  if (fbSheet && fbSheet.getLastRow() > 1) {
+    const headers = fbSheet.getRange(1, 1, 1, fbSheet.getLastColumn()).getValues()[0].map(h => String(h).trim());
+    const weightIdx = headers.map((h, i) => [normalizeHeaderName(h), i])
+      .filter(([k]) => k.includes('공복') && (k.includes('몸무게') || k.includes('체중'))).map(([, i]) => i);
+    if (weightIdx.length !== 1) {
+      return { error: weightIdx.length === 0 ? "Feedbacks 시트에서 공복 몸무게 열을 찾지 못했습니다." : `Feedbacks 시트에 공복 몸무게 열이 ${weightIdx.length}개 있어 어느 열을 옮길지 정할 수 없습니다.` };
     }
-  } else if (weight.value === '') {
-    // 지우기: 체중만 행은 행째 삭제, 폼 제출 행은 체중 칸만 비움
-    rows.filter(r => !isWeightOnlyFeedbackRow(r)).forEach(r => sheet.getRange(r._rowNumber, cols.weightCol).setValue(''));
-    rows.filter(isWeightOnlyFeedbackRow).map(r => r._rowNumber).sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
-    mode = 'deleted';
-  } else {
-    rows.forEach(r => sheet.getRange(r._rowNumber, cols.weightCol).setValue(weight.value));
-    mode = 'updated';
-  }
-  SpreadsheetApp.flush();
+    const tsIdx = headers.findIndex(h => FEEDBACK_TIMESTAMP_CANDIDATES.some(c => normalizeHeaderName(c) === normalizeHeaderName(h)));
+    const markerIdx = headers.findIndex(h => normalizeHeaderName(h) === '입력구분');
+    const rawValues = fbSheet.getRange(1, 1, fbSheet.getLastRow(), fbSheet.getLastColumn()).getValues();
 
-  if (mode !== 'none') {
-    appendMemberPlanLog(ss, auth, '공복 체중', mode === 'created' ? '체중 새로 기록' : (mode === 'updated' ? '체중 수정' : '체중 삭제'),
-      rows.map(r => r._rowNumber).join(', ') || sheet.getLastRow(), `${date} ${weight.value === '' ? '(삭제)' : weight.value + 'kg'}`, '');
+    getSheetDataWithHeaders(fbSheet).forEach(row => {
+      const raw = rawValues[row._rowNumber - 1];
+      const rawWeight = raw[weightIdx[0]];
+      if (rawWeight === '' || rawWeight === null) return;
+      const name = getFeedbackRowName(row);
+      const date = getFeedbackRowDate(row);
+      const label = `Feedbacks ${row._rowNumber}행 (${name || '이름 없음'}, ${date || '날짜 없음'})`;
+      const weight = parseFloat(String(rawWeight).replace(/[^0-9.]/g, ''));
+      if (isNaN(weight) || weight < MEMBER_WEIGHT_MIN || weight > MEMBER_WEIGHT_MAX) return failures.push(`${label}: 체중 값을 해석할 수 없음 (${rawWeight})`);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return failures.push(`${label}: 날짜를 해석할 수 없음`);
+      const nos = noByName[name] || [];
+      if (nos.length === 0) return failures.push(`${label}: Members에 같은 이름의 회원이 없음`);
+      if (nos.length > 1) return failures.push(`${label}: Members에 같은 이름이 ${nos.length}명 (${nos.join(', ')})`);
+      // 예전 '체중만' 행은 MemberPlanLog 기록이 더 정확하므로 가장 낮은 우선순위
+      const isWeightOnly = markerIdx >= 0 && String(raw[markerIdx]).trim() === '체중만';
+      const ts = tsIdx >= 0 ? raw[tsIdx] : '';
+      consider({ memberNo: nos[0], date: date, weight: Math.round(weight * 10) / 10, time: (!isWeightOnly && ts instanceof Date) ? ts.getTime() : 0 });
+    });
   }
 
-  return createJsonResponse({ status: 'success', memberKey: auth.memberKey, date: date, weight: weight.value, mode: mode });
+  // 2) MemberPlanLog의 웹앱 체중 기록 (회원번호 그대로)
+  // - '일시' 칸은 시트가 날짜·시간 값으로 자동 변환하므로 원본 값으로 읽음 (getSheetDataWithHeaders는 날짜만 남김)
+  const logSheet = ss.getSheetByName('MemberPlanLog');
+  if (logSheet && logSheet.getLastRow() > 1) {
+    const logRaw = logSheet.getDataRange().getValues();
+    const timeIdx = logRaw[0].findIndex(h => normalizeHeaderName(h) === '일시');
+    const sheetTz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
+    getSheetDataWithHeaders(logSheet, { noAliases: true }).forEach(row => {
+      if (String(row['종류'] || '').trim() !== '공복 체중') return;
+      const memberNo = String(row['회원번호/키'] || '').trim();
+      const text = String(row['회원 요청'] || '').trim();
+      const label = `MemberPlanLog ${row._rowNumber}행 (${memberNo}, ${text})`;
+      const m = text.match(/^(\d{4}-\d{2}-\d{2}) (?:\(삭제\)|([\d.]+)kg)$/);
+      if (!m) return failures.push(`${label}: 기록 형식을 해석할 수 없음`);
+      if (!(memberNo in nameByNo)) return failures.push(`${label}: Members에 없는 회원번호`);
+      const time = parseLogTimestamp(timeIdx >= 0 ? logRaw[row._rowNumber - 1][timeIdx] : '', sheetTz);
+      if (time === null) return failures.push(`${label}: 기록 일시를 해석할 수 없음`);
+      consider({ memberNo: memberNo, date: m[1], weight: m[2] ? Math.round(parseFloat(m[2]) * 10) / 10 : null, time: time });
+    });
+  }
+
+  // 3) WeightLog에 없는 회원·날짜만 추가
+  const sheet = getWeightLogSheet(ss, true);
+  const cols = locateWeightLogColumns(sheet);
+  if (cols.error) return { error: cols.error };
+  const existing = {};
+  readWeightLog(ss).forEach(r => { existing[r['회원번호'] + '|' + r['날짜']] = true; });
+
+  const now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+  const rows = [];
+  let skippedExisting = 0;
+  let skippedDeleted = 0;
+  Object.keys(latest).sort().forEach(key => {
+    const ev = latest[key];
+    if (existing[key]) { skippedExisting++; return; }
+    if (ev.weight === null) { skippedDeleted++; return; }
+    rows.push(weightLogRowValues(cols, {
+      date: ev.date,
+      memberNo: ev.memberNo,
+      name: nameByNo[ev.memberNo] || '',
+      weight: ev.weight,
+      enteredBy: WEIGHT_LOG_ENTERED_BY_MEMBER,
+      recordedAt: ev.time ? Utilities.formatDate(new Date(ev.time), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss') : now
+    }));
+  });
+  if (rows.length) {
+    const first = sheet.getLastRow() + 1;
+    sheet.getRange(first, cols.date, rows.length, 1).setNumberFormat('@');
+    sheet.getRange(first, cols.memberNo, rows.length, 1).setNumberFormat('@');
+    sheet.getRange(first, 1, rows.length, rows[0].length).setValues(rows);
+    SpreadsheetApp.flush();
+  }
+  return { copied: rows.length, skippedExisting: skippedExisting, skippedDeleted: skippedDeleted, failures: failures };
 }
 
 /**
- * 폼 제출 행에 같은 회원·같은 날짜의 '체중만' 행을 합침 (스크립트 잠금 안에서 호출)
- * - 반환: { skip: true } (제출 행 자체가 체중만 행) 또는 { row: 합친 뒤 제출 행 번호 }
+ * [시트 메뉴] 예전 데일리 피드백 트리거 삭제 (구글 폼 제출 AI 초안, 잘한 점 채우기 이어서 실행)
+ * - 처리 함수가 코드에서 빠졌으므로 남아 있으면 실행 오류만 쌓임. 웜업 트리거는 그대로 둠
  */
-function mergeWeightOnlyRowsIntoSubmission(sheet, targetRow) {
-  const rows = getSheetDataWithHeaders(sheet);
-  const target = rows.find(r => r._rowNumber === targetRow);
-  if (!target) return { row: targetRow };
-  if (isWeightOnlyFeedbackRow(target)) return { skip: true };
+const LEGACY_FEEDBACK_TRIGGER_HANDLERS = ['onFormSubmitHandler', 'continueFeedbackPartsBackfill', 'processPendingAiDrafts'];
 
-  const name = getFeedbackRowName(target);
-  const date = getFeedbackRowDate(target);
-  if (!name || !date) return { row: targetRow };
-  const weightOnly = rows.filter(r => r._rowNumber !== targetRow && isWeightOnlyFeedbackRow(r) &&
-    getFeedbackRowName(r) === name && getFeedbackRowDate(r) === date);
-  if (weightOnly.length === 0) return { row: targetRow };
-
-  const cols = locateFeedbackWeightColumns(sheet);
-  if (cols.error) {
-    Logger.log('[체중만 행 합치기 생략] ' + cols.error);
-    return { row: targetRow };
-  }
-  const formWeight = sheet.getRange(targetRow, cols.weightCol).getValue();
-  if (formWeight === '' || formWeight === null) {
-    const latest = weightOnly[weightOnly.length - 1];
-    sheet.getRange(targetRow, cols.weightCol).setValue(latest[cols.headers[cols.weightCol - 1]]);
-  }
-  const deleted = weightOnly.map(r => r._rowNumber).sort((a, b) => b - a);
-  deleted.forEach(n => sheet.deleteRow(n));
-  SpreadsheetApp.flush();
-  const newRow = targetRow - deleted.filter(n => n < targetRow).length;
-  Logger.log(`[체중만 행 합치기] ${date} 체중만 행 ${deleted.length}개를 폼 제출 행(${newRow})으로 합쳤습니다.`);
-  return { row: newRow };
+function removeLegacyFeedbackTriggers() {
+  let removed = 0;
+  ScriptApp.getProjectTriggers().forEach(t => {
+    if (LEGACY_FEEDBACK_TRIGGER_HANDLERS.indexOf(t.getHandlerFunction()) >= 0) {
+      ScriptApp.deleteTrigger(t);
+      removed++;
+    }
+  });
+  Logger.log(`[예전 피드백 트리거 삭제] ${removed}개`);
+  try {
+    SpreadsheetApp.getUi().alert('🧯 폼 제출 트리거 삭제', removed ? `예전 피드백 트리거 ${removed}개를 삭제했습니다.` : '삭제할 예전 피드백 트리거가 없습니다.', SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) {}
 }

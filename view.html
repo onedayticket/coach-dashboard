@@ -13,7 +13,7 @@
   <!-- Pretendard (한글 UI 폰트) -->
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
   <!-- Member Page CSS (view.css) -->
-  <link href="view.css?v=3.3.0" rel="stylesheet">
+  <link href="view.css?v=4.0.0" rel="stylesheet">
 </head>
 <body class="mp-body">
 
@@ -36,10 +36,9 @@
         <button type="button" class="mp-icon-btn" onclick="window.location.reload()" title="새로고침" aria-label="새로고침">
           <i class="bi bi-arrow-clockwise"></i>
         </button>
-        <a href="https://forms.gle/oVfkyFefqmw21Kqn9" target="_blank" rel="noopener noreferrer"
-           class="mp-cta-chip" id="btnTopFeedbackForm" title="구글 폼으로 데일리 피드백 제출">
-          <i class="bi bi-pencil-square"></i><span>기록하기</span>
-        </a>
+        <button type="button" class="mp-cta-chip" onclick="openWeightCalendar()" title="달력에서 아침 공복 체중 기록">
+          <i class="bi bi-calendar3"></i><span>체중 기록</span>
+        </button>
       </div>
     </div>
   </header>
@@ -88,7 +87,7 @@
   </div>
 
   <!-- ========================================================================= -->
-  <!-- [회원 전용 메인 콘텐츠: 좌우로 넘기는 4개 탭 + 하단 탭바] -->
+  <!-- [회원 전용 메인 콘텐츠: 좌우로 넘기는 4개 탭(홈·운동·식단·체중) + 하단 탭바] -->
   <!-- ========================================================================= -->
   <main class="mp-app d-none" id="memberPageContent">
     <div class="mp-track" id="memberTabTrack">
@@ -124,21 +123,11 @@
             </div>
           </div>
 
-          <!-- 오늘의 기록 CTA -->
-          <a href="https://forms.gle/oVfkyFefqmw21Kqn9" target="_blank" rel="noopener noreferrer" class="mp-cta-card">
-            <span class="mp-cta-icon"><i class="bi bi-calendar2-heart-fill"></i></span>
-            <span class="mp-cta-text">
-              <strong>오늘의 운동·식단 기록하기</strong>
-              <small>매일 남기면 코치님이 맞춤 피드백을 드려요</small>
-            </span>
-            <i class="bi bi-chevron-right mp-cta-arrow"></i>
-          </a>
-
-          <!-- 체중만 기록 (달력에서 날짜 선택) -->
+          <!-- 체중 기록 (달력에서 날짜 선택) -->
           <button type="button" class="mp-cta-card mp-cta-weight" onclick="openWeightCalendar()">
             <span class="mp-cta-icon"><i class="bi bi-calendar3"></i></span>
             <span class="mp-cta-text">
-              <strong>체중만 기록하기</strong>
+              <strong>체중 기록하기</strong>
               <small>달력에서 날짜를 골라 아침 공복 체중을 남겨요</small>
             </span>
             <i class="bi bi-chevron-right mp-cta-arrow"></i>
@@ -152,13 +141,10 @@
             <button type="button" class="mp-shortcut is-diet" data-tab-target="diet">
               <i class="bi bi-egg-fried"></i><span>식단 플랜</span>
             </button>
-            <button type="button" class="mp-shortcut is-feedback" data-tab-target="feedback">
-              <i class="bi bi-chat-heart-fill"></i><span>피드백</span>
+            <button type="button" class="mp-shortcut is-feedback" data-tab-target="weight">
+              <i class="bi bi-graph-down"></i><span>체중 변화</span>
             </button>
           </div>
-
-          <!-- 최근 코치 피드백 미리보기 (JS 렌더링) -->
-          <div id="homeLatestFeedback"></div>
 
           <!-- 인적 사항 (사전 설문) -->
           <section class="mp-card" id="panelPersonalInfo">
@@ -232,42 +218,38 @@
       </section>
 
       <!-- ================================================================= -->
-      <!-- [탭 4: 피드백 (차트 + 일자별 기록)] -->
+      <!-- [탭 4: 체중 (그래프 + 날짜별 기록)] -->
       <!-- ================================================================= -->
-      <section class="mp-pane" data-tab="feedback" aria-label="피드백" id="sectionFeedbackHistory">
+      <section class="mp-pane" data-tab="weight" aria-label="체중" id="sectionWeightHistory">
         <div class="mp-pane-inner">
           <div class="mp-pane-head is-feedback">
-            <span class="mp-pane-icon"><i class="bi bi-chat-heart-fill"></i></span>
+            <span class="mp-pane-icon"><i class="bi bi-graph-down"></i></span>
             <div class="flex-grow-1">
-              <h2 class="mp-pane-title">피드백 & 변화 추이</h2>
-              <p class="mp-pane-sub">오늘 날짜 기준 최신순</p>
+              <h2 class="mp-pane-title">체중 변화</h2>
+              <p class="mp-pane-sub">아침 공복 체중 기록</p>
             </div>
-            <span class="mp-chip mp-chip-primary" id="feedbackCountBadge">누적 0건</span>
+            <span class="mp-chip mp-chip-primary" id="weightCountBadge">누적 0건</span>
           </div>
 
-          <!-- 변화 추이 그래프: 한 번에 하나씩 전환 -->
+          <button type="button" class="mp-cta-card mp-cta-weight" onclick="openWeightCalendar()">
+            <span class="mp-cta-icon"><i class="bi bi-calendar3"></i></span>
+            <span class="mp-cta-text">
+              <strong>체중 기록하기</strong>
+              <small>달력에서 날짜를 골라 입력·수정·삭제해요</small>
+            </span>
+            <i class="bi bi-chevron-right mp-cta-arrow"></i>
+          </button>
+
           <section class="mp-card">
-            <div class="mp-seg" role="tablist" aria-label="그래프 선택">
-              <button type="button" class="mp-seg-btn is-active" data-chart="weight" role="tab">체중</button>
-              <button type="button" class="mp-seg-btn" data-chart="exercise" role="tab">운동 점수</button>
-              <button type="button" class="mp-seg-btn" data-chart="diet" role="tab">식단 점수</button>
-            </div>
-            <div class="mp-chart is-active" data-chart-panel="weight">
+            <div class="mp-chart is-active">
               <div class="mp-chart-caption">아침 공복 몸무게 (kg)</div>
               <div class="chart-canvas-wrapper"><canvas id="chartWeight"></canvas></div>
-            </div>
-            <div class="mp-chart" data-chart-panel="exercise">
-              <div class="mp-chart-caption">운동 실행률 점수 (5점 만점)</div>
-              <div class="chart-canvas-wrapper"><canvas id="chartExercise"></canvas></div>
-            </div>
-            <div class="mp-chart" data-chart-panel="diet">
-              <div class="mp-chart-caption">식단 실행률 점수 (5점 만점)</div>
-              <div class="chart-canvas-wrapper"><canvas id="chartDiet"></canvas></div>
+              <div class="mp-empty-note d-none" id="weightChartEmpty">기록이 쌓이면 그래프로 보여 드려요.</div>
             </div>
           </section>
 
-          <!-- 일자별 피드백 카드 목록 (JS 렌더링, 문제점 분석은 비공개) -->
-          <div class="mp-feedback-list" id="feedbackTableBody"></div>
+          <!-- 날짜별 기록 (누르면 달력에서 그 날짜 수정) -->
+          <section class="mp-card mp-weight-list" id="weightRecordList"></section>
         </div>
       </section>
     </div>
@@ -285,8 +267,8 @@
       <button type="button" class="mp-tab" data-tab-target="diet" role="tab" aria-selected="false">
         <i class="bi bi-egg-fried"></i><span>식단</span>
       </button>
-      <button type="button" class="mp-tab" data-tab-target="feedback" role="tab" aria-selected="false">
-        <i class="bi bi-chat-heart-fill"></i><span>피드백</span>
+      <button type="button" class="mp-tab" data-tab-target="weight" role="tab" aria-selected="false">
+        <i class="bi bi-graph-down"></i><span>체중</span>
       </button>
     </nav>
   </main>
@@ -358,6 +340,6 @@
   <!-- Chart.js CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Member Page Logic (view.js) -->
-  <script src="view.js?v=3.4.0"></script>
+  <script src="view.js?v=4.0.0"></script>
 </body>
 </html>

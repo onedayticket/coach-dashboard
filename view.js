@@ -1,14 +1,11 @@
 /**
  * ==============================================================================
- * [4주 온라인 습관화 코칭 - 회원 전용 마이페이지 view.js v2.1.1]
+ * [4주 온라인 습관화 코칭 - 회원 전용 마이페이지 view.js v3.0.0]
  * ==============================================================================
  * 1. URL 쿼리 파라미터(?id=회원번호) 기반 전용 회원 식별
  * 2. 휴대폰 번호 뒷 4자리 본인 인증 모달 및 로컬 저장
  * 3. 운동 루틴 & 식단 플랜: 표가 아닌 한눈에 쏙 들어오는 프리미엄 서식 박스로 표기 (수정 지침 100% 비공개)
- * 4. 피드백 관리: 코치 대시보드와 구조 완전 일치
- *    - 3개의 독립 꺾은선 차트 (공복 체중 변화, 운동 점수, 식단 점수)
- *    - 일자별 피드백 누적 테이블 (날짜, 공복체중, 운동점수, 식단점수, 코치 피드백(잘한 점/개선할 점/코치 한마디), 실천일지)
- *    - 피드백 요약·코치 확인 필요·문제점 분석은 회원 화면에서 완전히 제외
+ * 4. 공복 체중: 달력에서 날짜별 입력·수정·삭제 (WeightLog 시트), 체중 그래프·기록 목록
  * ==============================================================================
  */
 
@@ -17,8 +14,6 @@ const STORAGE_GAS_URL_KEY = 'coach_dash_gas_api_url_v2';
 
 // 기본 구글 Apps Script 웹앱 연동 URL (회원이 별도 파라미터나 설정 없이도 전용 링크로 즉시 직결되는 기본 백엔드 주소)
 const DEFAULT_GAS_API_URL = 'https://script.google.com/macros/s/AKfycbzkKdXbM2KNOC2PvBcOtzxR13wt5Em_JUQdvotr22wdb2hxwYTc2eGZmzSHUArqGSNYWQ/exec';
-
-
 
 // 오프라인/테스트용 기본 Mock DB (app.js의 MOCK_DB와 완전 동기화)
 const VIEW_MOCK_DB = {
@@ -101,136 +96,27 @@ const VIEW_MOCK_DB = {
       '현재 제안 식단': '상담 후 맞춤 식단 등록 예정'
     }
   ],
-  feedbacks: [
-    {
-      '피드백번호': 'FB01',
-      '오늘 날짜': '2026-10-08',
-      '날짜': '2026-10-08',
-      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
-      '이름': '김민수',
-      '회원번호': 'M001',
-      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '82.5',
-      '공복 몸무게': 82.5,
-      '운동_실행률_점수': 4.5,
-      '식단_실행률_점수': 4.0,
-      '잘한 점': '첫날부터 밥 양 2/3 조절과 수분 2L를 모두 지키셨어요.',
-      '개선할 점': '스쿼트할 때 무릎이 발끝 앞으로 너무 나가지 않게 엉덩이 힘에 집중해 보세요.',
-      '코치 한마디': '멋진 출발이에요! 내일도 같이 가요.',
-      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '첫날이라 긴장 반 설렘 반으로 시작했습니다. 물 2L 마시기 성공!'
-    },
-    {
-      '피드백번호': 'FB02',
-      '오늘 날짜': '2026-10-09',
-      '날짜': '2026-10-09',
-      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
-      '이름': '김민수',
-      '회원번호': 'M001',
-      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '82.2',
-      '공복 몸무게': 82.2,
-      '운동_실행률_점수': 5.0,
-      '식단_실행률_점수': 4.5,
-      '코치 한마디': '야식 유혹을 이겨낸 결단력이 대단합니다! 러닝 후에는 종아리와 아킬레스건을 5분간 충분히 마사지해 주시면 근육통 방지에 큰 도움이 됩니다.',
-      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '러닝 후 땀 흘리니 상쾌하네요. 야식 유혹 참아냈습니다.'
-    },
-    {
-      '피드백번호': 'FB03',
-      '오늘 날짜': '2026-10-10',
-      '날짜': '2026-10-10',
-      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
-      '이름': '김민수',
-      '회원번호': 'M001',
-      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '82.0',
-      '공복 몸무게': 82.0,
-      '운동_실행률_점수': 4.0,
-      '식단_실행률_점수': 4.0,
-      '코치 한마디': '야근 중에도 취침 전 폼롤러 스트레칭을 잊지 않으신 점 최고입니다. 피로가 심할 땐 무리한 본운동 대신 온찜질과 스트레칭으로 회복에 집중해 주세요.',
-      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '업무가 너무 바빠 운동을 제대로 못해 아쉽고 피곤합니다.'
-    },
-    {
-      '피드백번호': 'FB04',
-      '오늘 날짜': '2026-10-11',
-      '날짜': '2026-10-11',
-      '이름\n(매일 똑같은 이름 사용 부탁드립니다.)': '김민수',
-      '이름': '김민수',
-      '회원번호': 'M001',
-      '아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)': '81.8',
-      '공복 몸무게': 81.8,
-      '운동_실행률_점수': 4.5,
-      '식단_실행률_점수': 4.5,
-      '코치 한마디': '상체 웨이트와 클린 식단 모두 완벽하게 지켜주셨습니다! 몸의 가벼움이 지속될 거예요. 주말에도 수분 섭취 루틴 유지해 주세요.',
-      '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]': '클린하게 챙겨 먹으니 오후에 식곤증이 없어서 신기합니다.'
-    },
-    {
-      '피드백번호': 'FB05',
-      '날짜': '2026-10-12',
-      '이름': '김민수',
-      '회원번호': 'M001',
-      '공복 몸무게': 81.7,
-      '운동 점수': 8,
-      '식단 점수': 8,
-      '운동_실행률_점수': 4.0,
-      '식단_실행률_점수': 4.0,
-      '피드백 코멘트': '실내 사이클 35분 꾸준한 실천 감사합니다! 체중 감량 추세가 아주 안정적입니다.',
-      '운동 내용': '실내 사이클 35분 (케이던스 80 유지)',
-      '식단 내용': '아침 바나나+계란 2알, 점심 연어 포케, 저녁 프로틴 쉐이크+아몬드',
-      '회원 일기/코멘트': '몸이 한결 가벼워졌고 옷 입을 때 허리가 편안합니다!'
-    },
-    {
-      // 마이페이지에서 체중만 입력한 행 예시
-      '오늘 날짜': '2026-10-13',
-      '이름': '김민수',
-      '회원번호': 'M001',
-      '공복 몸무게': 81.5,
-      '입력 구분': '체중만'
-    },
-
-    // 이지원 회원 피드백
-    {
-      '피드백번호': 'FB06',
-      '날짜': '2026-10-11',
-      '이름': '이지원',
-      '회원번호': 'M002',
-      '공복 몸무게': 58.2,
-      '운동 점수': 8,
-      '식단 점수': 7,
-      '운동_실행률_점수': 4.5,
-      '식단_실행률_점수': 4.0,
-      '피드백 코멘트': '디저트 방어 성공 축하드립니다! 결단력이 정말 훌륭합니다.',
-      '운동 내용': '필라테스 코어 35분',
-      '식단 내용': '아침 사과, 점심 일반식(구내식당), 저녁 샐러드',
-      '회원 일기/코멘트': '디저트 카페 가자는 동료들 유혹 뿌리치고 아메리카노 마셨습니다.'
-    },
-    {
-      '피드백번호': 'FB07',
-      '날짜': '2026-10-12',
-      '이름': '이지원',
-      '회원번호': 'M002',
-      '공복 몸무게': 57.9,
-      '운동 점수': 9,
-      '식단 점수': 8,
-      '운동_실행률_점수': 4.5,
-      '식단_실행률_점수': 4.0,
-      '피드백 코멘트': '퇴근길 만보 걷기 달성 멋집니다! 체중도 57kg대로 진입하셨네요 축하드려요!',
-      '운동 내용': '빠르게 걷기 만보 (50분)',
-      '식단 내용': '아침 요거트, 점심 현미 포케, 저녁 닭가슴살 볼',
-      '회원 일기/코멘트': '퇴근길 지하철 2정거장 일찍 내려서 걸어왔어요.'
-    }
+  // M001 회원의 WeightLog 기록 (서버는 본인 회원번호 행의 날짜·체중만 보냄)
+  weights: [
+    { '날짜': '2026-10-08', '체중': 82.5 },
+    { '날짜': '2026-10-09', '체중': 82.1 },
+    { '날짜': '2026-10-10', '체중': 81.9 },
+    { '날짜': '2026-10-11', '체중': 81.6 },
+    { '날짜': '2026-10-12', '체중': 81.4 },
+    { '날짜': '2026-10-13', '체중': 81.5 },
+    { '날짜': '2026-10-15', '체중': 81.1 }
   ]
 };
 
 // 현재 회원 상태
 let CurrentMemberState = {
   member: null,
-  feedbacks: [],
-  rawFeedbacksTotal: 0,
-  rawMembersTotal: 0,
+  weights: [], // [{ 날짜, 체중 }] 본인 공복 체중 기록 (WeightLog)
   isUsingMock: false,
   targetId: '', // URL 회원 식별값 (서버 인증 요청용)
   gasUrl: '',
   charts: {
-    weight: null,
-    exercise: null,
-    diet: null
+    weight: null
   }
 };
 
@@ -365,281 +251,8 @@ function showInvalidAccessScreen(reasonHint = '', customTitle = '', customDesc =
   }
 }
 
-
-/**
- * ==============================================================================
- * [지능형 구글 폼/시트 헤더 파서 & 스마트 필드 추출기]
- * 신청폼의 설명, 줄바꿈(\n), 예시 문구(예: 80.7) 등으로 헤더가 길어져도 100% 자동 감지
- * ==============================================================================
- */
-
-/**
- * 객체의 모든 키를 스캔하여 포함 키워드(includeKws)를 모두 만족하고 제외 키워드(excludeKws)가 없는 열의 값 반환
- */
-function findValByKeywords(obj, includeKws, excludeKws = []) {
-  if (!obj || typeof obj !== 'object') return '';
-  const keys = Object.keys(obj);
-
-  for (const k of keys) {
-    // 공백, 줄바꿈, 특수기호 제거 후 소문자화
-    const cleanK = String(k).replace(/[\s\r\n]+/g, '').toLowerCase();
-
-    // 제외 키워드가 포함되어 있다면 패스
-    if (excludeKws.length > 0 && excludeKws.some(ex => cleanK.includes(ex.replace(/[\s\r\n]+/g, '').toLowerCase()))) {
-      continue;
-    }
-
-    // 포함 키워드가 모두 들어있는지 확인
-    const matchAll = includeKws.every(kw => cleanK.includes(kw.replace(/[\s\r\n]+/g, '').toLowerCase()));
-    if (matchAll) {
-      const val = obj[k];
-      if (val !== undefined && val !== null && String(val).trim() !== '') {
-        return val;
-      }
-    }
-  }
-  return '';
-}
-
-/**
- * 1. 오늘 날짜 추출
- * 실제 시트 헤더: '오늘 날짜' 또는 '타임스탬프'
- */
-function extractFeedbackDate(fb) {
-  if (!fb) return '-';
-  // 1순위: '오늘' & '날짜'
-  let val = findValByKeywords(fb, ['오늘', '날짜']);
-  // 2순위: '날짜' 또는 '일자' (단, '생성', '수정', '초안' 제외)
-  if (!val) val = findValByKeywords(fb, ['날짜'], ['생성', '수정', '초안', 'ai']);
-  if (!val) val = findValByKeywords(fb, ['일자'], ['생성', '수정', '초안', 'ai']);
-  // 3순위: 타임스탬프
-  if (!val) val = findValByKeywords(fb, ['타임스탬프']);
-  if (!val) val = findValByKeywords(fb, ['timestamp']);
-
-  if (!val) return '-';
-
-  if (val instanceof Date) {
-    const y = val.getFullYear();
-    const m = String(val.getMonth() + 1).padStart(2, '0');
-    const d = String(val.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  const str = String(val).trim();
-  const dateMatch4 = str.match(/(20\d{2})[-./\s]+(\d{1,2})[-./\s]+(\d{1,2})/);
-  if (dateMatch4) {
-    const y = dateMatch4[1];
-    const m = dateMatch4[2].padStart(2, '0');
-    const d = dateMatch4[3].padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  const dateMatch2 = str.match(/(\d{2})[-./\s]+(\d{1,2})[-./\s]+(\d{1,2})/);
-  if (dateMatch2) {
-    const y = '20' + dateMatch2[1];
-    const m = dateMatch2[2].padStart(2, '0');
-    const d = dateMatch2[3].padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  }
-
-  return str.split('T')[0] || str;
-}
-
-/**
- * 2. 이름 추출
- * 실제 시트 헤더: "이름\n(매일 똑같은 이름 사용 부탁드립니다.)"
- */
-function extractFeedbackName(fb) {
-  if (!fb) return '';
-  // 1순위: '이름' 포함 열 (코치, 지침서 제외)
-  let val = findValByKeywords(fb, ['이름'], ['코치', '지침']);
-  if (!val) val = findValByKeywords(fb, ['성명'], ['코치']);
-  if (!val) val = findValByKeywords(fb, ['성함'], ['코치']);
-  if (!val) val = findValByKeywords(fb, ['참여자'], ['코치']);
-  if (!val) val = findValByKeywords(fb, ['작성자'], ['코치']);
-
-  if (!val) return '';
-  return String(val).trim();
-}
-
-/**
- * 3. 아침 공복 몸무게 추출
- * 실제 시트 헤더: "아침 공복 몸무게\n(가능하면 매일, 같은 시간, 같은 복장으로 측정해주세요)\n예) 80.7  (kg은 생략)"
- */
-function extractFeedbackWeight(fb) {
-  if (!fb) return '-';
-  // 1순위: '공복' & '몸무게'
-  let raw = findValByKeywords(fb, ['공복', '몸무게']);
-  // 2순위: '공복' & '체중'
-  if (!raw) raw = findValByKeywords(fb, ['공복', '체중']);
-  // 3순위: '아침' & '몸무게'
-  if (!raw) raw = findValByKeywords(fb, ['아침', '몸무게']);
-  // 4순위: '공복'
-  if (!raw) raw = findValByKeywords(fb, ['공복']);
-  // 5순위: '몸무게' 또는 '체중' (단, '시작', '목표' 제외)
-  if (!raw) raw = findValByKeywords(fb, ['몸무게'], ['시작', '목표']);
-  if (!raw) raw = findValByKeywords(fb, ['체중'], ['시작', '목표']);
-
-  if (!raw) return '-';
-
-  // 숫자(소수점 포함) 추출
-  const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
-  if (match) {
-    const num = parseFloat(match[1]);
-    if (!isNaN(num) && num > 20 && num < 250) {
-      return num.toFixed(1);
-    }
-  }
-  return String(raw).trim() || '-';
-}
-
-/**
- * 4. 운동_실행률_점수 추출 (0점 미운동 포함 완벽 지원)
- * 실제 시트 헤더: '운동_실행률_점수' 또는 "오늘 운동 강도는 어땠나요? (1 ~ 10)\n예) 7"
- */
-function extractFeedbackExerciseScore(fb) {
-  if (!fb) return '-';
-  // 1순위: '운동' & '실행률'
-  let raw = findValByKeywords(fb, ['운동', '실행률']);
-  // 2순위: '운동' & '점수'
-  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['운동', '점수']);
-  // 3순위: '운동' & '강도'
-  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['운동', '강도']);
-
-  if (raw === '' || raw === null || raw === undefined) return '-';
-
-  const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
-  if (match) {
-    const num = parseFloat(match[1]);
-    if (!isNaN(num)) return num;
-  }
-  return String(raw).trim() || '-';
-}
-
-/**
- * 5. 식단_실행률_점수 추출 (0점 포함 완벽 지원)
- * 실제 시트 헤더: '식단_실행률_점수' 또는 "오늘 계획했던 식단 대비 본인의 수행률은 몇점이라고 생각하시나요? (5점 만점)\n예) 3.7"
- */
-function extractFeedbackDietScore(fb) {
-  if (!fb) return '-';
-  // 1순위: '식단' & '실행률'
-  let raw = findValByKeywords(fb, ['식단', '실행률']);
-  // 2순위: '식단' & '수행률'
-  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['식단', '수행률']);
-  // 3순위: '식단' & '점수'
-  if (raw === '' || raw === null || raw === undefined) raw = findValByKeywords(fb, ['식단', '점수']);
-
-  if (raw === '' || raw === null || raw === undefined) return '-';
-
-  const match = String(raw).match(/([0-9]+(?:\.[0-9]+)?)/);
-  if (match) {
-    const num = parseFloat(match[1]);
-    if (!isNaN(num)) return num;
-  }
-  return String(raw).trim() || '-';
-}
-
-/**
- * 6. 코치 피드백 추출 (회원에게 보이는 칸만)
- * - 새 형식: '잘한 점' / '개선할 점' / '코치 한마디' 열 (이름 정확 일치, '코치 한마디'는 이름 변경 전 '보완점_및_개선방안'도 인정)
- * - 예전 형식(세 칸 모두 비어 있음): '피드백 코멘트'를 표시하되 [문제점 분석] 부분은 회원에게 보이지 않게 제거
- * - 피드백 요약·코치 확인 필요는 코치 전용 (서버가 회원 응답에서 빼고 보냄)
- */
-const FEEDBACK_MEMBER_PARTS = [
-  { label: '잘한 점', headers: ['잘한 점'] },
-  { label: '개선할 점', headers: ['개선할 점'] },
-  { label: '코치 한마디', headers: ['코치 한마디', '보완점_및_개선방안'] }
-];
-
-function normalizeHeaderName(name) {
-  return String(name === null || name === undefined ? '' : name).replace(/[\s_]+/g, '').toLowerCase();
-}
-
-function getExactFeedbackField(fb, headers) {
-  if (!fb || typeof fb !== 'object') return '';
-  const keys = Object.keys(fb);
-  for (const h of headers.map(normalizeHeaderName)) {
-    for (const k of keys) {
-      if (normalizeHeaderName(k) !== h) continue;
-      const v = fb[k];
-      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
-    }
-  }
-  return '';
-}
-
-// [{label, text}] - 내용 있는 칸만. 코치 한마디가 비어 있으면 예전 형식 피드백 코멘트를 대신 표시
-function extractFeedbackMemberParts(fb) {
-  if (!fb) return [];
-  const parts = FEEDBACK_MEMBER_PARTS.map(p => ({ label: p.label, text: getExactFeedbackField(fb, p.headers) }));
-  if (!parts[2].text) {
-    const comment = getExactFeedbackField(fb, ['피드백 코멘트']);
-    const legacy = /\[(잘한 점|개선할 점|코치 한마디)\]/.test(comment) ? ''
-      : comment.replace(/\[문제점\s*분석\][\s\S]*?(?=\n\[[^\]\n]+\]|$)/g, '').trim();
-    if (legacy) parts[2] = { label: (parts[0].text || parts[1].text) ? parts[2].label : '코치 피드백', text: legacy };
-  }
-  return parts.filter(p => p.text);
-}
-
-function renderFeedbackPartsHtml(parts) {
-  return parts.map(p => `<div class="mp-fb-part"><div class="mp-fb-part-title">${escapeHtml(p.label)}</div><div>${escapeHtml(p.text)}</div></div>`).join('');
-}
-
-/**
- * 7. 회원의 나의 실천 일지 & 코치에게 한마디 추출
- * 실제 시트 헤더: '코치에게 자유롭게 한마디 [질문, 요청, 하소연 등]', '오늘 운동 중 힘들었던 점...', '오늘 식단 중 힘들었던 점...'
- */
-function extractFeedbackMemberNote(fb) {
-  if (!fb) return '';
-  const notes = [];
-
-  // 1) 코치에게 자유롭게 한마디
-  const coachTalk = findValByKeywords(fb, ['코치에게']) || findValByKeywords(fb, ['하소연']) || findValByKeywords(fb, ['자유롭게한마디']);
-  if (coachTalk) {
-    notes.push(`💬 <strong>코치에게 한마디:</strong> ${escapeHtml(String(coachTalk).trim())}`);
-  }
-
-  // 2) 운동 소감 / 힘든 점 / 궁금한 점
-  const exHard = findValByKeywords(fb, ['운동', '힘들었던']) || findValByKeywords(fb, ['운동', '궁금했던']) || findValByKeywords(fb, ['운동', '이유']);
-  if (exHard) {
-    notes.push(`🏃 <strong>운동 소감:</strong> ${escapeHtml(String(exHard).trim())}`);
-  }
-
-  // 3) 식단 소감 / 힘든 점 / 궁금한 점
-  const dietHard = findValByKeywords(fb, ['식단', '힘들었던']) || findValByKeywords(fb, ['식단', '궁금했던']) || findValByKeywords(fb, ['식단', '이유']);
-  if (dietHard) {
-    notes.push(`🥗 <strong>식단 소감:</strong> ${escapeHtml(String(dietHard).trim())}`);
-  }
-
-  // 4) 기존 운동 내용 / 식단 내용이 있을 경우
-  const exDesc = findValByKeywords(fb, ['운동내용']) || findValByKeywords(fb, ['운동시간']);
-  if (exDesc && !notes.some(n => n.includes('운동'))) {
-    notes.push(`🏃 <strong>운동 내용:</strong> ${escapeHtml(String(exDesc).trim())}`);
-  }
-
-  const dietDesc = findValByKeywords(fb, ['식단내용']);
-  if (dietDesc && !notes.some(n => n.includes('식단'))) {
-    notes.push(`🥗 <strong>식단 내용:</strong> ${escapeHtml(String(dietDesc).trim())}`);
-  }
-
-  return notes.join('<br>');
-}
-
-/**
- * 피드백 행 객체에서 회원번호 관대하게 추출
- */
-function extractFeedbackMemberNo(fb) {
-  if (!fb) return '';
-  let val = findValByKeywords(fb, ['회원번호']);
-  if (!val) val = findValByKeywords(fb, ['회원id']);
-  if (!val) val = findValByKeywords(fb, ['고유번호']);
-  return String(val || '').trim();
-}
-
-// 구버전 캐시 키 (전체 회원 데이터가 저장되던 캐시 -> 개인정보 보호를 위해 접속 시 즉시 삭제)
-const CACHE_KEY_VIEW_DATA = 'coach_dash_view_cache_v3';
 // 회원 본인 데이터 전용 캐시 & 서버 발급 회원 인증 토큰 (URL 회원 식별값 기준 저장)
-const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v4_';
+const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v5_';
 const MEMBER_VIEW_TOKEN_PREFIX = 'member_view_token_';
 
 function storageGet(key) {
@@ -664,11 +277,11 @@ function storageRemove(key) {
  * 구버전 전체 회원 캐시 및 브라우저 전용 인증 플래그(member_auth_*) 정리
  */
 function purgeLegacyMemberViewStorage() {
-  storageRemove(CACHE_KEY_VIEW_DATA);
+  storageRemove('coach_dash_view_cache_v3');
   [window.localStorage, window.sessionStorage].forEach(store => {
     try {
       Object.keys(store).forEach(k => {
-        if (k.indexOf('member_auth_') === 0) store.removeItem(k);
+        if (k.indexOf('member_auth_') === 0 || k.indexOf('coach_dash_view_member_v4_') === 0) store.removeItem(k);
       });
     } catch (e) {}
   });
@@ -678,8 +291,7 @@ function saveMemberSession(targetId, memberToken, data) {
   if (memberToken) storageSet(MEMBER_VIEW_TOKEN_PREFIX + targetId, memberToken);
   storageSet(MEMBER_VIEW_CACHE_PREFIX + targetId, JSON.stringify({
     member: data.member,
-    feedbacks: data.feedbacks,
-    feedbackTotal: data.feedbackTotal,
+    weights: data.weights,
     regenRemaining: data.regenRemaining,
     timestamp: Date.now()
   }));
@@ -849,7 +461,7 @@ async function loadMemberPageData(targetId) {
     if (loadingScreen) loadingScreen.classList.add('d-none');
     const previewMember = findMemberInList(VIEW_MOCK_DB.members, targetId);
     if (previewMember) {
-      applyMemberData(previewMember, VIEW_MOCK_DB.feedbacks, true);
+      applyMemberData(previewMember, VIEW_MOCK_DB.weights, true);
       unlockAndRenderMemberPage();
     } else {
       showInvalidAccessScreen('', '미리보기 회원 없음', '구글 시트 연동 URL이 설정되지 않았습니다. 담당 코치님께 받은 링크로 다시 접속해 주세요.');
@@ -868,7 +480,7 @@ async function loadMemberPageData(targetId) {
       const cached = rawCache ? JSON.parse(rawCache) : null;
       if (cached && cached.member) {
         console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(cached.member)}`);
-        applyMemberData(cached.member, cached.feedbacks || [], false, { feedbackTotal: cached.feedbackTotal || 0, regenRemaining: cached.regenRemaining });
+        applyMemberData(cached.member, cached.weights || [], false, { regenRemaining: cached.regenRemaining });
 
         const statusBadge = document.getElementById('dataConnectionStatusBadge');
         if (statusBadge) {
@@ -900,7 +512,7 @@ async function loadMemberPageData(targetId) {
   if (res && res.status === 'success' && res.data) {
     // [성공] 저장된 회원 토큰이 유효 -> 최신 데이터로 갱신
     saveMemberSession(targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0, regenRemaining: res.data.regenRemaining });
+    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining });
     unlockAndRenderMemberPage();
     console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(res.data.member)} (ID: ${targetId})`);
     return;
@@ -960,8 +572,6 @@ async function loadMemberPageData(targetId) {
   `);
 }
 
-
-
 /**
  * 회원 목록에서 targetId와 일치하는 회원 검색
  * - [회원 식별 원칙] '회원번호' 열 값과 정확히 일치하는 회원만 인정 (서버 memberViewFindMember와 동일 규칙)
@@ -975,38 +585,14 @@ function findMemberInList(members, targetId) {
   return matches.length === 1 ? matches[0] : null;
 }
 
-
 /**
- * 특정 회원의 피드백 필터링
+ * 상태에 회원 및 공복 체중 기록 바인딩
+ * - 체중 기록은 서버가 본인 회원번호 행만 보냄 (미리보기 Mock은 회원 1명분)
  */
-function filterFeedbacksForMember(feedbacks, member) {
-  if (!feedbacks || !Array.isArray(feedbacks) || !member) return [];
-  // [미리보기 전용] 실제 회원 피드백은 서버(memberViewFilterFeedbacks)에서 걸러서 내려옴
-  const memberName = getMemberName(member).trim();
-  const memberNo = getMemberNo(member);
-  return feedbacks.filter(f => {
-    const fNo = String(extractFeedbackMemberNo(f) || '').trim();
-    if (memberNo && fNo) return fNo === memberNo;
-    return !!memberName && String(extractFeedbackName(f) || '').trim() === memberName;
-  });
-}
-
-/**
- * 상태에 회원 및 피드백 데이터 바인딩
- * - serverInfo가 전달되면 서버에서 이미 본인 피드백만 필터링된 데이터이므로 그대로 사용
- */
-function applyMemberData(member, allFeedbacks, isMock, serverInfo) {
+function applyMemberData(member, weights, isMock, serverInfo) {
   CurrentMemberState.member = member;
-  if (serverInfo) {
-    CurrentMemberState.feedbacks = Array.isArray(allFeedbacks) ? allFeedbacks : [];
-    CurrentMemberState.rawMembersTotal = CurrentMemberState.feedbacks.length;
-    CurrentMemberState.rawFeedbacksTotal = serverInfo.feedbackTotal || 0;
-    CurrentMemberState.regenRemaining = serverInfo.regenRemaining || null;
-  } else {
-    CurrentMemberState.feedbacks = filterFeedbacksForMember(allFeedbacks, member);
-    CurrentMemberState.rawMembersTotal = isMock ? VIEW_MOCK_DB.members.length : (allFeedbacks ? allFeedbacks.length : 0);
-    CurrentMemberState.rawFeedbacksTotal = allFeedbacks ? allFeedbacks.length : 0;
-  }
+  CurrentMemberState.weights = Array.isArray(weights) ? weights : [];
+  CurrentMemberState.regenRemaining = (serverInfo && serverInfo.regenRemaining) || null;
   CurrentMemberState.isUsingMock = isMock;
 
   // 하단 연동 상태 뱃지 업데이트
@@ -1018,7 +604,7 @@ function applyMemberData(member, allFeedbacks, isMock, serverInfo) {
       statusBadge.title = '구글 시트 연동 URL이 설정되지 않아 샘플 데이터가 표시 중입니다. [연동설정]을 눌러 실제 시트 URL을 입력해 주세요.';
     } else {
       statusBadge.className = 'badge bg-success-subtle text-success border border-success-subtle';
-      statusBadge.textContent = `🟢 실시간 연결됨 (피드백 ${CurrentMemberState.feedbacks.length}건)`;
+      statusBadge.textContent = `🟢 실시간 연결됨 (체중 기록 ${CurrentMemberState.weights.length}건)`;
       statusBadge.title = '구글 스프레드시트와 정상 연결되었습니다.';
     }
   }
@@ -1098,7 +684,7 @@ async function handleMemberAuthLogin() {
 
   if (res && res.status === 'success' && res.data) {
     saveMemberSession(CurrentMemberState.targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.feedbacks || [], false, { feedbackTotal: res.data.feedbackTotal || 0, regenRemaining: res.data.regenRemaining });
+    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining });
     closeModalAndRender();
     return;
   }
@@ -1109,7 +695,6 @@ async function handleMemberAuthLogin() {
     failAuth('구글 서버 응답이 지연되고 있습니다. 잠시 후 다시 시도해 주세요.');
   }
 }
-
 
 /**
  * 인증 완료 후 마이페이지 렌더링
@@ -1122,7 +707,6 @@ function unlockAndRenderMemberPage() {
   }
 
   const member = CurrentMemberState.member;
-  const feedbacks = CurrentMemberState.feedbacks;
 
   // 1. 코치 대시보드 인적사항 완전 일치 패널 렌더링
   updatePersonalInfoPanel(member);
@@ -1138,7 +722,7 @@ function unlockAndRenderMemberPage() {
   setText('heroMemberNo', memberNo ? `No. ${memberNo}` : '');
   setText('heroMemberName', memberName);
 
-  renderHeroWeights(member, feedbacks);
+  renderHeroWeights(member);
 
   // 3. 운동 루틴 서식 박스 렌더링 (★ 표 없이 한눈에 잘 들어오게 표기, 수정 지침 100% 제외)
   renderWorkoutRoutineBox(member);
@@ -1149,31 +733,25 @@ function unlockAndRenderMemberPage() {
   // 5-1. 회원 셀프 수정 패널 (AI 재생성 / 이전 버전 되돌리기) - 서버 인증된 실제 회원에게만 표시
   renderPlanRegenPanels(member);
 
-  // 5. 데일리 데이터 추이 3개의 독립 꺾은선 차트 (코치 대시보드와 동일)
-  renderThreeIndependentCharts(feedbacks);
-
-  // 6. 일자별 피드백 누적 테이블 렌더링 (코치 대시보드 목록 기준 그대로 가져옴)
-  renderFeedbackTable(feedbacks);
+  // 5. 공복 체중 그래프 + 날짜별 기록 목록
+  renderWeightChart();
+  renderWeightList();
 
   // 7. 하단 탭바 / 좌우 스와이프 전환 연결 (최초 1회)
   initMemberTabs();
 }
 
-// 홈 상단 시작 체중 / 최근 체중 / 변화
-function renderHeroWeights(member, feedbacks) {
-  const startWeight = parseFloat(getField(member, '시작 체중', '시작체중', '체중', 'weight') || 0);
-  let latestWeight = startWeight;
+// 날짜순 본인 체중 기록 [{ date, weight }] (같은 날짜는 마지막 값)
+function getSortedWeights() {
+  const map = getWeightByDate();
+  return Object.keys(map).sort().map(date => ({ date, weight: map[date] }));
+}
 
-  if (feedbacks && feedbacks.length > 0) {
-    const sortedFbs = feedbacks.slice().sort((a, b) => new Date(extractFeedbackDate(b)) - new Date(extractFeedbackDate(a)));
-    for (const f of sortedFbs) {
-      const w = parseFloat(extractFeedbackWeight(f));
-      if (!isNaN(w) && w > 20) {
-        latestWeight = w;
-        break;
-      }
-    }
-  }
+// 홈 상단 시작 체중 / 최근 체중 / 변화
+function renderHeroWeights(member) {
+  const startWeight = parseFloat(getField(member, '시작 체중', '시작체중', '체중', 'weight') || 0);
+  const records = getSortedWeights();
+  const latestWeight = records.length ? records[records.length - 1].weight : startWeight;
 
   setText('heroStartWeight', startWeight > 0 ? startWeight.toFixed(1) : '-');
   setText('heroCurrentWeight', latestWeight > 0 ? latestWeight.toFixed(1) : '-');
@@ -1963,159 +1541,65 @@ function parseDietPlanToAccordionHtml(rawText, prefix = 'diet') {
 }
 
 /**
- * [3. 데일리 데이터 추이 3개의 독립 꺾은선 차트]
- * 코치 대시보드(renderThreeIndependentCharts)와 완전히 동일한 차트 구성
- * 1. 공복 몸무게 (kg)
- * 2. 운동 점수 (5점 만점)
- * 3. 식단 점수 (5점 만점)
+ * [3. 공복 체중 그래프] WeightLog 본인 기록 (날짜순)
  */
-function renderThreeIndependentCharts(feedbacks) {
-  if (CurrentMemberState.charts.weight) CurrentMemberState.charts.weight.destroy();
-  if (CurrentMemberState.charts.exercise) CurrentMemberState.charts.exercise.destroy();
-  if (CurrentMemberState.charts.diet) CurrentMemberState.charts.diet.destroy();
-
-  if (!feedbacks || feedbacks.length === 0 || !window.Chart) return;
-
-  // 날짜 오름차순 정렬 (차트 좌->우 시간 흐름)
-  const sorted = [...feedbacks].sort((a, b) => new Date(extractFeedbackDate(a)) - new Date(extractFeedbackDate(b)));
-
-  const labels = sorted.map(f => {
-    const raw = extractFeedbackDate(f);
-    const d = new Date(raw);
-    return isNaN(d) ? raw : `${d.getMonth() + 1}/${d.getDate()}`;
-  });
-
-  const weightData = sorted.map(f => {
-    const w = parseFloat(extractFeedbackWeight(f));
-    return isNaN(w) || w <= 0 ? null : w;
-  });
-  const exScoreData = sorted.map(f => {
-    const s = parseFloat(extractFeedbackExerciseScore(f));
-    return isNaN(s) ? null : s;
-  });
-  const dietScoreData = sorted.map(f => {
-    const s = parseFloat(extractFeedbackDietScore(f));
-    return isNaN(s) ? null : s;
-  });
-
-  // 차트 1: 공복 몸무게 (kg)
+function renderWeightChart() {
+  if (CurrentMemberState.charts.weight) {
+    CurrentMemberState.charts.weight.destroy();
+    CurrentMemberState.charts.weight = null;
+  }
+  const records = getSortedWeights();
+  const emptyEl = document.getElementById('weightChartEmpty');
+  if (emptyEl) emptyEl.classList.toggle('d-none', records.length > 0);
   const ctxWeight = document.getElementById('chartWeight');
-  if (ctxWeight) {
-    const validWeights = weightData.filter(v => v !== null);
-    const minW = validWeights.length ? Math.floor(Math.min(...validWeights) - 1) : 50;
-    const maxW = validWeights.length ? Math.ceil(Math.max(...validWeights) + 1) : 90;
+  if (!ctxWeight || records.length === 0 || !window.Chart) return;
 
-    CurrentMemberState.charts.weight = new Chart(ctxWeight, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: '공복 몸무게',
-          data: weightData,
-          spanGaps: true, // [요청 반영] 체중 미입력일은 비워두지 않고 전후 입력일을 잇는 연속선 연결
-          borderColor: '#3182f6',
-          backgroundColor: 'rgba(49, 130, 246, 0.12)',
-          borderWidth: 2.5,
-          tension: 0.25,
-          fill: true,
-          pointRadius: (ctx) => {
-            const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
-            return (val === null || val === undefined) ? 0 : 4.5;
-          },
-          pointHoverRadius: (ctx) => {
-            const val = ctx.raw !== undefined ? ctx.raw : (ctx.dataset && ctx.dataset.data ? ctx.dataset.data[ctx.dataIndex] : null);
-            return (val === null || val === undefined) ? 0 : 7;
-          },
-          pointBackgroundColor: '#3182f6'
-        }]
-      },
-      options: createMemberChartOptions('kg', minW, maxW)
-    });
+  const values = records.map(r => r.weight);
+  CurrentMemberState.charts.weight = new Chart(ctxWeight, {
+    type: 'line',
+    data: {
+      labels: records.map(r => {
+        const [, mm, dd] = r.date.split('-');
+        return `${+mm}/${+dd}`;
+      }),
+      datasets: [{
+        label: '공복 몸무게',
+        data: values,
+        borderColor: '#3182f6',
+        backgroundColor: 'rgba(49, 130, 246, 0.12)',
+        borderWidth: 2.5,
+        tension: 0.25,
+        fill: true,
+        pointRadius: 4.5,
+        pointHoverRadius: 7,
+        pointBackgroundColor: '#3182f6'
+      }]
+    },
+    options: createMemberChartOptions('kg', Math.floor(Math.min(...values) - 1), Math.ceil(Math.max(...values) + 1))
+  });
+}
+
+// [4. 날짜별 체중 기록 목록] 최근 날짜가 위, 전 기록 대비 변화 (누르면 달력에서 그 날짜 수정)
+function renderWeightList() {
+  const list = document.getElementById('weightRecordList');
+  const countBadge = document.getElementById('weightCountBadge');
+  const records = getSortedWeights();
+  if (countBadge) countBadge.textContent = `누적 ${records.length}건`;
+  if (!list) return;
+  if (records.length === 0) {
+    list.innerHTML = '<div class="mp-empty-note">아직 기록이 없어요. 위의 [체중 기록하기]로 오늘 아침 체중을 남겨 보세요.</div>';
+    return;
   }
-
-/**
- * [0점 포인트 바닥 잘림 방지 전용 Chart.js 플러그인]
- * - y축에 음수 영역(-1, -0.5 등)을 표시하지 않고도,
- * - 0점인 데이터 포인트의 원이 x축 기준선에 의해 반토막 잘리지 않고
- *   온전한 원 형태로 0점 기준선 위에 안착하도록 Y좌표를 지능형 보정
- */
-const zeroBaselinePointPlugin = {
-  id: 'zeroBaselinePointPlugin',
-  beforeDatasetsDraw(chart) {
-    const yAxis = chart.scales.y;
-    if (!yAxis) return;
-    const bottomPixel = yAxis.getPixelForValue(0);
-
-    chart.data.datasets.forEach((dataset, dIdx) => {
-      const meta = chart.getDatasetMeta(dIdx);
-      if (!meta || !meta.data) return;
-      meta.data.forEach((point, pIdx) => {
-        const val = dataset.data[pIdx];
-        if (val === 0) {
-          const r = point.active ? (point.options.hoverRadius || 7) : (point.options.radius || 4.5);
-          // 0점인 지점의 점이 x축 바닥선에 잘리지 않고 온전한 원으로 바닥선 바로 위에 안착하도록 보정
-          point.y = bottomPixel - r - 1;
-        }
-      });
-    });
-  }
-};
-
-  // 차트 2: 운동 점수 (5점 만점, 0점 바닥선 안착 플러그인 탑재)
-  const ctxEx = document.getElementById('chartExercise');
-  if (ctxEx) {
-    CurrentMemberState.charts.exercise = new Chart(ctxEx, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: '운동 점수',
-          data: exScoreData,
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.12)',
-          borderWidth: 2.5,
-          tension: 0.2,
-          fill: true,
-          clip: false,
-          pointRadius: 4.5,
-          pointHoverRadius: 7,
-          pointBackgroundColor: '#10b981',
-          pointBorderColor: '#ffffff',
-          pointBorderWidth: 1.5
-        }]
-      },
-      options: createMemberChartOptions('점', 0, 5.5, 1),
-      plugins: [zeroBaselinePointPlugin]
-    });
-  }
-
-  // 차트 3: 식단 점수 (5점 만점, 0점 바닥선 안착 플러그인 탑재)
-  const ctxDiet = document.getElementById('chartDiet');
-  if (ctxDiet) {
-    CurrentMemberState.charts.diet = new Chart(ctxDiet, {
-      type: 'line',
-      data: {
-        labels: labels,
-        datasets: [{
-          label: '식단 점수',
-          data: dietScoreData,
-          borderColor: '#f59e0b',
-          backgroundColor: 'rgba(245, 158, 11, 0.12)',
-          borderWidth: 2.5,
-          tension: 0.2,
-          fill: true,
-          clip: false,
-          pointRadius: 4.5,
-          pointHoverRadius: 7,
-          pointBackgroundColor: '#f59e0b',
-          pointBorderColor: '#ffffff',
-          pointBorderWidth: 1.5
-        }]
-      },
-      options: createMemberChartOptions('점', 0, 5.5, 1),
-      plugins: [zeroBaselinePointPlugin]
-    });
-  }
+  list.innerHTML = records.map((r, i) => {
+    const diff = i > 0 ? Math.round((r.weight - records[i - 1].weight) * 10) / 10 : null;
+    const cls = diff === null || diff === 0 ? '' : (diff < 0 ? 'is-down' : 'is-up');
+    const [y, m, d] = r.date.split('-');
+    return `<button type="button" class="mp-wlog-row" onclick="openWeightCalendar('${r.date}')">
+      <span class="mp-wlog-row-date">${+m}월 ${+d}일 <small>${y}</small></span>
+      <span class="mp-wlog-row-val">${r.weight.toFixed(1)}kg</span>
+      <span class="mp-wlog-row-diff ${cls}">${diff === null ? '-' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}`}</span>
+    </button>`;
+  }).reverse().join('');
 }
 
 function createMemberChartOptions(unit, minVal, maxVal, stepSize) {
@@ -2145,187 +1629,12 @@ function createMemberChartOptions(unit, minVal, maxVal, stepSize) {
         ticks: {
           stepSize: stepSize || undefined,
           font: { size: 10 },
-          callback: (value) => {
-            if (value > 5 && maxVal <= 6) return '';
-            return `${value} ${unit}`;
-          }
+          callback: (value) => `${value} ${unit}`
         },
         grid: { color: 'rgba(226, 232, 240, 0.6)' }
       }
     }
   };
-}
-
-/**
- * [4. 일자별 피드백 누적 테이블]
- * 코치 대시보드(renderFeedbackTable)의 컬럼 및 구조를 기준으로 그대로 가져오되,
- * 문제점 분석/비판 내용은 회원 화면에서 완전히 제외하고 칭찬/성취 코멘트와 실천 일지만 노출
- */
-function renderFeedbackTable(feedbacks) {
-  const tbody = document.getElementById('feedbackTableBody');
-  const countBadge = document.getElementById('feedbackCountBadge');
-  if (!tbody) return;
-
-  if (!feedbacks || feedbacks.length === 0) {
-    const isMock = CurrentMemberState.isUsingMock;
-    const totalFbs = CurrentMemberState.rawFeedbacksTotal;
-    let hintMsg = '';
-
-    if (!isMock && totalFbs === 0) {
-      hintMsg = `
-        <div class="alert alert-warning border small text-start mt-3 mb-0" style="max-width: 600px; margin: 0 auto;">
-          <i class="bi bi-exclamation-triangle-fill me-1 text-warning"></i><strong>피드백 시트(Feedbacks) 확인 필요:</strong><br>
-          스프레드시트에서 회원 정보는 성공적으로 불러왔으나, <strong>피드백 시트(Feedbacks) 데이터를 찾지 못했습니다.</strong><br>
-          • 구글 시트의 피드백 탭 이름이 <code>Feedbacks</code> 또는 <code>피드백</code>으로 되어 있는지 확인해 주세요.<br>
-          • (구글 폼 생성 기본 시트명인 <code>설문지 응답 1</code>로 되어 있다면 탭 이름을 <strong>Feedbacks</strong>로 변경해 주시면 즉시 연결됩니다.)
-        </div>
-      `;
-    } else if (!isMock && totalFbs > 0) {
-      hintMsg = `
-        <div class="alert alert-info border small text-start mt-3 mb-0" style="max-width: 600px; margin: 0 auto;">
-          <i class="bi bi-info-circle-fill me-1 text-primary"></i><strong>피드백 매칭 안내:</strong><br>
-          피드백 시트(총 ${totalFbs}건)는 접근되었으나, 현재 회원님(<strong>${getMemberName(CurrentMemberState.member)}</strong>)의 이름 또는 회원번호와 일치하는 제출 기록이 없습니다.<br>
-          새로운 일지를 제출해 주시면 자동으로 집계되어 표시됩니다.
-        </div>
-      `;
-    }
-
-    tbody.innerHTML = `
-      <div class="mp-empty">
-        <i class="bi bi-chat-square-dots"></i>
-        <div>아직 제출된 데일리 기록이 없어요.<br>상단 <strong>[기록하기]</strong>로 오늘 첫 일지를 남겨 보세요! 👏</div>
-        ${hintMsg}
-      </div>
-    `;
-    if (countBadge) countBadge.textContent = '누적 0건';
-    renderHomeLatestFeedback(null);
-    return;
-  }
-
-  // 최신 제출일 순(내림차순) 정렬
-  const sorted = [...feedbacks].sort((a, b) => {
-    const rawA = extractFeedbackDate(a);
-    const rawB = extractFeedbackDate(b);
-    const timeA = new Date(rawA).getTime() || 0;
-    const timeB = new Date(rawB).getTime() || 0;
-    if (timeA !== timeB) return timeB - timeA;
-    return String(rawB).localeCompare(String(rawA));
-  });
-
-  if (countBadge) countBadge.textContent = `누적 ${sorted.filter(fb => !isWeightOnlyFeedback(fb)).length}건`;
-
-  let html = '';
-  sorted.forEach((fb, idx) => {
-    // [사용자 요구 6대 핵심 필드 스마트 추출]
-    // 1. 오늘 날짜
-    const date = extractFeedbackDate(fb);
-    // 2. 아침 공복 몸무게
-    const weight = extractFeedbackWeight(fb);
-    // 3. 운동_실행률_점수
-    const exScore = extractFeedbackExerciseScore(fb);
-    // 4. 식단_실행률_점수
-    const dietScore = extractFeedbackDietScore(fb);
-    // 5. 코치 피드백 (잘한 점 / 개선할 점 / 코치 한마디, 예전 기록은 피드백 코멘트)
-    const feedbackParts = extractFeedbackMemberParts(fb);
-    // 6. 회원의 실천 일지 & 코치에게 한마디
-    const memberNote = extractFeedbackMemberNote(fb);
-
-    if (isWeightOnlyFeedback(fb)) {
-      html += `
-      <article class="mp-fb-card">
-        <header class="mp-fb-head">
-          <span class="mp-fb-date">${escapeHtml(date)}</span>
-          <div class="mp-fb-metrics">
-            <span class="mp-metric"><i class="bi bi-speedometer2"></i>${weight !== '-' ? `${escapeHtml(weight)}kg` : '-'}</span>
-          </div>
-        </header>
-        <div class="mp-fb-pending"><i class="bi bi-calendar3"></i>체중만 기록한 날이에요</div>
-      </article>`;
-      return;
-    }
-
-    html += `
-      <article class="mp-fb-card">
-        <header class="mp-fb-head">
-          <span class="mp-fb-date">${escapeHtml(date)}</span>
-          <div class="mp-fb-metrics">
-            <span class="mp-metric"><i class="bi bi-speedometer2"></i>${weight !== '-' ? `${escapeHtml(weight)}kg` : '-'}</span>
-            <span class="mp-score ${getScoreTone(exScore)}">운동 ${exScore !== '-' ? escapeHtml(exScore) : '-'}</span>
-            <span class="mp-score ${getScoreTone(dietScore)}">식단 ${dietScore !== '-' ? escapeHtml(dietScore) : '-'}</span>
-          </div>
-        </header>
-        ${feedbackParts.length > 0 ? `
-          <div class="feedback-comment-cell">
-            <div class="mp-fb-label"><i class="bi bi-lightbulb-fill"></i>코치 피드백</div>
-            <div class="mp-fb-text ${idx === 0 ? '' : 'mp-clamp'}">${renderFeedbackPartsHtml(feedbackParts)}</div>
-            ${idx === 0 ? '' : '<button type="button" class="mp-more-btn" onclick="toggleFeedbackClamp(this)">전체 보기</button>'}
-          </div>
-        ` : `
-          <div class="mp-fb-pending"><i class="bi bi-hourglass-split"></i>코치 피드백 작성 대기 중</div>
-        `}
-        ${memberNote ? `
-          <details class="mp-fb-note">
-            <summary>내 기록 & 코치에게 한마디</summary>
-            <div class="member-log-cell">
-              ${memberNote}
-            </div>
-          </details>
-        ` : ''}
-      </article>
-    `;
-  });
-
-  tbody.innerHTML = html;
-  renderHomeLatestFeedback(sorted.find(fb => extractFeedbackMemberParts(fb).length > 0) || null);
-  updateClampButtons();
-}
-
-// 홈 탭: 가장 최근 코치 피드백 미리보기
-function renderHomeLatestFeedback(fb) {
-  const box = document.getElementById('homeLatestFeedback');
-  if (!box) return;
-  if (!fb) {
-    box.innerHTML = '';
-    return;
-  }
-  box.innerHTML = `
-    <section class="mp-card mp-latest">
-      <div class="mp-card-head">
-        <h2 class="mp-card-title"><i class="bi bi-lightbulb-fill"></i>최근 코치 피드백</h2>
-        <span class="mp-fb-date">${escapeHtml(extractFeedbackDate(fb))}</span>
-      </div>
-      <div class="mp-fb-text mp-clamp">${renderFeedbackPartsHtml(extractFeedbackMemberParts(fb))}</div>
-      <button type="button" class="mp-more-btn" data-tab-target="feedback">피드백 전체 보기 <i class="bi bi-chevron-right"></i></button>
-    </section>
-  `;
-}
-
-// 4줄 이내로 다 보이는 피드백은 '전체 보기' 버튼 숨김
-function updateClampButtons() {
-  if (typeof requestAnimationFrame !== 'function') return;
-  requestAnimationFrame(() => {
-    document.querySelectorAll('.mp-more-btn[onclick]').forEach(btn => {
-      const text = btn.previousElementSibling;
-      if (!text || text.classList.contains('is-open')) return;
-      btn.hidden = text.scrollHeight <= text.clientHeight + 2;
-    });
-  });
-}
-
-function toggleFeedbackClamp(btn) {
-  const text = btn && btn.previousElementSibling;
-  if (!text) return;
-  const open = text.classList.toggle('is-open');
-  btn.textContent = open ? '접기' : '전체 보기';
-}
-
-// 점수 톤 (카드형 피드백 목록용)
-function getScoreTone(score) {
-  const num = parseFloat(score);
-  if (isNaN(num)) return 'is-none';
-  if (num >= 4.0) return 'is-good';
-  if (num >= 2.5) return 'is-mid';
-  return 'is-low';
 }
 
 /**
@@ -2468,8 +1777,6 @@ function copyFullMemberLink() {
 window.handleMemberAuthLogin = handleMemberAuthLogin;
 window.promptGasUrl = promptGasUrl;
 window.copyFullMemberLink = copyFullMemberLink;
-
-
 
 /**
  * ==============================================================================
@@ -2644,8 +1951,7 @@ function applySelfEditResult(kind, res) {
   renderPlanRegenPanel(kind, member);
   saveMemberSession(CurrentMemberState.targetId, null, {
     member: member,
-    feedbacks: CurrentMemberState.feedbacks,
-    feedbackTotal: CurrentMemberState.rawFeedbacksTotal,
+    weights: CurrentMemberState.weights,
     regenRemaining: CurrentMemberState.regenRemaining
   });
   return true;
@@ -2732,11 +2038,11 @@ window.memberRevertPlan = memberRevertPlan;
 /**
  * ==============================================================================
  * [하단 탭바 & 좌우 스와이프 화면 전환]
- * - 홈/운동/식단/피드백 4개 화면을 가로 스크롤 스냅으로 배치 (손가락으로 넘기기)
+ * - 홈/운동/식단/체중 4개 화면을 가로 스크롤 스냅으로 배치 (손가락으로 넘기기)
  * - 탭바 버튼 또는 data-tab-target 요소를 누르면 해당 화면으로 부드럽게 이동
  * ==============================================================================
  */
-const MEMBER_TABS = ['home', 'workout', 'diet', 'feedback'];
+const MEMBER_TABS = ['home', 'workout', 'diet', 'weight'];
 let memberTabsReady = false;
 
 function initMemberTabs() {
@@ -2749,8 +2055,6 @@ function initMemberTabs() {
   document.addEventListener('click', (e) => {
     const target = e.target && e.target.closest ? e.target.closest('[data-tab-target]') : null;
     if (target) goToMemberTab(target.dataset.tabTarget);
-    const seg = e.target && e.target.closest ? e.target.closest('[data-chart]') : null;
-    if (seg) showMemberChart(seg.dataset.chart);
   });
 
   let frame = 0;
@@ -2787,17 +2091,7 @@ function setActiveMemberTab(name) {
     btn.classList.toggle('is-active', on);
     btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
-  if (name === 'feedback') {
-    resizeMemberCharts();
-    updateClampButtons();
-  }
-}
-
-// 그래프는 한 번에 하나만 표시 (체중 / 운동 점수 / 식단 점수)
-function showMemberChart(key) {
-  document.querySelectorAll('[data-chart]').forEach(btn => btn.classList.toggle('is-active', btn.dataset.chart === key));
-  document.querySelectorAll('[data-chart-panel]').forEach(p => p.classList.toggle('is-active', p.dataset.chartPanel === key));
-  resizeMemberCharts();
+  if (name === 'weight') resizeMemberCharts();
 }
 
 function resizeMemberCharts() {
@@ -2808,42 +2102,35 @@ function resizeMemberCharts() {
 
 /**
  * ==============================================================================
- * [체중만 기록] 달력에서 날짜를 골라 아침 공복 체중을 바로 기록
- * - 서버(memberSaveWeight)가 그 날짜의 본인 피드백 행 체중 칸을 고치거나, 없으면 '체중만' 행을 새로 씀
- * - 저장 성공 후 화면의 기록도 서버와 같은 규칙으로 고쳐 바로 반영 (새로고침하면 시트 값으로 다시 받음)
+ * [체중 기록] 달력에서 날짜를 골라 아침 공복 체중을 바로 기록
+ * - 서버(memberSaveWeight)가 WeightLog의 본인 회원번호+날짜 행을 덮어쓰거나 새로 씀 (지우기면 행 삭제)
+ * - 저장 성공 후 화면의 기록도 같은 규칙으로 고쳐 바로 반영 (새로고침하면 시트 값으로 다시 받음)
  * ==============================================================================
  */
 const WeightCalendarState = { year: 0, month: 0, selected: '', busy: false };
-
-function isWeightOnlyFeedback(fb) {
-  return !!fb && String(fb['입력 구분'] || fb['입력구분'] || '').trim() === '체중만';
-}
 
 function toLocalDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-// 공복 체중 열 (시트 원본 헤더와 공백 제거 별칭 모두)
-function isWeightHeaderKey(key) {
-  const k = String(key).replace(/[\s\r\n]+/g, '');
-  return k.includes('공복') && (k.includes('몸무게') || k.includes('체중'));
-}
-
-// 날짜별 체중 (같은 날짜가 여러 행이면 뒤쪽 행 우선 - 코치 대시보드와 동일)
+// 날짜별 체중 { 'yyyy-MM-dd': kg } (같은 날짜가 여러 행이면 뒤쪽 행 우선)
 function getWeightByDate() {
   const map = {};
-  (CurrentMemberState.feedbacks || []).forEach(fb => {
-    const w = parseFloat(extractFeedbackWeight(fb));
-    if (!isNaN(w)) map[extractFeedbackDate(fb)] = w;
+  (CurrentMemberState.weights || []).forEach(r => {
+    const date = String(r['날짜'] || '').trim();
+    const w = parseFloat(r['체중']);
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date) && !isNaN(w) && w > 0) map[date] = w;
   });
   return map;
 }
 
-function openWeightCalendar() {
-  const today = new Date();
-  WeightCalendarState.year = today.getFullYear();
-  WeightCalendarState.month = today.getMonth();
-  WeightCalendarState.selected = toLocalDateKey(today);
+// dateKey를 주면 그 날짜를 고른 채로 열기 (체중 기록 목록에서 수정)
+function openWeightCalendar(dateKey) {
+  const today = toLocalDateKey(new Date());
+  const selected = /^\d{4}-\d{2}-\d{2}$/.test(dateKey || '') && dateKey <= today ? dateKey : today;
+  WeightCalendarState.year = +selected.slice(0, 4);
+  WeightCalendarState.month = +selected.slice(5, 7) - 1;
+  WeightCalendarState.selected = selected;
   renderWeightCalendar();
   const modalEl = document.getElementById('weightCalendarModal');
   if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
@@ -2960,32 +2247,18 @@ async function saveMemberWeight(clear) {
   renderWeightCalendar(`<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml((res && res.message) || '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.')}</span>`);
 }
 
-// 서버와 같은 규칙으로 화면 기록 수정: 그 날짜 행이 있으면 체중 칸만 고치고(지우기면 체중만 행 삭제), 없으면 체중만 행 추가
+// 서버와 같은 규칙으로 화면 기록 수정: 회원번호+날짜 1건 (지우기면 삭제)
 function applyLocalWeightChange(date, weight) {
   const member = CurrentMemberState.member;
-  const sameDate = CurrentMemberState.feedbacks.filter(fb => extractFeedbackDate(fb) === date);
-  if (sameDate.length === 0) {
-    if (weight !== '') {
-      CurrentMemberState.feedbacks.push({ '오늘 날짜': date, '이름': getMemberName(member), '공복 몸무게': weight, '입력 구분': '체중만' });
-    }
-  } else if (weight === '') {
-    CurrentMemberState.feedbacks = CurrentMemberState.feedbacks.filter(fb => !(sameDate.includes(fb) && isWeightOnlyFeedback(fb)));
-    sameDate.forEach(fb => Object.keys(fb).forEach(k => { if (isWeightHeaderKey(k)) fb[k] = ''; }));
-  } else {
-    sameDate.forEach(fb => {
-      const keys = Object.keys(fb).filter(isWeightHeaderKey);
-      if (keys.length === 0) fb['공복 몸무게'] = weight;
-      keys.forEach(k => { fb[k] = weight; });
-    });
-  }
+  CurrentMemberState.weights = (CurrentMemberState.weights || []).filter(r => String(r['날짜'] || '').trim() !== date);
+  if (weight !== '') CurrentMemberState.weights.push({ '날짜': date, '체중': weight });
 
-  renderHeroWeights(member, CurrentMemberState.feedbacks);
-  renderThreeIndependentCharts(CurrentMemberState.feedbacks);
-  renderFeedbackTable(CurrentMemberState.feedbacks);
+  renderHeroWeights(member);
+  renderWeightChart();
+  renderWeightList();
   saveMemberSession(CurrentMemberState.targetId, null, {
     member: member,
-    feedbacks: CurrentMemberState.feedbacks,
-    feedbackTotal: CurrentMemberState.rawFeedbacksTotal,
+    weights: CurrentMemberState.weights,
     regenRemaining: CurrentMemberState.regenRemaining
   });
 }
