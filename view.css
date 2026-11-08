@@ -1213,3 +1213,101 @@ button.mp-cta-card {
 .mp-coach-note-text { font-size: 0.92rem; color: var(--mp-ink); white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
 .mp-coach-note.is-latest .mp-coach-note-text { font-size: 0.98rem; font-weight: 600; }
 .mp-coach-note-more { display: block; margin: 6px auto 0; }
+
+/* ========================================================================= */
+/* [기록 탭] 날짜별 체중·운동·식단 입력 */
+/* ========================================================================= */
+.mp-rec-datebar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.mp-rec-daynav {
+  flex: 0 0 44px; height: 44px; border: 0; border-radius: var(--mp-radius-sm);
+  background: var(--mp-surface); color: var(--mp-ink-2); box-shadow: var(--mp-shadow);
+}
+.mp-rec-daynav:disabled { opacity: 0.35; }
+.mp-rec-date {
+  flex: 1; min-width: 0; height: 44px; border: 0; border-radius: var(--mp-radius-sm);
+  background: var(--mp-surface); color: var(--mp-ink); font-weight: 800; box-shadow: var(--mp-shadow);
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+}
+.mp-rec-date i { color: var(--mp-primary); }
+
+.mp-rec-coachnote {
+  display: flex; gap: 10px; align-items: flex-start; background: var(--mp-feedback-soft); color: var(--mp-ink);
+  border-radius: var(--mp-radius-sm); padding: 12px 14px; margin-bottom: 12px;
+}
+.mp-rec-coachnote > i { color: var(--mp-feedback); font-size: 1.1rem; margin-top: 2px; }
+.mp-rec-coachnote b { font-size: 0.8rem; color: var(--mp-feedback); }
+.mp-rec-coachnote p { margin: 2px 0 0; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
+.mp-rec-draft {
+  display: flex; align-items: center; gap: 8px; background: #fff9db; color: #8a6d00;
+  border-radius: var(--mp-radius-sm); padding: 10px 14px; margin-bottom: 12px; font-size: 0.85rem; font-weight: 600;
+}
+.mp-rec-draft span { flex: 1; }
+
+.mp-rec-card { margin-bottom: 12px; }
+.mp-rec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.mp-rec-head h3 { margin: 0; font-size: 1rem; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+.mp-rec-head small { color: var(--mp-ink-3); font-size: 0.74rem; }
+.mp-rec-card input.form-control, .mp-rec-card select.form-select { font-size: 16px; border-radius: 10px; border-color: var(--mp-line); }
+
+.mp-rec-weight { display: flex; align-items: center; gap: 8px; }
+.mp-rec-weight input { max-width: 160px; font-weight: 700; }
+.mp-rec-weight span { font-weight: 700; color: var(--mp-ink-2); }
+.mp-rec-hint { margin-top: 6px; font-size: 0.8rem; color: var(--mp-ink-3); }
+
+.mp-rec-ex-list { display: flex; flex-direction: column; gap: 10px; }
+.mp-rec-ex { background: var(--mp-surface-2); border-radius: var(--mp-radius-sm); padding: 10px; }
+.mp-rec-ex-top { display: flex; align-items: center; gap: 6px; }
+.mp-rec-ex-no {
+  flex: 0 0 24px; height: 24px; border-radius: 50%; background: var(--mp-workout-soft); color: var(--mp-workout);
+  font-size: 0.75rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center;
+}
+.mp-rec-ac-wrap { position: relative; flex: 1; min-width: 0; }
+.mp-rec-ac {
+  position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 30;
+  background: var(--mp-surface); border: 1px solid var(--mp-line); border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12); overflow: hidden;
+}
+.mp-rec-ac button {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+  border: 0; background: transparent; padding: 10px 12px; text-align: left; font-size: 0.92rem; color: var(--mp-ink);
+}
+.mp-rec-ac button + button { border-top: 1px solid var(--mp-line); }
+.mp-rec-ac button:active, .mp-rec-ac button:hover { background: var(--mp-primary-soft); }
+.mp-rec-ac small { color: var(--mp-ink-3); font-size: 0.72rem; flex-shrink: 0; }
+.mp-rec-ex-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; }
+.mp-rec-ex-grid label { display: flex; flex-direction: column; gap: 2px; margin: 0; min-width: 0; }
+.mp-rec-ex-grid label span { font-size: 0.7rem; font-weight: 700; color: var(--mp-ink-3); padding-left: 2px; }
+.mp-rec-ex-grid input { padding: 6px 8px; }
+.mp-rec-note { margin-top: 6px; }
+
+.mp-rec-icon-btn {
+  flex: 0 0 36px; width: 36px; height: 36px; border: 0; border-radius: 10px;
+  background: var(--mp-surface); color: var(--mp-ink-2); display: inline-flex; align-items: center; justify-content: center;
+}
+.mp-rec-icon-btn.is-danger { color: var(--mp-low); }
+.mp-rec-icon-btn:active { transform: scale(0.94); }
+
+.mp-rec-routine { background: var(--mp-workout-soft); border-radius: var(--mp-radius-sm); padding: 10px 12px; margin-bottom: 10px; }
+.mp-rec-routine-title { font-size: 0.8rem; font-weight: 700; color: var(--mp-workout); margin-bottom: 8px; }
+.mp-rec-routine-days { display: flex; flex-wrap: wrap; gap: 6px; }
+.mp-rec-chip {
+  border: 1px solid #b2f2bb; background: var(--mp-surface); color: var(--mp-ink); border-radius: 999px;
+  padding: 6px 12px; font-size: 0.85rem; font-weight: 700; max-width: 100%;
+}
+.mp-rec-chip small { color: var(--mp-ink-3); font-weight: 600; }
+
+.mp-rec-meals { display: flex; flex-direction: column; gap: 10px; }
+.mp-rec-meal { background: var(--mp-surface-2); border-radius: var(--mp-radius-sm); padding: 10px; }
+.mp-rec-meal-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.mp-rec-meal-head select { max-width: 120px; font-weight: 800; color: var(--mp-diet); }
+.mp-rec-food { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr) 36px 36px; gap: 6px; align-items: center; }
+.mp-rec-food + .mp-rec-food { margin-top: 6px; }
+.mp-rec-food input { padding: 6px 8px; }
+
+.mp-rec-savebar { margin: 4px 0 18px; }
+.mp-rec-status { min-height: 22px; margin-top: 8px; font-size: 0.85rem; text-align: center; }
+.mp-rec-section-title { display: flex; align-items: center; justify-content: space-between; margin: 8px 2px 10px; }
+.mp-rec-section-title h3 { margin: 0; font-size: 1rem; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+
+.mp-wcal-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--mp-workout); display: block; margin-top: 2px; }
+.mp-wcal-dot.is-inline { display: inline-block; margin: 0 4px 1px 0; vertical-align: middle; }

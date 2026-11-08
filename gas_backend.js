@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-11-07.5';
+const BACKEND_VERSION = '2026-11-08.1';
 
 /**
  * CORS 대응 (doOptions)
@@ -185,9 +185,13 @@ function doPost(e) {
     if (action === 'memberRevertPlan') {
       return handleMemberRevertPlan(ss, payload);
     }
-    // [회원 마이페이지] 날짜별 아침 공복 체중 입력/수정/삭제 (회원 토큰 필수, WeightLog의 본인 회원번호 행만 기록)
+    // [회원 마이페이지] 날짜별 아침 공복 체중만 입력/수정/삭제 (예전 화면 호환, 그날 운동·식단 기록은 그대로 둠)
     if (action === 'memberSaveWeight') {
       return withMembersWriteLock(() => handleMemberSaveWeight(ss, payload));
+    }
+    // [회원 마이페이지] 그날 체중·운동·식단 한 번에 저장 (회원 토큰 필수, WeightLog의 본인 회원번호+날짜 1행)
+    if (action === 'memberSaveDailyLog') {
+      return withMembersWriteLock(() => handleMemberSaveDailyLog(ss, payload));
     }
 
     // [보안] 그 외 모든 조회/저장/AI 생성 요청은 코치 로그인 토큰 필수
@@ -1627,6 +1631,7 @@ function onOpen() {
       .addSeparator()
       .addItem('⚖️ 체중 기록 옮기기 (Feedbacks·MemberPlanLog → WeightLog, 1회)', 'migrateWeightsToWeightLog')
       .addItem('🧯 폼 제출 트리거 삭제 (예전 데일리 피드백)', 'removeLegacyFeedbackTriggers')
+      .addItem('🏋️ 운동 목록 초기 등록 (ExerciseList·WeightLog 기록 열)', 'setupExerciseList')
       .addSeparator()
       .addItem('🧱 코치 기록 시트 준비 (CoachLog·CoachSettings·Members 열)', 'setupCoachRecordSheets')
       .addItem('💬 코치 한마디 옮기기 (Feedbacks → CoachLog, 1회)', 'migrateCoachNotesToCoachLog')
@@ -1859,6 +1864,10 @@ function handleGetMemberView(ss, payload) {
     .map(r => ({ '날짜': r['날짜'], '체중': r['체중'] }));
   // 코치 관리 기록 중 회원 공개 칸(코치 한마디)만 - 메모·상태·태그·다음에 확인은 보내지 않음
   const coachNotes = readMemberCoachNotes(ss, memberKey);
+  // 날짜별 체중·운동·식단 기록 (본인 회원번호 행만) + 자동완성용 운동 목록('등록' 상태만)
+  const dailyLogs = readDailyLog(ss)
+    .filter(r => r['회원번호'] === memberKey)
+    .map(r => ({ '날짜': r['날짜'], '체중': r['체중'], '운동': r['운동'], '식단': r['식단'] }));
 
   return createJsonResponse({
     status: 'success',
@@ -1866,6 +1875,8 @@ function handleGetMemberView(ss, payload) {
       member: memberViewSanitize(member, ['지침']),
       weights: weights,
       coachNotes: coachNotes,
+      dailyLogs: dailyLogs,
+      exerciseList: readRegisteredExercises(ss),
       regenRemaining: getMemberRegenRemaining(memberKey)
     },
     memberToken: issueMemberToken(memberKey, phoneLast4)
@@ -2383,6 +2394,8 @@ function appendMemberPlanLog(ss, auth, kind, actionLabel, row, request, requestN
  */
 const WEIGHT_LOG_SHEET = 'WeightLog';
 const WEIGHT_LOG_HEADERS = ['날짜', '회원번호', '이름', '체중', '입력자', '기록시각'];
+// 회원 일일 기록 열 (맨 오른쪽에 추가, 없으면 저장할 때 자동 추가) - 운동·식단 기록은 JSON 배열, 요약은 시트에서 읽기 쉬운 한 줄
+const WEIGHT_LOG_DAILY_HEADERS = { exercise: '운동 기록', diet: '식단 기록', exerciseSummary: '운동 요약', dietSummary: '식단 요약' };
 const WEIGHT_LOG_ENTERED_BY_MEMBER = '회원';
 const MEMBER_WEIGHT_MIN = 20;
 const MEMBER_WEIGHT_MAX = 250;
@@ -2391,7 +2404,8 @@ function getWeightLogSheet(ss, create) {
   let sheet = ss.getSheetByName(WEIGHT_LOG_SHEET);
   if (!sheet && create) {
     sheet = ss.insertSheet(WEIGHT_LOG_SHEET);
-    sheet.getRange(1, 1, 1, WEIGHT_LOG_HEADERS.length).setValues([WEIGHT_LOG_HEADERS]);
+    const headers = WEIGHT_LOG_HEADERS.concat(Object.keys(WEIGHT_LOG_DAILY_HEADERS).map(k => WEIGHT_LOG_DAILY_HEADERS[k]));
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
     sheet.setFrozenRows(1);
     sheet.getRange('A:B').setNumberFormat('@');
   }
@@ -2424,15 +2438,19 @@ function weightLogRowValues(cols, entry) {
   return row;
 }
 
-// WeightLog 전체를 { 날짜, 회원번호, 이름, 체중, 입력자, 기록시각 } 배열로 읽음 (날짜·회원번호·체중이 올바른 행만)
-function readWeightLog(ss) {
+// WeightLog 전체를 행 단위로 읽음 (날짜·회원번호가 올바른 행, 체중은 빈 값 허용 - 운동·식단만 기록한 날)
+// - { 날짜, 회원번호, 이름, 체중(숫자 또는 ''), 입력자, 기록시각, 운동: [], 식단: [], _rowNumber }
+function readDailyLog(ss) {
   const sheet = getWeightLogSheet(ss, false);
   if (!sheet || sheet.getLastRow() < 2) return [];
   const cols = locateWeightLogColumns(sheet);
   if (cols.error) {
-    Logger.log('[readWeightLog] ' + cols.error);
+    Logger.log('[readDailyLog] ' + cols.error);
     return [];
   }
+  const colMap = getHeaderColumnMap(sheet);
+  const exCol = findExactColumn(colMap, [WEIGHT_LOG_DAILY_HEADERS.exercise]);
+  const dietCol = findExactColumn(colMap, [WEIGHT_LOG_DAILY_HEADERS.diet]);
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
   const out = [];
@@ -2440,20 +2458,43 @@ function readWeightLog(ss) {
     const rawDate = row[cols.date - 1];
     const date = rawDate instanceof Date ? Utilities.formatDate(rawDate, tz, 'yyyy-MM-dd') : String(rawDate || '').trim();
     const memberNo = String(row[cols.memberNo - 1] || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !memberNo) return;
     const weight = parseFloat(row[cols.weight - 1]);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !memberNo || isNaN(weight) || weight <= 0) return;
     const recordedAt = row[cols.recordedAt - 1];
     out.push({
       '날짜': date,
       '회원번호': memberNo,
       '이름': String(row[cols.name - 1] || '').trim(),
-      '체중': Math.round(weight * 10) / 10,
+      '체중': (isNaN(weight) || weight <= 0) ? '' : Math.round(weight * 10) / 10,
       '입력자': String(row[cols.enteredBy - 1] || '').trim(),
       '기록시각': recordedAt instanceof Date ? Utilities.formatDate(recordedAt, tz, 'yyyy-MM-dd HH:mm:ss') : String(recordedAt || '').trim(),
+      '운동': exCol ? parseDailyJsonCell(row[exCol - 1]) : [],
+      '식단': dietCol ? parseDailyJsonCell(row[dietCol - 1]) : [],
       _rowNumber: i + 2
     });
   });
   return out;
+}
+
+function parseDailyJsonCell(raw) {
+  const str = String(raw === null || raw === undefined ? '' : raw).trim();
+  if (!str) return [];
+  try {
+    const arr = JSON.parse(str);
+    return Array.isArray(arr) ? arr.filter(x => x && typeof x === 'object') : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// 체중이 있는 행만 (체중 그래프·통계·오늘 보드·AI 분석·회원 체중 그래프는 이것만 씀)
+function readWeightLog(ss) {
+  return readDailyLog(ss)
+    .filter(r => r['체중'] !== '')
+    .map(r => ({
+      '날짜': r['날짜'], '회원번호': r['회원번호'], '이름': r['이름'], '체중': r['체중'],
+      '입력자': r['입력자'], '기록시각': r['기록시각'], _rowNumber: r._rowNumber
+    }));
 }
 
 function parseMemberWeightInput(raw) {
@@ -2465,68 +2506,423 @@ function parseMemberWeightInput(raw) {
   return { value: num };
 }
 
+// [예전 화면 호환] 체중 칸만 바꿈 - 그날 운동·식단 기록은 그대로 두고, 셋 다 비면 행 삭제
 function handleMemberSaveWeight(ss, payload) {
   const auth = resolveAuthorizedMember(ss, payload);
   if (auth.error) return createJsonResponse(auth.error);
-
   const date = String(payload.date || '').trim();
-  const m = date.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const check = m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
-  if (!check || check.getUTCMonth() !== +m[2] - 1 || check.getUTCDate() !== +m[3]) {
-    return createJsonResponse({ status: 'error', code: 'bad_request', message: '날짜를 다시 선택해 주세요.' });
-  }
-  if (date > Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd')) {
-    return createJsonResponse({ status: 'error', code: 'future_date', message: '오늘 이후 날짜에는 체중을 기록할 수 없어요.' });
-  }
+  const dateError = checkMemberLogDate(date);
+  if (dateError) return createJsonResponse(dateError);
   const weight = parseMemberWeightInput(payload.weight);
   if (weight.error) return createJsonResponse({ status: 'error', code: 'bad_weight', message: weight.error });
 
+  const existing = readDailyLog(ss).find(r => r['회원번호'] === auth.memberKey && r['날짜'] === date);
+  const result = saveMemberDailyLog(ss, auth, date, weight.value,
+    existing ? existing['운동'] : [], existing ? existing['식단'] : []);
+  if (result.error) return createJsonResponse(result.error);
+  if (result.mode !== 'none') {
+    appendMemberPlanLog(ss, auth, '공복 체중', result.mode === 'created' ? '체중 새로 기록' : (weight.value === '' ? '체중 삭제' : '체중 수정'),
+      WEIGHT_LOG_SHEET, `${date} ${weight.value === '' ? '(삭제)' : weight.value + 'kg'}`, '');
+  }
+  return createJsonResponse({ status: 'success', memberKey: auth.memberKey, date: date, weight: weight.value, mode: result.mode });
+}
+
+/**
+ * ==============================================================================
+ * [회원 일일 기록] 그날 체중·운동·식단을 한 번에 저장 (WeightLog 회원번호+날짜 1행)
+ * - 체중은 선택 입력, 운동 기록 [{종목, 횟수, 세트, 무게, 비고}], 식단 기록 [{항목, 음식, 비고}]
+ * - 횟수: 정수(12) 또는 시간(30분, 30초, 1분 30초) / 세트: 정수 / 무게: 0~500kg
+ * - 셋 다 비면 그날 행 삭제. 목록에 없는 운동명은 ExerciseList에 '미등록'으로 추가
+ * ==============================================================================
+ */
+const DAILY_LOG_LIMITS = { exerciseRows: 30, dietRows: 30, exerciseName: 40, food: 100, note: 100, rawRows: 100 };
+const DIET_MEAL_TYPES = ['아침', '점심', '저녁', '간식'];
+
+function checkMemberLogDate(date) {
+  if (!isValidDateKey(date)) return { status: 'error', code: 'bad_request', message: '날짜를 다시 선택해 주세요.' };
+  if (date > kstDateKey()) return { status: 'error', code: 'future_date', message: '오늘 이후 날짜에는 기록할 수 없어요.' };
+  return null;
+}
+
+function dailyText(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/\s+/g, ' ').trim();
+}
+
+// 횟수: '' | 정수 | 시간(분·초) → 저장값(문자) 또는 null(형식 오류)
+function normalizeExerciseReps(raw) {
+  const str = dailyText(raw).replace(/\s+/g, '');
+  if (!str) return '';
+  let m = str.match(/^(\d{1,4})회?$/);
+  if (m) return String(+m[1]);
+  m = str.match(/^(\d{1,3})(분|초)$/);
+  if (m) return `${+m[1]}${m[2]}`;
+  m = str.match(/^(\d{1,3})분(\d{1,2})초$/);
+  if (m) return `${+m[1]}분 ${+m[2]}초`;
+  return null;
+}
+
+function parseExerciseRows(raw) {
+  if (raw === undefined || raw === null || raw === '') return { rows: [] };
+  if (!Array.isArray(raw) || raw.length > DAILY_LOG_LIMITS.rawRows) return { error: '운동 기록 형식이 올바르지 않습니다.' };
+  const rows = [];
+  for (let i = 0; i < raw.length; i++) {
+    const r = raw[i] || {};
+    const name = dailyText(r['종목']);
+    const repsRaw = dailyText(r['횟수']);
+    const setsRaw = dailyText(r['세트']);
+    const weightRaw = dailyText(r['무게']);
+    const note = dailyText(r['비고']);
+    if (!name && !repsRaw && !setsRaw && !weightRaw && !note) continue;
+    const label = `운동 ${rows.length + 1}번째 줄`;
+    if (!name) return { error: `${label}: 종목을 입력해 주세요.` };
+    if (name.length > DAILY_LOG_LIMITS.exerciseName) return { error: `${label}: 종목은 ${DAILY_LOG_LIMITS.exerciseName}자까지 입력할 수 있어요.` };
+    const reps = normalizeExerciseReps(repsRaw);
+    if (reps === null) return { error: `${label}: 횟수는 숫자(예: 12) 또는 시간(예: 30분, 30초)으로 입력해 주세요.` };
+    let sets = '';
+    if (setsRaw) {
+      if (!/^\d{1,2}$/.test(setsRaw)) return { error: `${label}: 세트는 0~99 사이 정수로 입력해 주세요.` };
+      sets = +setsRaw;
+    }
+    let weight = '';
+    if (weightRaw) {
+      const w = weightRaw.replace(/kg$/i, '').trim();
+      if (!/^\d{1,3}(\.\d{1,2})?$/.test(w) || +w > 500) return { error: `${label}: 무게는 0~500kg 사이 숫자로 입력해 주세요.` };
+      weight = Math.round(parseFloat(w) * 100) / 100;
+    }
+    if (note.length > DAILY_LOG_LIMITS.note) return { error: `${label}: 비고는 ${DAILY_LOG_LIMITS.note}자까지 입력할 수 있어요.` };
+    rows.push({ '종목': name, '횟수': reps, '세트': sets, '무게': weight, '비고': note });
+  }
+  if (rows.length > DAILY_LOG_LIMITS.exerciseRows) return { error: `운동은 하루 ${DAILY_LOG_LIMITS.exerciseRows}줄까지 기록할 수 있어요.` };
+  return { rows: rows };
+}
+
+function parseDietRows(raw) {
+  if (raw === undefined || raw === null || raw === '') return { rows: [] };
+  if (!Array.isArray(raw) || raw.length > DAILY_LOG_LIMITS.rawRows) return { error: '식단 기록 형식이 올바르지 않습니다.' };
+  const rows = [];
+  for (let i = 0; i < raw.length; i++) {
+    const r = raw[i] || {};
+    const meal = dailyText(r['항목']);
+    const food = dailyText(r['음식']);
+    const note = dailyText(r['비고']);
+    if (!food && !note) continue;
+    const label = `식단 ${rows.length + 1}번째 줄`;
+    if (DIET_MEAL_TYPES.indexOf(meal) < 0) return { error: `${label}: 아침·점심·저녁·간식 중에서 골라 주세요.` };
+    if (!food) return { error: `${label}: 음식을 입력해 주세요.` };
+    if (food.length > DAILY_LOG_LIMITS.food) return { error: `${label}: 음식은 ${DAILY_LOG_LIMITS.food}자까지 입력할 수 있어요.` };
+    if (note.length > DAILY_LOG_LIMITS.note) return { error: `${label}: 비고는 ${DAILY_LOG_LIMITS.note}자까지 입력할 수 있어요.` };
+    rows.push({ '항목': meal, '음식': food, '비고': note });
+  }
+  if (rows.length > DAILY_LOG_LIMITS.dietRows) return { error: `식단은 하루 ${DAILY_LOG_LIMITS.dietRows}줄까지 기록할 수 있어요.` };
+  return { rows: rows };
+}
+
+// 예: "벤치프레스 12회×3세트 40kg / 트레드밀 걷기 30분"
+function summarizeExerciseRows(rows) {
+  return rows.map(r => {
+    const reps = r['횟수'] === '' ? '' : (/^\d+$/.test(String(r['횟수'])) ? `${r['횟수']}회` : String(r['횟수']));
+    const sets = r['세트'] === '' ? '' : `${r['세트']}세트`;
+    const volume = reps && sets ? `${reps}×${sets}` : (reps || sets);
+    return [r['종목'], volume, r['무게'] === '' ? '' : `${r['무게']}kg`].filter(Boolean).join(' ');
+  }).join(' / ');
+}
+
+// 예: "아침: 사과, 삶은 달걀 / 점심: 현미밥"
+function summarizeDietRows(rows) {
+  const groups = [];
+  const byMeal = {};
+  rows.forEach(r => {
+    if (!byMeal[r['항목']]) {
+      byMeal[r['항목']] = [];
+      groups.push(r['항목']);
+    }
+    byMeal[r['항목']].push(r['음식']);
+  });
+  return groups.map(g => `${g}: ${byMeal[g].join(', ')}`).join(' / ');
+}
+
+// WeightLog 일일 기록 열 4개 (없으면 맨 오른쪽에 추가) → { exercise, diet, exerciseSummary, dietSummary } 열 번호
+function ensureWeightLogDailyColumns(sheet) {
+  const colMap = getHeaderColumnMap(sheet);
+  const out = {};
+  Object.keys(WEIGHT_LOG_DAILY_HEADERS).forEach(k => { out[k] = getOrAddExactColumn(sheet, colMap, WEIGHT_LOG_DAILY_HEADERS[k]); });
+  return out;
+}
+
+/**
+ * 저장 공통 (호출하는 쪽에서 스크립트 잠금을 잡은 상태)
+ * → { mode: 'created'|'updated'|'deleted'|'none', log } 또는 { error }
+ */
+function saveMemberDailyLog(ss, auth, date, weightValue, exerciseRows, dietRows) {
   // 저장 직전 본인 행 재확인 (회원번호 정확 일치 1행 + 휴대폰 뒷자리 일치)
   const self = locateSelfEditRow(auth.sheet, auth.memberKey, auth.phoneLast4);
-  if (self.error) return createJsonResponse({ status: 'error', code: self.code, message: self.error.replace(' (횟수는 차감되지 않았습니다)', '') });
+  if (self.error) return { error: { status: 'error', code: self.code, message: self.error.replace(' (횟수는 차감되지 않았습니다)', '') } };
 
   const sheet = getWeightLogSheet(ss, true);
   const cols = locateWeightLogColumns(sheet);
   if (cols.error) {
-    Logger.log('[memberSaveWeight] ' + cols.error);
-    return createJsonResponse({ status: 'error', code: 'no_column', message: '체중을 기록할 칸을 찾지 못했습니다. 담당 코치님께 문의해 주세요.' });
+    Logger.log('[memberSaveDailyLog] ' + cols.error);
+    return { error: { status: 'error', code: 'no_column', message: '기록할 칸을 찾지 못했습니다. 담당 코치님께 문의해 주세요.' } };
   }
+  const daily = ensureWeightLogDailyColumns(sheet);
+  const width = Math.max(sheet.getLastColumn(), cols.width);
 
-  const rows = readWeightLog(ss).filter(r => r['회원번호'] === auth.memberKey && r['날짜'] === date).map(r => r._rowNumber);
+  const rows = readDailyLog(ss).filter(r => r['회원번호'] === auth.memberKey && r['날짜'] === date).map(r => r._rowNumber);
+  const isEmpty = weightValue === '' && !exerciseRows.length && !dietRows.length;
+  const log = { '날짜': date, '체중': weightValue, '운동': exerciseRows, '식단': dietRows };
   let mode;
-  if (weight.value === '') {
+  if (isEmpty) {
     rows.sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
     mode = rows.length ? 'deleted' : 'none';
   } else {
-    const values = {
-      name: memberViewGetName(auth.member),
-      weight: weight.value,
-      enteredBy: WEIGHT_LOG_ENTERED_BY_MEMBER,
-      recordedAt: Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss')
-    };
+    const values = {};
+    values[cols.name] = memberViewGetName(auth.member);
+    values[cols.weight] = weightValue;
+    values[cols.enteredBy] = WEIGHT_LOG_ENTERED_BY_MEMBER;
+    values[cols.recordedAt] = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
+    values[daily.exercise] = exerciseRows.length ? JSON.stringify(exerciseRows) : '';
+    values[daily.diet] = dietRows.length ? JSON.stringify(dietRows) : '';
+    values[daily.exerciseSummary] = summarizeExerciseRows(exerciseRows);
+    values[daily.dietSummary] = summarizeDietRows(dietRows);
     if (rows.length) {
-      // 같은 회원·날짜가 여러 행이면 첫 행만 남기고 정리 (회원번호+날짜 1행 유지), 코치가 덧붙인 다른 열은 건드리지 않음
+      // 같은 회원·날짜가 여러 행이면 첫 행만 남기고 정리, 코치가 덧붙인 다른 열은 건드리지 않음
       const keep = rows[0];
-      Object.keys(values).forEach(key => sheet.getRange(keep, cols[key]).setValue(values[key]));
+      Object.keys(values).forEach(col => sheet.getRange(keep, +col).setValue(values[col]));
       rows.slice(1).sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
       mode = 'updated';
     } else {
-      const entry = weightLogRowValues(cols, Object.assign({ date: date, memberNo: auth.memberKey }, values));
+      const row = new Array(width).fill('');
+      row[cols.date - 1] = date;
+      row[cols.memberNo - 1] = auth.memberKey;
+      Object.keys(values).forEach(col => { row[+col - 1] = values[col]; });
       const newRow = sheet.getLastRow() + 1;
       sheet.getRange(newRow, cols.date).setNumberFormat('@');
       sheet.getRange(newRow, cols.memberNo).setNumberFormat('@');
-      sheet.getRange(newRow, 1, 1, entry.length).setValues([entry]);
+      sheet.getRange(newRow, 1, 1, row.length).setValues([row]);
       mode = 'created';
     }
   }
   SpreadsheetApp.flush();
+  return { mode: mode, log: log };
+}
 
-  if (mode !== 'none') {
-    appendMemberPlanLog(ss, auth, '공복 체중', mode === 'created' ? '체중 새로 기록' : (mode === 'updated' ? '체중 수정' : '체중 삭제'),
-      WEIGHT_LOG_SHEET, `${date} ${weight.value === '' ? '(삭제)' : weight.value + 'kg'}`, '');
+function handleMemberSaveDailyLog(ss, payload) {
+  const auth = resolveAuthorizedMember(ss, payload);
+  if (auth.error) return createJsonResponse(auth.error);
+
+  const date = String(payload.date || '').trim();
+  const dateError = checkMemberLogDate(date);
+  if (dateError) return createJsonResponse(dateError);
+  const weight = parseMemberWeightInput(payload.weight);
+  if (weight.error) return createJsonResponse({ status: 'error', code: 'bad_weight', message: weight.error });
+  const exercise = parseExerciseRows(payload.exercise);
+  if (exercise.error) return createJsonResponse({ status: 'error', code: 'bad_exercise', message: exercise.error });
+  const diet = parseDietRows(payload.diet);
+  if (diet.error) return createJsonResponse({ status: 'error', code: 'bad_diet', message: diet.error });
+
+  const result = saveMemberDailyLog(ss, auth, date, weight.value, exercise.rows, diet.rows);
+  if (result.error) return createJsonResponse(result.error);
+
+  // 목록에 없는 운동명은 '미등록'으로 추가 (실패해도 기록 저장은 그대로)
+  try {
+    addUnregisteredExercises(ss, exercise.rows.map(r => r['종목']), auth.memberKey);
+  } catch (e) {
+    Logger.log('[ExerciseList 미등록 추가 실패] ' + e.toString());
   }
 
-  return createJsonResponse({ status: 'success', memberKey: auth.memberKey, date: date, weight: weight.value, mode: mode });
+  if (result.mode !== 'none') {
+    const parts = [weight.value === '' ? '' : `체중 ${weight.value}kg`, exercise.rows.length ? `운동 ${exercise.rows.length}개` : '', diet.rows.length ? `식단 ${diet.rows.length}개` : ''].filter(Boolean);
+    appendMemberPlanLog(ss, auth, '일일 기록', result.mode === 'created' ? '새로 기록' : (result.mode === 'updated' ? '수정' : '삭제'),
+      WEIGHT_LOG_SHEET, `${date} ${parts.length ? parts.join(' · ') : '(삭제)'}`, '');
+  }
+  return createJsonResponse({ status: 'success', memberKey: auth.memberKey, date: date, mode: result.mode, log: result.log });
+}
+
+/**
+ * ==============================================================================
+ * [운동 목록] ExerciseList 시트 - 운동명 | 부위 | 상태(등록/미등록) | 추가일 | 출처
+ * - 회원 기록 화면 자동완성에는 '등록'만 보냄. 회원이 목록에 없는 이름을 저장하면 '미등록'으로 추가
+ * - 코치가 시트에서 상태를 '등록'으로 바꾸면 다음 접속부터 자동완성에 나옴
+ * ==============================================================================
+ */
+const EXERCISE_LIST_SHEET = 'ExerciseList';
+const EXERCISE_LIST_HEADERS = ['운동명', '부위', '상태', '추가일', '출처'];
+const EXERCISE_STATUS_REGISTERED = '등록';
+const EXERCISE_STATUS_UNREGISTERED = '미등록';
+const DEFAULT_EXERCISES = {
+  '가슴': ['벤치프레스', '인클라인 벤치프레스', '디클라인 벤치프레스', '덤벨 벤치프레스', '인클라인 덤벨프레스', '덤벨 플라이', '인클라인 덤벨 플라이',
+    '체스트 프레스 머신', '펙덱 플라이', '케이블 크로스오버', '스미스 머신 벤치프레스', '딥스', '푸시업'],
+  '등': ['데드리프트', '루마니안 데드리프트', '랫풀다운', '클로즈그립 랫풀다운', '풀업', '친업', '어시스트 풀업', '바벨 로우', '덤벨 로우',
+    '원암 덤벨 로우', '시티드 케이블 로우', '티바 로우', '머신 로우', '스트레이트 암 풀다운', '백 익스텐션'],
+  '어깨': ['오버헤드 프레스', '덤벨 숄더 프레스', '숄더 프레스 머신', '아놀드 프레스', '사이드 레터럴 레이즈', '케이블 사이드 레터럴 레이즈',
+    '프론트 레이즈', '벤트오버 레터럴 레이즈', '리어 델트 플라이', '페이스 풀', '업라이트 로우', '슈러그'],
+  '하체': ['바벨 스쿼트', '프론트 스쿼트', '고블릿 스쿼트', '스미스 머신 스쿼트', '핵 스쿼트', '맨몸 스쿼트', '레그 프레스', '런지', '워킹 런지',
+    '불가리안 스플릿 스쿼트', '스텝업', '레그 익스텐션', '레그 컬', '시티드 레그 컬', '스티프 레그 데드리프트', '덤벨 스티프 데드리프트',
+    '힙 쓰러스트', '글루트 브릿지', '힙 어브덕션', '힙 어덕션', '카프 레이즈', '시티드 카프 레이즈'],
+  '팔': ['바벨 컬', '덤벨 컬', '해머 컬', '프리처 컬', '케이블 컬', '인클라인 덤벨 컬', '컨센트레이션 컬', '트라이셉스 푸시다운', '로프 푸시다운',
+    '오버헤드 트라이셉스 익스텐션', '라잉 트라이셉스 익스텐션', '덤벨 킥백', '클로즈그립 벤치프레스', '벤치 딥스'],
+  '코어': ['플랭크', '사이드 플랭크', '크런치', '리버스 크런치', '레그 레이즈', '행잉 레그 레이즈', '바이시클 크런치', '러시안 트위스트',
+    '마운틴 클라이머', '데드버그', '버드독', '케이블 크런치', 'AB 롤아웃', '할로우 홀드'],
+  '유산소': ['트레드밀 걷기', '트레드밀 경사도 걷기', '트레드밀 달리기', '실내 사이클', '천국의 계단', '일립티컬', '로잉 머신', '줄넘기', '버피',
+    '야외 걷기', '수영'],
+  '스트레칭': ['동적 스트레칭', '정적 스트레칭', '폼롤러']
+};
+
+function normalizeExerciseName(name) {
+  return String(name || '').replace(/\s+/g, '').toLowerCase();
+}
+
+function getExerciseListSheet(ss, create) {
+  let sheet = ss.getSheetByName(EXERCISE_LIST_SHEET);
+  if (!sheet && create) {
+    sheet = ss.insertSheet(EXERCISE_LIST_SHEET);
+    sheet.getRange(1, 1, 1, EXERCISE_LIST_HEADERS.length).setValues([EXERCISE_LIST_HEADERS]);
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function locateExerciseListColumns(sheet) {
+  const colMap = getHeaderColumnMap(sheet);
+  const cols = {};
+  const missing = [];
+  EXERCISE_LIST_HEADERS.forEach(h => {
+    cols[h] = findExactColumn(colMap, [h]);
+    if (!cols[h]) missing.push(h);
+  });
+  if (missing.length) return { error: `ExerciseList 시트에서 '${missing.join("', '")}' 열을 찾지 못했습니다.` };
+  cols.width = Math.max.apply(null, [sheet.getLastColumn()].concat(EXERCISE_LIST_HEADERS.map(h => cols[h])));
+  return cols;
+}
+
+function readExerciseList(ss) {
+  const sheet = getExerciseListSheet(ss, false);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const cols = locateExerciseListColumns(sheet);
+  if (cols.error) {
+    Logger.log('[readExerciseList] ' + cols.error);
+    return [];
+  }
+  const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
+  return values.map(row => ({
+    '운동명': dailyText(row[cols['운동명'] - 1]),
+    '부위': dailyText(row[cols['부위'] - 1]),
+    '상태': dailyText(row[cols['상태'] - 1])
+  })).filter(r => r['운동명']);
+}
+
+// 회원 화면 자동완성용: '등록' 상태만, 이름 중복 제거
+function readRegisteredExercises(ss) {
+  const seen = {};
+  const out = [];
+  readExerciseList(ss).forEach(r => {
+    const key = normalizeExerciseName(r['운동명']);
+    if (r['상태'] !== EXERCISE_STATUS_REGISTERED || seen[key]) return;
+    seen[key] = true;
+    out.push({ '운동명': r['운동명'], '부위': r['부위'] });
+  });
+  return out;
+}
+
+// 목록에 없는 이름만 추가 (공백·대소문자 무시 중복 제외) → 추가한 개수
+// - promote: 이미 '미등록'으로 있는 이름이 '등록' 후보로 오면 '등록'으로 바꾸고 빈 부위를 채움 (초기 등록 메뉴 전용)
+function appendExercises(ss, entries, promote) {
+  const sheet = getExerciseListSheet(ss, true);
+  const cols = locateExerciseListColumns(sheet);
+  if (cols.error) throw new Error(cols.error);
+  const seen = {};
+  const existingRows = {};
+  if (sheet.getLastRow() > 1) {
+    sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues().forEach((row, i) => {
+      const key = normalizeExerciseName(row[cols['운동명'] - 1]);
+      if (!key) return;
+      seen[key] = true;
+      if (!existingRows[key]) existingRows[key] = { row: i + 2, status: dailyText(row[cols['상태'] - 1]), part: dailyText(row[cols['부위'] - 1]) };
+    });
+  }
+  if (promote) {
+    entries.forEach(e => {
+      const ex = existingRows[normalizeExerciseName(e.name)];
+      if (!ex || e.status !== EXERCISE_STATUS_REGISTERED || ex.status === EXERCISE_STATUS_REGISTERED) return;
+      sheet.getRange(ex.row, cols['상태']).setValue(EXERCISE_STATUS_REGISTERED);
+      if (!ex.part && e.part) sheet.getRange(ex.row, cols['부위']).setValue(e.part);
+      ex.status = EXERCISE_STATUS_REGISTERED;
+    });
+  }
+  const today = kstDateKey();
+  const rows = [];
+  entries.forEach(e => {
+    const key = normalizeExerciseName(e.name);
+    if (!key || seen[key]) return;
+    seen[key] = true;
+    const row = new Array(cols.width).fill('');
+    row[cols['운동명'] - 1] = e.name;
+    row[cols['부위'] - 1] = e.part || '';
+    row[cols['상태'] - 1] = e.status;
+    row[cols['추가일'] - 1] = today;
+    row[cols['출처'] - 1] = e.source;
+    rows.push(row);
+  });
+  if (rows.length) {
+    const first = sheet.getLastRow() + 1;
+    sheet.getRange(first, cols['추가일'], rows.length, 1).setNumberFormat('@');
+    sheet.getRange(first, 1, rows.length, rows[0].length).setValues(rows);
+  }
+  return rows.length;
+}
+
+function addUnregisteredExercises(ss, names, memberNo) {
+  const entries = names.map(n => ({ name: dailyText(n), part: '', status: EXERCISE_STATUS_UNREGISTERED, source: `회원 입력 (${memberNo})` }));
+  return entries.length ? appendExercises(ss, entries) : 0;
+}
+
+// '현재 제안 운동 루틴' 마크다운 표에서 종목명 추출 (DAY 제목·헤더·구분선·휴식 줄 제외)
+function extractRoutineExerciseNames(text) {
+  const names = [];
+  String(text || '').split('\n').forEach(line => {
+    const t = line.trim();
+    if (!t.startsWith('|')) return;
+    const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.replace(/\*\*/g, '').trim());
+    const name = cells[0] || '';
+    if (!name || cells.length < 3) return;
+    if (/^:?-{2,}/.test(name) || /^DAY\s*\d/i.test(name) || name.indexOf('운동 종목') >= 0 || name.indexOf('운동종목') >= 0 || name.indexOf('휴식') >= 0) return;
+    if (name.length > DAILY_LOG_LIMITS.exerciseName) return;
+    names.push(name);
+  });
+  return names;
+}
+
+/**
+ * [시트 메뉴] 운동 목록 초기 등록: 기본 헬스 종목 + Members '현재 제안 운동 루틴' 표의 종목 ('등록')
+ * - WeightLog 일일 기록 열(운동 기록·식단 기록·운동 요약·식단 요약)도 없으면 맨 오른쪽에 추가
+ * - 이미 있는 이름은 건너뛰므로 여러 번 실행해도 됨
+ */
+function setupExerciseList() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const result = withMembersWriteLock(() => {
+    const entries = [];
+    Object.keys(DEFAULT_EXERCISES).forEach(part => DEFAULT_EXERCISES[part].forEach(name => {
+      entries.push({ name: name, part: part, status: EXERCISE_STATUS_REGISTERED, source: '기본 목록' });
+    }));
+    const memberSheet = ss.getSheetByName('Members') || findSheetSmartly(ss, SHEET_NAMES.MEMBERS, ['이름', '체중', '운동경력', '키', '성별']);
+    let routineCount = 0;
+    getSheetDataWithHeaders(memberSheet).forEach(m => {
+      extractRoutineExerciseNames(getMemberExactField(m, ['현재 제안 운동 루틴'])).forEach(name => {
+        routineCount++;
+        entries.push({ name: name, part: '', status: EXERCISE_STATUS_REGISTERED, source: '회원 루틴' });
+      });
+    });
+    const added = appendExercises(ss, entries, true);
+    const wl = getWeightLogSheet(ss, true);
+    const before = wl.getLastColumn();
+    ensureWeightLogDailyColumns(wl);
+    return { added: added, total: entries.length, routineCount: routineCount, addedCols: wl.getLastColumn() - before };
+  });
+  ui.alert('🏋️ 운동 목록 초기 등록',
+    `ExerciseList에 ${result.added}개를 새로 등록했습니다. (후보 ${result.total}개 중 중복 제외, 회원 루틴에서 찾은 종목 ${result.routineCount}개 포함)\n` +
+    (result.addedCols ? `WeightLog 맨 오른쪽에 기록 열 ${result.addedCols}개를 추가했습니다.` : 'WeightLog 기록 열은 이미 있습니다.'),
+    ui.ButtonSet.OK);
 }
 
 /**
@@ -2699,7 +3095,7 @@ function runWeightMigration(ss) {
   const cols = locateWeightLogColumns(sheet);
   if (cols.error) return { error: cols.error };
   const existing = {};
-  readWeightLog(ss).forEach(r => { existing[r['회원번호'] + '|' + r['날짜']] = true; });
+  readDailyLog(ss).forEach(r => { existing[r['회원번호'] + '|' + r['날짜']] = true; });
 
   const now = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
   const rows = [];

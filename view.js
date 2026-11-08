@@ -34,15 +34,26 @@ const VIEW_MOCK_DB = {
       '운동 경력': '헬스 3개월 미만',
       '주당 운동 횟수': '주 1회',
       '참여목적': '4주 체중 -3kg 감량 (82.5kg → 79.5kg) 및 저녁 야식 습관 개선',
-      '현재 제안 운동 루틴': `[김민수 회원 주간 운동 루틴]
-- 월/수/금 (저녁 20:30, 35분):
-  1. 웜업: 고관절 스트레칭 & 버드독 10회 3세트
-  2. 맨몸 스쿼트 15회 4세트
-  3. 무릎 대고 푸시업 10회 3세트
-  4. 슬로우 버피 12회 3세트
-  5. 쿨다운: 폼롤러 허리/둔근 이완 10분
-- 화/목: 퇴근길 가벼운 파워워킹 30분 또는 인터벌 걷기
-- 주말(토/일 중 택1): 충분한 휴식 및 가벼운 산책`,
+      '현재 제안 운동 루틴': `[루틴 소개]
+좌식 근무와 허리 부담을 고려해 맨몸·머신 위주로 주 3회 구성했습니다.
+
+[루틴]
+| DAY1 [가슴, 삼두] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 동적 스트레칭 | 10분 | 1세트 | - | |
+| 벤치프레스 | 12회 | 3세트 | 60초 | |
+| 인클라인 덤벨프레스 | 12회 | 3세트 | 60초 | |
+| 트레드밀 경사도 걷기 | 30분 | 1세트 | - | |
+
+DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식
+
+| DAY3 [등, 이두] | | | | |
+| :--- | :--- | :--- | :--- | :--- |
+| **운동 종목** | **횟수** | **세트수** | **쉬는시간** | **무게** |
+| 랫풀다운 | 12회 | 3세트 | 60초 | |
+| 바벨 로우 | 8~12회 | 3세트 | 60초 | |
+| 플랭크 | 30초 | 3세트 | 45초 | |`,
       '현재 제안 식단': `[김민수 회원 맞춤 식단]
 - 아침: 그릭요거트 100g + 사과 반 쪽 + 삶은 달걀 1개
 - 점심 (구내식당): 밥 2/3 공기 + 국물 제외 건더기 위주 + 단백질 반찬 2배
@@ -111,6 +122,21 @@ const VIEW_MOCK_DB = {
     { '날짜': '2026-10-15', '코치 한마디': '어제 식단 완벽했어요 👍 오늘도 물 2L 챙겨 주세요.' },
     { '날짜': '2026-10-12', '코치 한마디': '야근하셨는데도 운동 챙기신 거 멋져요! 무릎은 하루 쉬어 주세요.' },
     { '날짜': '2026-10-09', '코치 한마디': '첫 주 잘 시작하셨어요. 체중은 매일 아침 같은 시간에 재 주세요.' }
+  ],
+  // M001 회원의 WeightLog 일일 기록 (체중·운동·식단, 서버는 본인 회원번호 행만 보냄)
+  dailyLogs: [
+    { '날짜': '2026-10-12', '체중': 81.4, '운동': [], '식단': [] },
+    { '날짜': '2026-10-14', '체중': '', '운동': [{ '종목': '트레드밀 경사도 걷기', '횟수': '30분', '세트': 1, '무게': '', '비고': '' }], '식단': [] },
+    { '날짜': '2026-10-15', '체중': 81.1,
+      '운동': [{ '종목': '벤치프레스', '횟수': '12', '세트': 3, '무게': 40, '비고': '' }, { '종목': '랫풀다운', '횟수': '12', '세트': 3, '무게': 35, '비고': '마지막 세트 힘듦' }],
+      '식단': [{ '항목': '아침', '음식': '사과 1/2개', '비고': '' }, { '항목': '아침', '음식': '삶은 달걀 2개', '비고': '' }, { '항목': '점심', '음식': '현미밥 2/3공기 + 닭가슴살', '비고': '회사 근처' }] }
+  ],
+  // ExerciseList '등록' 상태만 (자동완성용)
+  exerciseList: [
+    { '운동명': '벤치프레스', '부위': '가슴' }, { '운동명': '인클라인 벤치프레스', '부위': '가슴' }, { '운동명': '덤벨 벤치프레스', '부위': '가슴' },
+    { '운동명': '랫풀다운', '부위': '등' }, { '운동명': '바벨 로우', '부위': '등' }, { '운동명': '바벨 스쿼트', '부위': '하체' },
+    { '운동명': '레그 프레스', '부위': '하체' }, { '운동명': '플랭크', '부위': '코어' }, { '운동명': '트레드밀 경사도 걷기', '부위': '유산소' },
+    { '운동명': '사이드 레터럴 레이즈', '부위': '어깨' }
   ]
 };
 
@@ -119,6 +145,8 @@ let CurrentMemberState = {
   member: null,
   weights: [], // [{ 날짜, 체중 }] 본인 공복 체중 기록 (WeightLog)
   coachNotes: [], // [{ 날짜, 코치 한마디 }] 코치가 남긴 한마디 (CoachLog의 회원 공개 칸만, 최신순)
+  dailyLogs: [], // [{ 날짜, 체중, 운동: [], 식단: [] }] 본인 일일 기록 (WeightLog, 체중 빈 날 포함)
+  exerciseList: [], // [{ 운동명, 부위 }] 자동완성용 운동 목록 (ExerciseList '등록'만)
   isUsingMock: false,
   targetId: '', // URL 회원 식별값 (서버 인증 요청용)
   gasUrl: '',
@@ -259,7 +287,7 @@ function showInvalidAccessScreen(reasonHint = '', customTitle = '', customDesc =
 }
 
 // 회원 본인 데이터 전용 캐시 & 서버 발급 회원 인증 토큰 (URL 회원 식별값 기준 저장)
-const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v6_';
+const MEMBER_VIEW_CACHE_PREFIX = 'coach_dash_view_member_v7_';
 const MEMBER_VIEW_TOKEN_PREFIX = 'member_view_token_';
 
 function storageGet(key) {
@@ -288,7 +316,7 @@ function purgeLegacyMemberViewStorage() {
   [window.localStorage, window.sessionStorage].forEach(store => {
     try {
       Object.keys(store).forEach(k => {
-        if (k.indexOf('member_auth_') === 0 || k.indexOf('coach_dash_view_member_v4_') === 0 || k.indexOf('coach_dash_view_member_v5_') === 0) store.removeItem(k);
+        if (k.indexOf('member_auth_') === 0 || k.indexOf('coach_dash_view_member_v4_') === 0 || k.indexOf('coach_dash_view_member_v5_') === 0 || k.indexOf('coach_dash_view_member_v6_') === 0) store.removeItem(k);
       });
     } catch (e) {}
   });
@@ -300,6 +328,8 @@ function saveMemberSession(targetId, memberToken, data) {
     member: data.member,
     weights: data.weights,
     coachNotes: data.coachNotes !== undefined ? data.coachNotes : CurrentMemberState.coachNotes,
+    dailyLogs: data.dailyLogs !== undefined ? data.dailyLogs : CurrentMemberState.dailyLogs,
+    exerciseList: data.exerciseList !== undefined ? data.exerciseList : CurrentMemberState.exerciseList,
     regenRemaining: data.regenRemaining,
     timestamp: Date.now()
   }));
@@ -469,7 +499,7 @@ async function loadMemberPageData(targetId) {
     if (loadingScreen) loadingScreen.classList.add('d-none');
     const previewMember = findMemberInList(VIEW_MOCK_DB.members, targetId);
     if (previewMember) {
-      applyMemberData(previewMember, VIEW_MOCK_DB.weights, true, { coachNotes: VIEW_MOCK_DB.coachNotes });
+      applyMemberData(previewMember, VIEW_MOCK_DB.weights, true, { coachNotes: VIEW_MOCK_DB.coachNotes, dailyLogs: VIEW_MOCK_DB.dailyLogs, exerciseList: VIEW_MOCK_DB.exerciseList });
       unlockAndRenderMemberPage();
     } else {
       showInvalidAccessScreen('', '미리보기 회원 없음', '구글 시트 연동 URL이 설정되지 않았습니다. 담당 코치님께 받은 링크로 다시 접속해 주세요.');
@@ -488,7 +518,7 @@ async function loadMemberPageData(targetId) {
       const cached = rawCache ? JSON.parse(rawCache) : null;
       if (cached && cached.member) {
         console.log(`[회원 뷰어] ⚡ 캐시 데이터로 즉시 렌더링: ${getMemberName(cached.member)}`);
-        applyMemberData(cached.member, cached.weights || [], false, { regenRemaining: cached.regenRemaining, coachNotes: cached.coachNotes });
+        applyMemberData(cached.member, cached.weights || [], false, { regenRemaining: cached.regenRemaining, coachNotes: cached.coachNotes, dailyLogs: cached.dailyLogs, exerciseList: cached.exerciseList });
 
         const statusBadge = document.getElementById('dataConnectionStatusBadge');
         if (statusBadge) {
@@ -520,7 +550,7 @@ async function loadMemberPageData(targetId) {
   if (res && res.status === 'success' && res.data) {
     // [성공] 저장된 회원 토큰이 유효 -> 최신 데이터로 갱신
     saveMemberSession(targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining, coachNotes: res.data.coachNotes });
+    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining, coachNotes: res.data.coachNotes, dailyLogs: res.data.dailyLogs, exerciseList: res.data.exerciseList });
     unlockAndRenderMemberPage();
     console.log(`[회원 뷰어] 최신 시트 데이터 동기화 완료: ${getMemberName(res.data.member)} (ID: ${targetId})`);
     return;
@@ -602,6 +632,8 @@ function applyMemberData(member, weights, isMock, serverInfo) {
   CurrentMemberState.weights = Array.isArray(weights) ? weights : [];
   CurrentMemberState.regenRemaining = (serverInfo && serverInfo.regenRemaining) || null;
   CurrentMemberState.coachNotes = (serverInfo && Array.isArray(serverInfo.coachNotes)) ? serverInfo.coachNotes : [];
+  CurrentMemberState.dailyLogs = (serverInfo && Array.isArray(serverInfo.dailyLogs)) ? serverInfo.dailyLogs : [];
+  CurrentMemberState.exerciseList = (serverInfo && Array.isArray(serverInfo.exerciseList)) ? serverInfo.exerciseList : [];
   CurrentMemberState.isUsingMock = isMock;
 
   // 하단 연동 상태 뱃지 업데이트
@@ -693,7 +725,7 @@ async function handleMemberAuthLogin() {
 
   if (res && res.status === 'success' && res.data) {
     saveMemberSession(CurrentMemberState.targetId, res.memberToken, res.data);
-    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining, coachNotes: res.data.coachNotes });
+    applyMemberData(res.data.member, res.data.weights || [], false, { regenRemaining: res.data.regenRemaining, coachNotes: res.data.coachNotes, dailyLogs: res.data.dailyLogs, exerciseList: res.data.exerciseList });
     closeModalAndRender();
     return;
   }
@@ -743,7 +775,9 @@ function unlockAndRenderMemberPage() {
   // 5-1. 회원 셀프 수정 패널 (AI 재생성 / 이전 버전 되돌리기) - 서버 인증된 실제 회원에게만 표시
   renderPlanRegenPanels(member);
 
-  // 5. 공복 체중 그래프 + 날짜별 기록 목록
+  // 5. 기록 탭 (날짜별 체중·운동·식단 입력) + 공복 체중 그래프 + 날짜별 체중 목록
+  initRecordForm();
+  setRecordDate(RecordState.date || toLocalDateKey(new Date()));
   renderWeightChart();
   renderWeightList();
 
@@ -1632,7 +1666,7 @@ function renderWeightChart() {
   });
 }
 
-// [4. 날짜별 체중 기록 목록] 최근 날짜가 위, 전 기록 대비 변화 (누르면 달력에서 그 날짜 수정)
+// [4. 날짜별 체중 기록 목록] 최근 날짜가 위, 전 기록 대비 변화 (누르면 기록 탭에서 그 날짜 열기)
 function renderWeightList() {
   const list = document.getElementById('weightRecordList');
   const countBadge = document.getElementById('weightCountBadge');
@@ -1640,14 +1674,14 @@ function renderWeightList() {
   if (countBadge) countBadge.textContent = `누적 ${records.length}건`;
   if (!list) return;
   if (records.length === 0) {
-    list.innerHTML = '<div class="mp-empty-note">아직 기록이 없어요. 위의 [체중 기록하기]로 오늘 아침 체중을 남겨 보세요.</div>';
+    list.innerHTML = '<div class="mp-empty-note">아직 체중 기록이 없어요. 위에서 오늘 아침 체중을 남겨 보세요.</div>';
     return;
   }
   list.innerHTML = records.map((r, i) => {
     const diff = i > 0 ? Math.round((r.weight - records[i - 1].weight) * 10) / 10 : null;
     const cls = diff === null || diff === 0 ? '' : (diff < 0 ? 'is-down' : 'is-up');
     const [y, m, d] = r.date.split('-');
-    return `<button type="button" class="mp-wlog-row" onclick="openWeightCalendar('${r.date}')">
+    return `<button type="button" class="mp-wlog-row" onclick="openRecordDate('${r.date}')">
       <span class="mp-wlog-row-date">${+m}월 ${+d}일 <small>${y}</small></span>
       <span class="mp-wlog-row-val">${r.weight.toFixed(1)}kg</span>
       <span class="mp-wlog-row-diff ${cls}">${diff === null ? '-' : `${diff > 0 ? '+' : ''}${diff.toFixed(1)}`}</span>
@@ -2095,7 +2129,7 @@ window.memberRevertPlan = memberRevertPlan;
  * - 탭바 버튼 또는 data-tab-target 요소를 누르면 해당 화면으로 부드럽게 이동
  * ==============================================================================
  */
-const MEMBER_TABS = ['home', 'workout', 'diet', 'weight'];
+const MEMBER_TABS = ['home', 'workout', 'diet', 'record'];
 let memberTabsReady = false;
 
 function initMemberTabs() {
@@ -2144,7 +2178,7 @@ function setActiveMemberTab(name) {
     btn.classList.toggle('is-active', on);
     btn.setAttribute('aria-selected', on ? 'true' : 'false');
   });
-  if (name === 'weight') resizeMemberCharts();
+  if (name === 'record') resizeMemberCharts();
 }
 
 function resizeMemberCharts() {
@@ -2155,15 +2189,29 @@ function resizeMemberCharts() {
 
 /**
  * ==============================================================================
- * [체중 기록] 달력에서 날짜를 골라 아침 공복 체중을 바로 기록
- * - 서버(memberSaveWeight)가 WeightLog의 본인 회원번호+날짜 행을 덮어쓰거나 새로 씀 (지우기면 행 삭제)
+ * [기록 탭] 날짜별 체중·운동·식단을 한 번에 기록 (구글 폼 대체)
+ * - 서버(memberSaveDailyLog)가 WeightLog의 본인 회원번호+날짜 행을 덮어쓰거나 새로 씀 (셋 다 비면 행 삭제)
+ * - 입력 중인 내용은 회원·날짜별로 localStorage에 임시 보관 (저장 성공 시 삭제)
  * - 저장 성공 후 화면의 기록도 같은 규칙으로 고쳐 바로 반영 (새로고침하면 시트 값으로 다시 받음)
  * ==============================================================================
  */
-const WeightCalendarState = { year: 0, month: 0, selected: '', busy: false };
+const RECORD_DRAFT_PREFIX = 'coach_dash_view_draft_v1_';
+const DIET_MEALS = ['아침', '점심', '저녁', '간식'];
+const RECORD_LIMITS = { exerciseRows: 30, dietRows: 30, exerciseName: 40, food: 100, note: 100 };
+const AUTOCOMPLETE_MAX = 8;
+const RecordState = {
+  date: '', weight: '', exercise: [], diet: [],
+  busy: false, status: '', draftRestored: false, routineOpen: false, acIndex: -1
+};
+const WeightCalendarState = { year: 0, month: 0 };
 
 function toLocalDateKey(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function shiftLocalDateKey(key, days) {
+  const [y, m, d] = key.split('-').map(Number);
+  return toLocalDateKey(new Date(y, m - 1, d + days));
 }
 
 // 날짜별 체중 { 'yyyy-MM-dd': kg } (같은 날짜가 여러 행이면 뒤쪽 행 우선)
@@ -2177,13 +2225,529 @@ function getWeightByDate() {
   return map;
 }
 
-// dateKey를 주면 그 날짜를 고른 채로 열기 (체중 기록 목록에서 수정)
-function openWeightCalendar(dateKey) {
+function getDailyLog(date) {
+  return (CurrentMemberState.dailyLogs || []).find(r => r['날짜'] === date) || null;
+}
+
+/* --------------------------- 입력 상태 ↔ 저장 형식 --------------------------- */
+
+function emptyExerciseRow() {
+  return { '종목': '', '횟수': '', '세트': '', '무게': '', '비고': '' };
+}
+
+function emptyDietGroup(meal) {
+  return { meal: meal || '아침', items: [{ '음식': '', '비고': '' }] };
+}
+
+// 저장된 식단 [{항목, 음식, 비고}] → 항목별 묶음 (처음 나온 순서)
+function groupDietRows(rows) {
+  const groups = [];
+  (rows || []).forEach(r => {
+    const meal = DIET_MEALS.indexOf(r['항목']) >= 0 ? r['항목'] : '간식';
+    let g = groups.find(x => x.meal === meal);
+    if (!g) {
+      g = { meal, items: [] };
+      groups.push(g);
+    }
+    g.items.push({ '음식': String(r['음식'] || ''), '비고': String(r['비고'] || '') });
+  });
+  return groups;
+}
+
+function flattenDietGroups(groups) {
+  const out = [];
+  (groups || []).forEach(g => g.items.forEach(it => out.push({ '항목': g.meal, '음식': it['음식'], '비고': it['비고'] })));
+  return out;
+}
+
+function stateFromLog(log) {
+  const exercise = (log && Array.isArray(log['운동']) ? log['운동'] : []).map(r => ({
+    '종목': String(r['종목'] || ''), '횟수': String(r['횟수'] === undefined ? '' : r['횟수']),
+    '세트': String(r['세트'] === undefined ? '' : r['세트']), '무게': String(r['무게'] === undefined ? '' : r['무게']), '비고': String(r['비고'] || '')
+  }));
+  const diet = groupDietRows(log && log['식단']);
+  return {
+    weight: log && log['체중'] !== '' && log['체중'] !== undefined ? String(log['체중']) : '',
+    exercise: exercise.length ? exercise : [emptyExerciseRow()],
+    diet: diet.length ? diet : [emptyDietGroup('아침')]
+  };
+}
+
+/* ------------------------------ 임시 보관 (localStorage) ------------------------------ */
+
+function recordDraftKey(date) {
+  return RECORD_DRAFT_PREFIX + (getMemberNo(CurrentMemberState.member) || CurrentMemberState.targetId) + '_' + date;
+}
+
+function readRecordDraft(date) {
+  try {
+    const d = JSON.parse(localStorage.getItem(recordDraftKey(date)) || 'null');
+    return d && Array.isArray(d.exercise) && Array.isArray(d.diet) ? d : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+let recordDraftTimer = 0;
+function scheduleRecordDraftSave() {
+  clearTimeout(recordDraftTimer);
+  const date = RecordState.date;
+  const snapshot = JSON.stringify({ weight: RecordState.weight, exercise: RecordState.exercise, diet: RecordState.diet, at: Date.now() });
+  recordDraftTimer = setTimeout(() => {
+    try { localStorage.setItem(recordDraftKey(date), snapshot); } catch (e) {}
+  }, 300);
+}
+
+function clearRecordDraft(date) {
+  clearTimeout(recordDraftTimer);
+  try { localStorage.removeItem(recordDraftKey(date)); } catch (e) {}
+}
+
+/* ---------------------------------- 날짜 이동 ---------------------------------- */
+
+// 날짜를 열면 저장된 기록을 채우고, 저장 안 된 임시 입력이 있으면 그것을 먼저 보여 줌
+function setRecordDate(dateKey) {
   const today = toLocalDateKey(new Date());
-  const selected = /^\d{4}-\d{2}-\d{2}$/.test(dateKey || '') && dateKey <= today ? dateKey : today;
-  WeightCalendarState.year = +selected.slice(0, 4);
-  WeightCalendarState.month = +selected.slice(5, 7) - 1;
-  WeightCalendarState.selected = selected;
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(dateKey || '') && dateKey <= today ? dateKey : today;
+  const draft = readRecordDraft(date);
+  const base = stateFromLog(getDailyLog(date));
+  RecordState.date = date;
+  RecordState.weight = draft ? String(draft.weight || '') : base.weight;
+  RecordState.exercise = draft && draft.exercise.length ? draft.exercise : base.exercise;
+  RecordState.diet = draft && draft.diet.length ? draft.diet : base.diet;
+  RecordState.draftRestored = !!draft;
+  RecordState.status = '';
+  RecordState.routineOpen = false;
+  renderRecordTab();
+}
+
+function discardRecordDraft() {
+  clearRecordDraft(RecordState.date);
+  setRecordDate(RecordState.date);
+}
+
+// 홈 '오늘 기록하기' / 체중 목록의 날짜 → 기록 탭으로 이동
+function openRecordDate(dateKey) {
+  setRecordDate(dateKey || toLocalDateKey(new Date()));
+  goToMemberTab('record');
+  const pane = document.querySelector('.mp-pane[data-tab="record"]');
+  if (pane && typeof pane.scrollTo === 'function') pane.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---------------------------------- 그리기 ---------------------------------- */
+
+function formatRecordDateLabel(key) {
+  const [y, m, d] = key.split('-').map(Number);
+  const wd = ['일', '월', '화', '수', '목', '금', '토'][new Date(y, m - 1, d).getDay()];
+  return `${m}월 ${d}일 (${wd})`;
+}
+
+function renderRecordTab() {
+  const root = document.getElementById('recordForm');
+  if (!root || !RecordState.date) return;
+  const today = toLocalDateKey(new Date());
+  const date = RecordState.date;
+  setText('recordDateLabel', date === today ? `오늘 · ${formatRecordDateLabel(date)}` : formatRecordDateLabel(date));
+  const nextBtn = document.getElementById('btnRecordNextDay');
+  if (nextBtn) nextBtn.disabled = date >= today;
+
+  const note = (CurrentMemberState.coachNotes || []).find(n => n['날짜'] === date && String(n['코치 한마디'] || '').trim());
+  const prevWeights = getSortedWeights().filter(r => r.date < date);
+  const prevW = prevWeights.length ? prevWeights[prevWeights.length - 1] : null;
+  const canSave = canMemberSelfEdit();
+  const busy = RecordState.busy;
+
+  const exerciseHtml = RecordState.exercise.map((r, i) => `
+    <div class="mp-rec-ex" data-ex="${i}">
+      <div class="mp-rec-ex-top">
+        <span class="mp-rec-ex-no">${i + 1}</span>
+        <div class="mp-rec-ac-wrap">
+          <input type="text" class="form-control" data-rec="ex" data-i="${i}" data-f="종목" value="${escapeHtml(r['종목'])}"
+                 placeholder="종목 (예: 벤치프레스, ㅂㅊ)" maxlength="${RECORD_LIMITS.exerciseName}" autocomplete="off" enterkeyhint="next">
+          <div class="mp-rec-ac d-none" data-ac="${i}" role="listbox"></div>
+        </div>
+        <button type="button" class="mp-rec-icon-btn is-danger" data-act="ex-del" data-i="${i}" aria-label="${i + 1}번째 운동 삭제"><i class="bi bi-x-lg"></i></button>
+      </div>
+      <div class="mp-rec-ex-grid">
+        <label><span>횟수</span><input type="text" class="form-control" data-rec="ex" data-i="${i}" data-f="횟수" value="${escapeHtml(r['횟수'])}" placeholder="12 / 30분" maxlength="10" autocomplete="off"></label>
+        <label><span>세트</span><input type="text" inputmode="numeric" class="form-control" data-rec="ex" data-i="${i}" data-f="세트" value="${escapeHtml(r['세트'])}" placeholder="3" maxlength="2" autocomplete="off"></label>
+        <label><span>무게(kg)</span><input type="text" inputmode="decimal" class="form-control" data-rec="ex" data-i="${i}" data-f="무게" value="${escapeHtml(r['무게'])}" placeholder="40" maxlength="6" autocomplete="off"></label>
+      </div>
+      <input type="text" class="form-control mp-rec-note" data-rec="ex" data-i="${i}" data-f="비고" value="${escapeHtml(r['비고'])}" placeholder="비고 (선택)" maxlength="${RECORD_LIMITS.note}" autocomplete="off">
+    </div>`).join('');
+
+  const routineDays = parseRoutineDays();
+  const routineHtml = RecordState.routineOpen ? `
+    <div class="mp-rec-routine">
+      ${routineDays.length ? `<div class="mp-rec-routine-title">불러올 DAY를 골라 주세요</div>
+        <div class="mp-rec-routine-days">${routineDays.map((d, i) => `<button type="button" class="mp-rec-chip" data-act="routine-day" data-i="${i}">${escapeHtml(d.label)} <small>${d.rows.length}개</small></button>`).join('')}</div>`
+        : '<div class="mp-empty-note">불러올 운동 루틴이 없어요.</div>'}
+    </div>` : '';
+
+  const dietHtml = RecordState.diet.map((g, gi) => `
+    <div class="mp-rec-meal" data-g="${gi}">
+      <div class="mp-rec-meal-head">
+        <select class="form-select" data-rec="meal" data-g="${gi}" aria-label="식사 항목">
+          ${DIET_MEALS.map(m => `<option value="${m}" ${g.meal === m ? 'selected' : ''}>${m}</option>`).join('')}
+        </select>
+        <button type="button" class="mp-rec-icon-btn" data-act="meal-add" data-g="${gi}" aria-label="식사 항목 추가"><i class="bi bi-plus-lg"></i></button>
+      </div>
+      ${g.items.map((it, ii) => `
+        <div class="mp-rec-food">
+          <input type="text" class="form-control" data-rec="food" data-g="${gi}" data-ii="${ii}" data-f="음식" value="${escapeHtml(it['음식'])}" placeholder="음식" maxlength="${RECORD_LIMITS.food}" autocomplete="off">
+          <input type="text" class="form-control" data-rec="food" data-g="${gi}" data-ii="${ii}" data-f="비고" value="${escapeHtml(it['비고'])}" placeholder="비고" maxlength="${RECORD_LIMITS.note}" autocomplete="off">
+          <button type="button" class="mp-rec-icon-btn" data-act="food-add" data-g="${gi}" data-ii="${ii}" aria-label="같은 항목 음식 추가"><i class="bi bi-plus-lg"></i></button>
+          <button type="button" class="mp-rec-icon-btn is-danger" data-act="food-del" data-g="${gi}" data-ii="${ii}" aria-label="음식 삭제"><i class="bi bi-x-lg"></i></button>
+        </div>`).join('')}
+    </div>`).join('');
+
+  root.innerHTML = `
+    ${note ? `<div class="mp-rec-coachnote"><i class="bi bi-chat-heart-fill"></i><div><b>코치 한마디</b><p>${escapeHtml(note['코치 한마디'])}</p></div></div>` : ''}
+    ${RecordState.draftRestored ? `<div class="mp-rec-draft"><i class="bi bi-pencil-square"></i><span>저장 안 된 입력을 불러왔어요.</span><button type="button" class="mp-link-btn" data-act="draft-discard">버리기</button></div>` : ''}
+
+    <section class="mp-card mp-rec-card">
+      <div class="mp-rec-head"><h3><i class="bi bi-speedometer2"></i>아침 공복 체중</h3><small>선택</small></div>
+      <div class="mp-rec-weight">
+        <input type="text" inputmode="decimal" class="form-control" data-rec="weight" value="${escapeHtml(RecordState.weight)}" placeholder="예) 72.4" maxlength="6" autocomplete="off">
+        <span>kg</span>
+      </div>
+      <div class="mp-rec-hint">${prevW ? `지난 기록 ${formatRecordDateLabel(prevW.date)}: <b>${prevW.weight.toFixed(1)}kg</b>` : '첫 체중 기록이에요.'}</div>
+    </section>
+
+    <section class="mp-card mp-rec-card">
+      <div class="mp-rec-head"><h3><i class="bi bi-lightning-charge-fill"></i>운동</h3>
+        <button type="button" class="mp-link-btn" data-act="routine-toggle"><i class="bi bi-list-check me-1"></i>오늘 루틴 불러오기</button>
+      </div>
+      ${routineHtml}
+      <div class="mp-rec-ex-list">${exerciseHtml}</div>
+      <button type="button" class="mp-btn mp-btn-ghost mp-btn-block mt-2" data-act="ex-add" ${RecordState.exercise.length >= RECORD_LIMITS.exerciseRows ? 'disabled' : ''}><i class="bi bi-plus-lg"></i>운동 추가</button>
+    </section>
+
+    <section class="mp-card mp-rec-card">
+      <div class="mp-rec-head"><h3><i class="bi bi-egg-fried"></i>식단</h3><small>항목 옆 + 는 식사 추가, 음식 옆 + 는 같은 식사에 음식 추가</small></div>
+      <div class="mp-rec-meals">${dietHtml}</div>
+    </section>
+
+    <div class="mp-rec-savebar">
+      <button type="button" class="mp-btn mp-btn-primary mp-btn-block" data-act="save" ${busy || !canSave ? 'disabled' : ''}>
+        ${busy ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>저장 중...' : '<i class="bi bi-check-lg"></i>저장'}
+      </button>
+      <div class="mp-rec-status" id="recordStatus">${RecordState.status || (canSave ? '' : '<span class="text-danger">미리보기 화면에서는 저장되지 않아요.</span>')}</div>
+    </div>`;
+}
+
+function setRecordStatus(html) {
+  RecordState.status = html;
+  const el = document.getElementById('recordStatus');
+  if (el) el.innerHTML = html;
+}
+
+/* ------------------------------ 운동 자동완성 (초성 검색) ------------------------------ */
+
+const HANGUL_INITIALS = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+function hangulInitial(ch) {
+  const code = ch.charCodeAt(0) - 0xAC00;
+  return code >= 0 && code <= 11171 ? HANGUL_INITIALS[Math.floor(code / 588)] : ch;
+}
+
+// 검색어 글자가 초성(ㄱ~ㅎ)이면 이름 글자의 초성과, 아니면 글자 그대로 비교 (예: 'ㅂㅊ', '벤ㅊ' → 벤치프레스)
+function matchExerciseQuery(name, query) {
+  const n = name.replace(/\s+/g, '').toLowerCase();
+  const q = query.replace(/\s+/g, '').toLowerCase();
+  if (!q) return -1;
+  for (let start = 0; start + q.length <= n.length; start++) {
+    let ok = true;
+    for (let k = 0; k < q.length; k++) {
+      const qc = q[k];
+      const nc = n[start + k];
+      if (HANGUL_INITIALS.indexOf(qc) >= 0 ? hangulInitial(nc) !== qc && nc !== qc : nc !== qc) {
+        ok = false;
+        break;
+      }
+    }
+    if (ok) return start;
+  }
+  return -1;
+}
+
+function searchExercises(query) {
+  const q = String(query || '').trim();
+  if (!q) return [];
+  return (CurrentMemberState.exerciseList || [])
+    .map(e => ({ name: e['운동명'], part: e['부위'], pos: matchExerciseQuery(String(e['운동명'] || ''), q) }))
+    .filter(e => e.pos >= 0 && e.name.replace(/\s+/g, '') !== q.replace(/\s+/g, ''))
+    .sort((a, b) => a.pos - b.pos || a.name.length - b.name.length)
+    .slice(0, AUTOCOMPLETE_MAX);
+}
+
+function renderAutocomplete(i, query) {
+  document.querySelectorAll('#recordForm .mp-rec-ac').forEach(el => {
+    if (el.dataset.ac !== String(i)) el.classList.add('d-none');
+  });
+  const box = document.querySelector(`#recordForm .mp-rec-ac[data-ac="${i}"]`);
+  if (!box) return;
+  const list = searchExercises(query);
+  box.classList.toggle('d-none', list.length === 0);
+  box.innerHTML = list.map(e => `<button type="button" role="option" data-act="ac-pick" data-i="${i}" data-name="${escapeHtml(e.name)}">${escapeHtml(e.name)}${e.part ? `<small>${escapeHtml(e.part)}</small>` : ''}</button>`).join('');
+}
+
+function hideAutocomplete() {
+  document.querySelectorAll('#recordForm .mp-rec-ac').forEach(el => el.classList.add('d-none'));
+}
+
+/* ------------------------------ 오늘 루틴 불러오기 ------------------------------ */
+
+// 현재 운동 루틴 표 → [{ label: 'DAY1 [가슴]', rows: [{종목, 횟수, 세트}] }] (휴식 DAY는 제외)
+function parseRoutineDays() {
+  const raw = String(getField(withoutSelfEditFields(CurrentMemberState.member || {}), '현재 제안 운동 루틴', '현재제안운동루틴') || '');
+  const days = [];
+  let cur = null;
+  raw.split('\n').forEach(line => {
+    const t = line.trim();
+    if (!t.startsWith('|')) {
+      cur = null;
+      return;
+    }
+    const cells = t.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.replace(/\*\*/g, '').trim());
+    const first = cells[0] || '';
+    const dayMatch = first.match(/^DAY\s*(\d+)\s*(.*)$/i);
+    if (dayMatch) {
+      cur = { label: `DAY${dayMatch[1]}${dayMatch[2] ? ' ' + dayMatch[2] : ''}`.slice(0, 30), rows: [] };
+      days.push(cur);
+      return;
+    }
+    if (!cur || !first || /^:?-{2,}/.test(first) || first.replace(/\s+/g, '').indexOf('운동종목') >= 0) return;
+    const reps = normalizeRoutineReps(cells[1] || '');
+    const sets = String(cells[2] || '').match(/\d{1,2}/);
+    cur.rows.push({ '종목': first.slice(0, RECORD_LIMITS.exerciseName), '횟수': reps.reps, '세트': sets ? sets[0] : '', '무게': '', '비고': reps.note });
+  });
+  return days.filter(d => d.rows.length);
+}
+
+// '12회' → 12, '30분'/'30초' → 그대로, 그 밖(예: 8~12회)은 횟수를 비우고 비고에 원래 글자
+function normalizeRoutineReps(text) {
+  const t = String(text || '').replace(/\s+/g, '');
+  let m = t.match(/^(\d{1,4})회?$/);
+  if (m) return { reps: m[1], note: '' };
+  m = t.match(/^(\d{1,3})(분|초)$/);
+  if (m) return { reps: `${m[1]}${m[2]}`, note: '' };
+  return { reps: '', note: t && t !== '-' ? t.slice(0, RECORD_LIMITS.note) : '' };
+}
+
+function loadRoutineDay(i) {
+  const day = parseRoutineDays()[i];
+  if (!day) return;
+  const kept = RecordState.exercise.filter(r => Object.values(r).some(v => String(v).trim()));
+  RecordState.exercise = kept.concat(day.rows.map(r => Object.assign({}, r))).slice(0, RECORD_LIMITS.exerciseRows);
+  RecordState.routineOpen = false;
+  scheduleRecordDraftSave();
+  renderRecordTab();
+}
+
+/* ---------------------------------- 입력 처리 ---------------------------------- */
+
+function initRecordForm() {
+  const root = document.getElementById('recordForm');
+  if (!root || root.dataset.ready) return;
+  root.dataset.ready = '1';
+
+  root.addEventListener('input', (e) => {
+    const el = e.target;
+    const kind = el.dataset.rec;
+    if (!kind) return;
+    if (kind === 'weight') RecordState.weight = el.value;
+    if (kind === 'ex') {
+      RecordState.exercise[+el.dataset.i][el.dataset.f] = el.value;
+      if (el.dataset.f === '종목') renderAutocomplete(+el.dataset.i, el.value);
+    }
+    if (kind === 'food') RecordState.diet[+el.dataset.g].items[+el.dataset.ii][el.dataset.f] = el.value;
+    scheduleRecordDraftSave();
+  });
+  root.addEventListener('change', (e) => {
+    const el = e.target;
+    if (el.dataset.rec === 'meal') {
+      RecordState.diet[+el.dataset.g].meal = el.value;
+      scheduleRecordDraftSave();
+    }
+  });
+  root.addEventListener('focusin', (e) => {
+    if (e.target.dataset.rec === 'ex' && e.target.dataset.f === '종목' && e.target.value) renderAutocomplete(+e.target.dataset.i, e.target.value);
+  });
+  root.addEventListener('focusout', (e) => {
+    if (e.target.dataset.rec === 'ex' && e.target.dataset.f === '종목') setTimeout(hideAutocomplete, 150);
+  });
+  // 자동완성 항목은 입력칸 포커스를 잃기 전에 고르도록 pointerdown에서 처리
+  root.addEventListener('pointerdown', (e) => {
+    const pick = e.target.closest('[data-act="ac-pick"]');
+    if (!pick) return;
+    e.preventDefault();
+    const i = +pick.dataset.i;
+    RecordState.exercise[i]['종목'] = pick.dataset.name;
+    const input = root.querySelector(`input[data-rec="ex"][data-i="${i}"][data-f="종목"]`);
+    if (input) input.value = pick.dataset.name;
+    hideAutocomplete();
+    scheduleRecordDraftSave();
+    const next = root.querySelector(`input[data-rec="ex"][data-i="${i}"][data-f="횟수"]`);
+    if (next) next.focus();
+  });
+  root.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-act]');
+    if (!btn || btn.dataset.act === 'ac-pick') return;
+    const act = btn.dataset.act;
+    const i = +btn.dataset.i;
+    const gi = +btn.dataset.g;
+    const ii = +btn.dataset.ii;
+    let focusSel = '';
+    if (act === 'ex-add' && RecordState.exercise.length < RECORD_LIMITS.exerciseRows) {
+      RecordState.exercise.push(emptyExerciseRow());
+      focusSel = `input[data-rec="ex"][data-i="${RecordState.exercise.length - 1}"][data-f="종목"]`;
+    } else if (act === 'ex-del') {
+      RecordState.exercise.splice(i, 1);
+      if (!RecordState.exercise.length) RecordState.exercise.push(emptyExerciseRow());
+    } else if (act === 'meal-add') {
+      const used = RecordState.diet.map(g => g.meal);
+      RecordState.diet.splice(gi + 1, 0, emptyDietGroup(DIET_MEALS.find(m => used.indexOf(m) < 0) || '간식'));
+      focusSel = `input[data-rec="food"][data-g="${gi + 1}"][data-ii="0"][data-f="음식"]`;
+    } else if (act === 'food-add') {
+      RecordState.diet[gi].items.splice(ii + 1, 0, { '음식': '', '비고': '' });
+      focusSel = `input[data-rec="food"][data-g="${gi}"][data-ii="${ii + 1}"][data-f="음식"]`;
+    } else if (act === 'food-del') {
+      RecordState.diet[gi].items.splice(ii, 1);
+      if (!RecordState.diet[gi].items.length) RecordState.diet.splice(gi, 1);
+      if (!RecordState.diet.length) RecordState.diet.push(emptyDietGroup('아침'));
+    } else if (act === 'routine-toggle') {
+      RecordState.routineOpen = !RecordState.routineOpen;
+    } else if (act === 'routine-day') {
+      loadRoutineDay(i);
+      return;
+    } else if (act === 'draft-discard') {
+      discardRecordDraft();
+      return;
+    } else if (act === 'save') {
+      saveDailyRecord();
+      return;
+    } else {
+      return;
+    }
+    if (act !== 'routine-toggle') scheduleRecordDraftSave();
+    renderRecordTab();
+    if (focusSel) {
+      const el = root.querySelector(focusSel);
+      if (el) el.focus();
+    }
+  });
+}
+
+/* ---------------------------------- 저장 ---------------------------------- */
+
+// 서버와 같은 규칙으로 미리 확인 → { payload } 또는 { error }
+function buildDailyRecordPayload() {
+  const weight = String(RecordState.weight || '').trim();
+  if (weight && (!/^\d{1,3}(\.\d{1,2})?$/.test(weight) || +weight < 20 || +weight > 250)) return { error: '체중은 20~250kg 사이 숫자로 입력해 주세요. 예) 72.4' };
+  const exercise = [];
+  for (const r of RecordState.exercise) {
+    const row = {};
+    Object.keys(r).forEach(k => { row[k] = String(r[k] || '').trim(); });
+    if (!Object.values(row).some(v => v)) continue;
+    const label = `운동 ${exercise.length + 1}번째 줄`;
+    if (!row['종목']) return { error: `${label}: 종목을 입력해 주세요.` };
+    const reps = row['횟수'].replace(/\s+/g, '');
+    if (reps && !/^\d{1,4}회?$/.test(reps) && !/^\d{1,3}(분|초)$/.test(reps) && !/^\d{1,3}분\d{1,2}초$/.test(reps)) return { error: `${label}: 횟수는 숫자(예: 12) 또는 시간(예: 30분, 30초)으로 입력해 주세요.` };
+    if (row['세트'] && !/^\d{1,2}$/.test(row['세트'])) return { error: `${label}: 세트는 0~99 사이 정수로 입력해 주세요.` };
+    const w = row['무게'].replace(/kg$/i, '').trim();
+    if (w && (!/^\d{1,3}(\.\d{1,2})?$/.test(w) || +w > 500)) return { error: `${label}: 무게는 0~500kg 사이 숫자로 입력해 주세요.` };
+    row['무게'] = w;
+    exercise.push(row);
+  }
+  if (exercise.length > RECORD_LIMITS.exerciseRows) return { error: `운동은 하루 ${RECORD_LIMITS.exerciseRows}줄까지 기록할 수 있어요.` };
+  const diet = flattenDietGroups(RecordState.diet)
+    .map(r => ({ '항목': r['항목'], '음식': String(r['음식'] || '').trim(), '비고': String(r['비고'] || '').trim() }))
+    .filter(r => r['음식'] || r['비고']);
+  const noFood = diet.findIndex(r => !r['음식']);
+  if (noFood >= 0) return { error: `식단 ${noFood + 1}번째 줄: 음식을 입력해 주세요.` };
+  if (diet.length > RECORD_LIMITS.dietRows) return { error: `식단은 하루 ${RECORD_LIMITS.dietRows}줄까지 기록할 수 있어요.` };
+  return { payload: { weight, exercise, diet } };
+}
+
+async function saveDailyRecord() {
+  if (RecordState.busy || !canMemberSelfEdit()) return;
+  const built = buildDailyRecordPayload();
+  if (built.error) {
+    setRecordStatus(`<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml(built.error)}</span>`);
+    return;
+  }
+  const date = RecordState.date;
+  const isEmpty = !built.payload.weight && !built.payload.exercise.length && !built.payload.diet.length;
+  if (isEmpty && getDailyLog(date) && !confirm(`${formatRecordDateLabel(date)} 기록을 모두 지울까요?`)) return;
+
+  RecordState.busy = true;
+  RecordState.status = '<span class="text-primary fw-semibold">저장 중입니다...</span>';
+  renderRecordTab();
+  const res = await postMemberSelfEdit(Object.assign({
+    action: 'memberSaveDailyLog',
+    id: CurrentMemberState.targetId,
+    memberToken: storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId),
+    date: date
+  }, built.payload));
+  RecordState.busy = false;
+
+  if (res && res.status === 'success') {
+    // [다른 회원 오반영 차단] 서버가 처리한 회원·날짜가 지금 화면과 같을 때만 화면에 반영
+    if (res.memberKey !== getMemberNo(CurrentMemberState.member) || res.date !== date || !res.log) {
+      RecordState.status = '<span class="text-danger fw-semibold">회원 정보 확인에 실패해 화면에 반영하지 않았습니다. 새로고침해 주세요.</span>';
+      renderRecordTab();
+      return;
+    }
+    clearRecordDraft(date);
+    applyLocalDailyLog(res.log, res.mode === 'deleted' || res.mode === 'none');
+    if (RecordState.date === date) {
+      const base = stateFromLog(getDailyLog(date));
+      Object.assign(RecordState, base, { draftRestored: false });
+    }
+    RecordState.status = `<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>${res.mode === 'deleted' ? '기록을 지웠어요.' : '저장했어요. 코치님 화면에도 바로 반영돼요.'}</span>`;
+    renderRecordTab();
+    return;
+  }
+  if (res && res.code === 'auth_required') {
+    clearMemberSession(CurrentMemberState.targetId);
+    document.getElementById('memberPageContent')?.classList.add('d-none');
+    showMemberAuthModal();
+    return;
+  }
+  // 실패: 입력은 그대로 (임시 보관도 유지) + 다시 시도
+  RecordState.status = `<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml((res && res.message) || '저장하지 못했습니다.')}</span>
+    <button type="button" class="mp-link-btn ms-1" data-act="save">다시 시도</button>`;
+  renderRecordTab();
+}
+
+// 서버와 같은 규칙으로 화면 기록 수정: 회원번호+날짜 1건 (셋 다 비면 삭제)
+function applyLocalDailyLog(log, removed) {
+  const member = CurrentMemberState.member;
+  const date = log['날짜'];
+  CurrentMemberState.dailyLogs = (CurrentMemberState.dailyLogs || []).filter(r => r['날짜'] !== date);
+  if (!removed) CurrentMemberState.dailyLogs.push({ '날짜': date, '체중': log['체중'], '운동': log['운동'] || [], '식단': log['식단'] || [] });
+  CurrentMemberState.weights = (CurrentMemberState.weights || []).filter(r => String(r['날짜'] || '').trim() !== date);
+  if (!removed && log['체중'] !== '' && log['체중'] !== undefined) CurrentMemberState.weights.push({ '날짜': date, '체중': Number(log['체중']) });
+
+  renderHeroWeights(member);
+  renderWeightChart();
+  renderWeightList();
+  saveMemberSession(CurrentMemberState.targetId, null, {
+    member: member,
+    weights: CurrentMemberState.weights,
+    dailyLogs: CurrentMemberState.dailyLogs,
+    exerciseList: CurrentMemberState.exerciseList,
+    regenRemaining: CurrentMemberState.regenRemaining
+  });
+}
+
+/* ---------------------------------- 날짜 달력 ---------------------------------- */
+
+function openWeightCalendar() {
+  const key = RecordState.date || toLocalDateKey(new Date());
+  WeightCalendarState.year = +key.slice(0, 4);
+  WeightCalendarState.month = +key.slice(5, 7) - 1;
   renderWeightCalendar();
   const modalEl = document.getElementById('weightCalendarModal');
   if (modalEl && window.bootstrap) bootstrap.Modal.getOrCreateInstance(modalEl).show();
@@ -2197,18 +2761,19 @@ function moveWeightCalendarMonth(delta) {
 }
 
 function selectWeightCalendarDate(key) {
-  WeightCalendarState.selected = key;
-  renderWeightCalendar();
-  const input = document.getElementById('weightCalendarInput');
-  if (input) input.focus();
+  bootstrap.Modal.getInstance(document.getElementById('weightCalendarModal'))?.hide();
+  openRecordDate(key);
 }
 
-function renderWeightCalendar(statusHtml) {
+// 기록 있는 날 표시: 체중이 있으면 체중, 운동·식단만 있으면 점
+function renderWeightCalendar() {
   const body = document.getElementById('weightCalendarBody');
   if (!body) return;
-  const { year, month, selected, busy } = WeightCalendarState;
+  const { year, month } = WeightCalendarState;
   const todayKey = toLocalDateKey(new Date());
   const weights = getWeightByDate();
+  const logged = {};
+  (CurrentMemberState.dailyLogs || []).forEach(r => { logged[r['날짜']] = true; });
   const now = new Date();
   const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
 
@@ -2220,15 +2785,12 @@ function renderWeightCalendar(statusHtml) {
   for (let d = 1; d <= lastDate; d++) {
     const key = toLocalDateKey(new Date(year, month, d));
     const w = weights[key];
-    const cls = ['mp-wcal-day', key === todayKey ? 'is-today' : '', key === selected ? 'is-selected' : '', w !== undefined ? 'has-weight' : ''].join(' ');
+    const has = w !== undefined || logged[key];
+    const cls = ['mp-wcal-day', key === todayKey ? 'is-today' : '', key === RecordState.date ? 'is-selected' : '', has ? 'has-weight' : ''].join(' ');
     cells += `<button type="button" class="${cls}" ${key > todayKey ? 'disabled' : ''} onclick="selectWeightCalendarDate('${key}')">
-        <span>${d}</span>${w !== undefined ? `<span class="mp-wcal-w">${w.toFixed(1)}</span>` : ''}
+        <span>${d}</span>${w !== undefined ? `<span class="mp-wcal-w">${w.toFixed(1)}</span>` : (logged[key] ? '<span class="mp-wcal-dot"></span>' : '')}
       </button>`;
   }
-
-  const selW = weights[selected];
-  const [, sm, sd] = selected.split('-');
-  const canSave = canMemberSelfEdit();
   body.innerHTML = `
     <div class="mp-wcal-nav">
       <button type="button" onclick="moveWeightCalendarMonth(-1)" aria-label="이전 달"><i class="bi bi-chevron-left"></i></button>
@@ -2236,87 +2798,11 @@ function renderWeightCalendar(statusHtml) {
       <button type="button" onclick="moveWeightCalendarMonth(1)" aria-label="다음 달" ${isCurrentMonth ? 'disabled' : ''}><i class="bi bi-chevron-right"></i></button>
     </div>
     <div class="mp-wcal-grid">${cells}</div>
-    <div class="mp-wcal-entry">
-      <div class="mp-wcal-entry-title">${+sm}월 ${+sd}일 아침 공복 체중</div>
-      <form class="mp-wcal-input-row" onsubmit="event.preventDefault(); saveMemberWeight(false);">
-        <input type="text" inputmode="decimal" class="form-control" id="weightCalendarInput" placeholder="예) 72.4"
-               value="${selW !== undefined ? selW.toFixed(1) : ''}" autocomplete="off" ${busy ? 'disabled' : ''}>
-        <span class="fw-bold text-secondary">kg</span>
-      </form>
-      <div class="mp-wcal-actions">
-        <button type="button" class="mp-btn mp-btn-primary" onclick="saveMemberWeight(false)" ${busy || !canSave ? 'disabled' : ''}>
-          ${busy ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>저장 중...' : '<i class="bi bi-check-lg"></i>저장'}
-        </button>
-        ${selW !== undefined ? `<button type="button" class="mp-btn mp-btn-ghost" onclick="saveMemberWeight(true)" ${busy || !canSave ? 'disabled' : ''}><i class="bi bi-trash3"></i>지우기</button>` : ''}
-      </div>
-      <div class="small mt-2" id="weightCalendarStatus">${statusHtml || (canSave ? '<span class="text-muted">저장하면 코치님 화면의 체중 기록에도 바로 반영돼요.</span>' : '<span class="text-danger">미리보기 화면에서는 저장되지 않아요.</span>')}</div>
-    </div>
-  `;
-}
-
-async function saveMemberWeight(clear) {
-  if (WeightCalendarState.busy || !canMemberSelfEdit()) return;
-  const date = WeightCalendarState.selected;
-  const input = document.getElementById('weightCalendarInput');
-  const raw = clear ? '' : String(input ? input.value : '').trim();
-  if (!clear) {
-    const num = parseFloat(raw);
-    if (!/^\d{1,3}(\.\d{1,2})?$/.test(raw) || num < 20 || num > 250) {
-      renderWeightCalendar('<span class="text-danger fw-semibold">체중을 숫자로 입력해 주세요. 예) 72.4</span>');
-      return;
-    }
-  } else if (!confirm(`${date} 체중 기록을 지울까요?`)) {
-    return;
-  }
-
-  WeightCalendarState.busy = true;
-  renderWeightCalendar('<span class="text-primary fw-semibold">저장 중입니다...</span>');
-  const res = await postMemberSelfEdit({
-    action: 'memberSaveWeight',
-    id: CurrentMemberState.targetId,
-    memberToken: storageGet(MEMBER_VIEW_TOKEN_PREFIX + CurrentMemberState.targetId),
-    date: date,
-    weight: raw
-  });
-  WeightCalendarState.busy = false;
-
-  if (res && res.status === 'success') {
-    // [다른 회원 오반영 차단] 서버가 처리한 회원·날짜가 지금 화면과 같을 때만 화면에 반영
-    if (res.memberKey !== getMemberNo(CurrentMemberState.member) || res.date !== date) {
-      renderWeightCalendar('<span class="text-danger fw-semibold">회원 정보 확인에 실패해 화면에 반영하지 않았습니다. 새로고침해 주세요.</span>');
-      return;
-    }
-    applyLocalWeightChange(date, res.weight === '' ? '' : Number(res.weight));
-    renderWeightCalendar(`<span class="text-success fw-semibold"><i class="bi bi-check-circle-fill me-1"></i>${res.weight === '' ? '체중 기록을 지웠어요.' : '체중을 기록했어요.'}</span>`);
-    return;
-  }
-  if (res && res.code === 'auth_required') {
-    bootstrap.Modal.getInstance(document.getElementById('weightCalendarModal'))?.hide();
-    clearMemberSession(CurrentMemberState.targetId);
-    document.getElementById('memberPageContent')?.classList.add('d-none');
-    showMemberAuthModal();
-    return;
-  }
-  renderWeightCalendar(`<span class="text-danger fw-semibold"><i class="bi bi-exclamation-circle me-1"></i>${escapeHtml((res && res.message) || '저장하지 못했습니다. 잠시 후 다시 시도해 주세요.')}</span>`);
-}
-
-// 서버와 같은 규칙으로 화면 기록 수정: 회원번호+날짜 1건 (지우기면 삭제)
-function applyLocalWeightChange(date, weight) {
-  const member = CurrentMemberState.member;
-  CurrentMemberState.weights = (CurrentMemberState.weights || []).filter(r => String(r['날짜'] || '').trim() !== date);
-  if (weight !== '') CurrentMemberState.weights.push({ '날짜': date, '체중': weight });
-
-  renderHeroWeights(member);
-  renderWeightChart();
-  renderWeightList();
-  saveMemberSession(CurrentMemberState.targetId, null, {
-    member: member,
-    weights: CurrentMemberState.weights,
-    regenRemaining: CurrentMemberState.regenRemaining
-  });
+    <div class="small text-muted mt-2"><span class="mp-wcal-dot is-inline"></span>운동·식단만 기록한 날 · 숫자는 체중</div>`;
 }
 
 window.openWeightCalendar = openWeightCalendar;
 window.moveWeightCalendarMonth = moveWeightCalendarMonth;
 window.selectWeightCalendarDate = selectWeightCalendarDate;
-window.saveMemberWeight = saveMemberWeight;
+window.openRecordDate = openRecordDate;
+window.setRecordDate = setRecordDate;
