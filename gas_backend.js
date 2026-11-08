@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-11-08.2';
+const BACKEND_VERSION = '2026-11-08.3';
 
 /**
  * CORS 대응 (doOptions)
@@ -1872,7 +1872,7 @@ function handleGetMemberView(ss, payload) {
   // 날짜별 체중·운동·식단 기록 (본인 회원번호 행만) + 자동완성용 운동 목록('등록' 상태만)
   const dailyLogs = readDailyLog(ss)
     .filter(r => r['회원번호'] === memberKey)
-    .map(r => ({ '날짜': r['날짜'], '체중': r['체중'], '운동': r['운동'], '식단': r['식단'] }));
+    .map(r => ({ '날짜': r['날짜'], '체중': r['체중'], '운동': r['운동'], '식단': r['식단'], '휴식': r['휴식'] }));
 
   return createJsonResponse({
     status: 'success',
@@ -2400,7 +2400,9 @@ function appendMemberPlanLog(ss, auth, kind, actionLabel, row, request, requestN
 const WEIGHT_LOG_SHEET = 'WeightLog';
 const WEIGHT_LOG_HEADERS = ['날짜', '회원번호', '이름', '체중', '입력자', '기록시각'];
 // 회원 일일 기록 열 (맨 오른쪽에 추가, 없으면 저장할 때 자동 추가) - 운동·식단 기록은 JSON 배열, 요약은 시트에서 읽기 쉬운 한 줄
-const WEIGHT_LOG_DAILY_HEADERS = { exercise: '운동 기록', diet: '식단 기록', exerciseSummary: '운동 요약', dietSummary: '식단 요약' };
+const WEIGHT_LOG_DAILY_HEADERS = { exercise: '운동 기록', diet: '식단 기록', exerciseSummary: '운동 요약', dietSummary: '식단 요약', rest: '운동 휴식' };
+// 운동 휴식: 회원이 그날 쉬었다고 표시 (빈 값 = 표시 안 함)
+const EXERCISE_REST_TYPES = ['계획된 휴식', '미계획된 휴식'];
 const WEIGHT_LOG_ENTERED_BY_MEMBER = '회원';
 const MEMBER_WEIGHT_MIN = 20;
 const MEMBER_WEIGHT_MAX = 250;
@@ -2444,7 +2446,7 @@ function weightLogRowValues(cols, entry) {
 }
 
 // WeightLog 전체를 행 단위로 읽음 (날짜·회원번호가 올바른 행, 체중은 빈 값 허용 - 운동·식단만 기록한 날)
-// - { 날짜, 회원번호, 이름, 체중(숫자 또는 ''), 입력자, 기록시각, 운동: [], 식단: [], _rowNumber }
+// - { 날짜, 회원번호, 이름, 체중(숫자 또는 ''), 입력자, 기록시각, 운동: [], 식단: [], 휴식('계획된 휴식'|'미계획된 휴식'|''), _rowNumber }
 function readDailyLog(ss) {
   const sheet = getWeightLogSheet(ss, false);
   if (!sheet || sheet.getLastRow() < 2) return [];
@@ -2456,6 +2458,7 @@ function readDailyLog(ss) {
   const colMap = getHeaderColumnMap(sheet);
   const exCol = findExactColumn(colMap, [WEIGHT_LOG_DAILY_HEADERS.exercise]);
   const dietCol = findExactColumn(colMap, [WEIGHT_LOG_DAILY_HEADERS.diet]);
+  const restCol = findExactColumn(colMap, [WEIGHT_LOG_DAILY_HEADERS.rest]);
   const tz = ss.getSpreadsheetTimeZone() || 'Asia/Seoul';
   const values = sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).getValues();
   const out = [];
@@ -2475,10 +2478,17 @@ function readDailyLog(ss) {
       '기록시각': recordedAt instanceof Date ? Utilities.formatDate(recordedAt, tz, 'yyyy-MM-dd HH:mm:ss') : String(recordedAt || '').trim(),
       '운동': exCol ? parseDailyJsonCell(row[exCol - 1]) : [],
       '식단': dietCol ? parseDailyJsonCell(row[dietCol - 1]) : [],
+      '휴식': restCol ? normalizeExerciseRest(row[restCol - 1]) : '',
       _rowNumber: i + 2
     });
   });
   return out;
+}
+
+// 시트 값 → '계획된 휴식' | '미계획된 휴식' | '' (그 밖의 글자는 무시)
+function normalizeExerciseRest(raw) {
+  const v = dailyText(raw);
+  return EXERCISE_REST_TYPES.indexOf(v) >= 0 ? v : '';
 }
 
 function parseDailyJsonCell(raw) {
@@ -2506,7 +2516,7 @@ function readWeightLog(ss) {
 const DAILY_LOG_RECENT_DAYS = 60;
 
 function stripDailyLogRow(r) {
-  return { '날짜': r['날짜'], '회원번호': r['회원번호'], '체중': r['체중'], '운동': r['운동'], '식단': r['식단'] };
+  return { '날짜': r['날짜'], '회원번호': r['회원번호'], '체중': r['체중'], '운동': r['운동'], '식단': r['식단'], '휴식': r['휴식'] };
 }
 
 // getAll용: 최근 60일 (데일리·기록 창·회원 상세 타임라인)
@@ -2536,7 +2546,7 @@ function handleMemberSaveWeight(ss, payload) {
 
   const existing = readDailyLog(ss).find(r => r['회원번호'] === auth.memberKey && r['날짜'] === date);
   const result = saveMemberDailyLog(ss, auth, date, weight.value,
-    existing ? existing['운동'] : [], existing ? existing['식단'] : []);
+    existing ? existing['운동'] : [], existing ? existing['식단'] : [], existing ? existing['휴식'] : '');
   if (result.error) return createJsonResponse(result.error);
   if (result.mode !== 'none') {
     appendMemberPlanLog(ss, auth, '공복 체중', result.mode === 'created' ? '체중 새로 기록' : (weight.value === '' ? '체중 삭제' : '체중 수정'),
@@ -2549,8 +2559,9 @@ function handleMemberSaveWeight(ss, payload) {
  * ==============================================================================
  * [회원 일일 기록] 그날 체중·운동·식단을 한 번에 저장 (WeightLog 회원번호+날짜 1행)
  * - 체중은 선택 입력, 운동 기록 [{종목, 횟수, 세트, 무게, 비고}], 식단 기록 [{항목, 음식, 비고}]
+ * - 운동 휴식: '계획된 휴식' | '미계획된 휴식' | '' (운동 줄과 함께 기록해도 됨, 예: 쉬는 날 스트레칭)
  * - 횟수: 정수(12) 또는 시간(30분, 30초, 1분 30초) / 세트: 정수 / 무게: 0~500kg
- * - 셋 다 비면 그날 행 삭제. 목록에 없는 운동명은 ExerciseList에 '미등록'으로 추가
+ * - 체중·운동·식단·휴식이 모두 비면 그날 행 삭제. 목록에 없는 운동명은 ExerciseList에 '미등록'으로 추가
  * ==============================================================================
  */
 const DAILY_LOG_LIMITS = { exerciseRows: 30, dietRows: 30, exerciseName: 40, food: 100, note: 100, rawRows: 100 };
@@ -2666,7 +2677,12 @@ function summarizeDietRows(rows) {
   return groups.map(g => `${g}: ${byMeal[g].join(', ')}`).join(' / ');
 }
 
-// WeightLog 일일 기록 열 4개 (없으면 맨 오른쪽에 추가) → { exercise, diet, exerciseSummary, dietSummary } 열 번호
+// 시트 '운동 요약' 칸: 휴식 표시를 앞에 붙임 (예: "[계획된 휴식] 동적 스트레칭 10분")
+function summarizeExerciseDay(rows, rest) {
+  return [rest ? `[${rest}]` : '', summarizeExerciseRows(rows)].filter(Boolean).join(' ');
+}
+
+// WeightLog 일일 기록 열 5개 (없으면 맨 오른쪽에 추가) → { exercise, diet, exerciseSummary, dietSummary } 열 번호
 function ensureWeightLogDailyColumns(sheet) {
   const colMap = getHeaderColumnMap(sheet);
   const out = {};
@@ -2678,7 +2694,8 @@ function ensureWeightLogDailyColumns(sheet) {
  * 저장 공통 (호출하는 쪽에서 스크립트 잠금을 잡은 상태)
  * → { mode: 'created'|'updated'|'deleted'|'none', log } 또는 { error }
  */
-function saveMemberDailyLog(ss, auth, date, weightValue, exerciseRows, dietRows) {
+function saveMemberDailyLog(ss, auth, date, weightValue, exerciseRows, dietRows, rest) {
+  rest = normalizeExerciseRest(rest);
   // 저장 직전 본인 행 재확인 (회원번호 정확 일치 1행 + 휴대폰 뒷자리 일치)
   const self = locateSelfEditRow(auth.sheet, auth.memberKey, auth.phoneLast4);
   if (self.error) return { error: { status: 'error', code: self.code, message: self.error.replace(' (횟수는 차감되지 않았습니다)', '') } };
@@ -2693,8 +2710,8 @@ function saveMemberDailyLog(ss, auth, date, weightValue, exerciseRows, dietRows)
   const width = Math.max(sheet.getLastColumn(), cols.width);
 
   const rows = readDailyLog(ss).filter(r => r['회원번호'] === auth.memberKey && r['날짜'] === date).map(r => r._rowNumber);
-  const isEmpty = weightValue === '' && !exerciseRows.length && !dietRows.length;
-  const log = { '날짜': date, '체중': weightValue, '운동': exerciseRows, '식단': dietRows };
+  const isEmpty = weightValue === '' && !exerciseRows.length && !dietRows.length && !rest;
+  const log = { '날짜': date, '체중': weightValue, '운동': exerciseRows, '식단': dietRows, '휴식': rest };
   let mode;
   if (isEmpty) {
     rows.sort((a, b) => b - a).forEach(n => sheet.deleteRow(n));
@@ -2707,7 +2724,8 @@ function saveMemberDailyLog(ss, auth, date, weightValue, exerciseRows, dietRows)
     values[cols.recordedAt] = Utilities.formatDate(new Date(), 'Asia/Seoul', 'yyyy-MM-dd HH:mm:ss');
     values[daily.exercise] = exerciseRows.length ? JSON.stringify(exerciseRows) : '';
     values[daily.diet] = dietRows.length ? JSON.stringify(dietRows) : '';
-    values[daily.exerciseSummary] = summarizeExerciseRows(exerciseRows);
+    values[daily.exerciseSummary] = summarizeExerciseDay(exerciseRows, rest);
+    values[daily.rest] = rest;
     values[daily.dietSummary] = summarizeDietRows(dietRows);
     if (rows.length) {
       // 같은 회원·날짜가 여러 행이면 첫 행만 남기고 정리, 코치가 덧붙인 다른 열은 건드리지 않음
@@ -2744,8 +2762,10 @@ function handleMemberSaveDailyLog(ss, payload) {
   if (exercise.error) return createJsonResponse({ status: 'error', code: 'bad_exercise', message: exercise.error });
   const diet = parseDietRows(payload.diet);
   if (diet.error) return createJsonResponse({ status: 'error', code: 'bad_diet', message: diet.error });
+  const rest = dailyText(payload.rest);
+  if (rest && EXERCISE_REST_TYPES.indexOf(rest) < 0) return createJsonResponse({ status: 'error', code: 'bad_rest', message: '휴식은 계획된 휴식·미계획된 휴식 중에서 골라 주세요.' });
 
-  const result = saveMemberDailyLog(ss, auth, date, weight.value, exercise.rows, diet.rows);
+  const result = saveMemberDailyLog(ss, auth, date, weight.value, exercise.rows, diet.rows, rest);
   if (result.error) return createJsonResponse(result.error);
 
   // 목록에 없는 운동명은 '미등록'으로 추가 (실패해도 기록 저장은 그대로)
@@ -2756,7 +2776,7 @@ function handleMemberSaveDailyLog(ss, payload) {
   }
 
   if (result.mode !== 'none') {
-    const parts = [weight.value === '' ? '' : `체중 ${weight.value}kg`, exercise.rows.length ? `운동 ${exercise.rows.length}개` : '', diet.rows.length ? `식단 ${diet.rows.length}개` : ''].filter(Boolean);
+    const parts = [weight.value === '' ? '' : `체중 ${weight.value}kg`, rest, exercise.rows.length ? `운동 ${exercise.rows.length}개` : '', diet.rows.length ? `식단 ${diet.rows.length}개` : ''].filter(Boolean);
     appendMemberPlanLog(ss, auth, '일일 기록', result.mode === 'created' ? '새로 기록' : (result.mode === 'updated' ? '수정' : '삭제'),
       WEIGHT_LOG_SHEET, `${date} ${parts.length ? parts.join(' · ') : '(삭제)'}`, '');
   }
@@ -3856,6 +3876,8 @@ function computeMemberAnalysisStats(weights, logs, dailyLogs, todayKey) {
     '마지막 체중 입력 후 경과일': lastWeight ? dateKeyDiff(lastWeight['날짜'], todayKey) : null,
     '최근 7일 운동 기록 일수(회원 입력)': recentDaily.filter(r => (r['운동'] || []).length).length,
     '최근 7일 식단 기록 일수(회원 입력)': recentDaily.filter(r => (r['식단'] || []).length).length,
+    '최근 7일 계획된 휴식 일수(회원 입력)': recentDaily.filter(r => r['휴식'] === '계획된 휴식').length,
+    '최근 7일 미계획된 휴식 일수(회원 입력)': recentDaily.filter(r => r['휴식'] === '미계획된 휴식').length,
     '마지막 회원 기록(체중·운동·식단) 후 경과일': lastDaily ? dateKeyDiff(lastDaily['날짜'], todayKey) : null,
     "미해결 '다음에 확인'": pastLogs.filter(r => r['다음에 확인'] && !r['확인 완료']).map(r => `${r['날짜']}: ${r['다음에 확인']}`)
   };
@@ -3901,6 +3923,7 @@ function buildMemberAnalysisPrompt(member, weights, logs, dailyLogs, stats, last
   const dailyLines = dailyLogs.length ? dailyLogs.map(r => {
     const parts = [`[${r['날짜']}]`];
     if (r['체중'] !== '') parts.push(`체중 ${r['체중']}kg`);
+    if (r['휴식']) parts.push(`운동 휴식: ${r['휴식']}`);
     parts.push(`운동: ${summarizeExerciseRows(r['운동'] || []) || '(기록 없음)'}`);
     parts.push(`식단: ${summarizeDietRows(r['식단'] || []) || '(기록 없음)'}`);
     return parts.join(' | ');
@@ -3934,7 +3957,7 @@ ${weightLines}
 [코치 관리 기록 전체 (날짜순, 메모는 코치 전용)]
 ${logLines}
 
-[회원이 직접 입력한 일일 기록 (최근 ${ANALYSIS_DAILY_LOG_DAYS}일, 날짜순 - 운동·식단 요약)]
+[회원이 직접 입력한 일일 기록 (최근 ${ANALYSIS_DAILY_LOG_DAYS}일, 날짜순 - 운동·식단 요약, '운동 휴식'은 회원이 직접 고른 계획된/미계획된 휴식)]
 ${dailyLines}
 
 [지난 분석 보고]

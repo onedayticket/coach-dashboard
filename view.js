@@ -125,7 +125,7 @@ DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식
   ],
   // M001 회원의 WeightLog 일일 기록 (체중·운동·식단, 서버는 본인 회원번호 행만 보냄)
   dailyLogs: [
-    { '날짜': '2026-10-12', '체중': 81.4, '운동': [], '식단': [] },
+    { '날짜': '2026-10-12', '체중': 81.4, '운동': [], '식단': [], '휴식': '계획된 휴식' },
     { '날짜': '2026-10-14', '체중': '', '운동': [{ '종목': '트레드밀 경사도 걷기', '횟수': '30분', '세트': 1, '무게': '', '비고': '' }], '식단': [] },
     { '날짜': '2026-10-15', '체중': 81.1,
       '운동': [{ '종목': '벤치프레스', '횟수': '12', '세트': 3, '무게': 40, '비고': '' }, { '종목': '랫풀다운', '횟수': '12', '세트': 3, '무게': 35, '비고': '마지막 세트 힘듦' }],
@@ -145,7 +145,7 @@ let CurrentMemberState = {
   member: null,
   weights: [], // [{ 날짜, 체중 }] 본인 공복 체중 기록 (WeightLog)
   coachNotes: [], // [{ 날짜, 코치 한마디 }] 코치가 남긴 한마디 (CoachLog의 회원 공개 칸만, 최신순)
-  dailyLogs: [], // [{ 날짜, 체중, 운동: [], 식단: [] }] 본인 일일 기록 (WeightLog, 체중 빈 날 포함)
+  dailyLogs: [], // [{ 날짜, 체중, 운동: [], 식단: [], 휴식 }] 본인 일일 기록 (WeightLog, 체중 빈 날 포함)
   exerciseList: [], // [{ 운동명, 부위 }] 자동완성용 운동 목록 (ExerciseList '등록'만)
   isUsingMock: false,
   targetId: '', // URL 회원 식별값 (서버 인증 요청용)
@@ -2190,7 +2190,8 @@ function resizeMemberCharts() {
 /**
  * ==============================================================================
  * [기록 탭] 날짜별 체중·운동·식단을 한 번에 기록 (구글 폼 대체)
- * - 서버(memberSaveDailyLog)가 WeightLog의 본인 회원번호+날짜 행을 덮어쓰거나 새로 씀 (셋 다 비면 행 삭제)
+ * - 서버(memberSaveDailyLog)가 WeightLog의 본인 회원번호+날짜 행을 덮어쓰거나 새로 씀 (체중·운동·식단·휴식이 모두 비면 행 삭제)
+ * - 운동 휴식: 계획된 휴식 / 미계획된 휴식 체크박스 (둘 중 하나만)
  * - 입력 중인 내용은 회원·날짜별로 localStorage에 임시 보관 (저장 성공 시 삭제)
  * - 저장 성공 후 화면의 기록도 같은 규칙으로 고쳐 바로 반영 (새로고침하면 시트 값으로 다시 받음)
  * ==============================================================================
@@ -2199,8 +2200,10 @@ const RECORD_DRAFT_PREFIX = 'coach_dash_view_draft_v1_';
 const DIET_MEALS = ['아침', '점심', '저녁', '간식'];
 const RECORD_LIMITS = { exerciseRows: 30, dietRows: 30, exerciseName: 40, food: 100, note: 100 };
 const AUTOCOMPLETE_MAX = 8;
+// 운동 휴식 표시 (둘 중 하나만, 서버 EXERCISE_REST_TYPES와 같은 값)
+const EXERCISE_REST_TYPES = ['계획된 휴식', '미계획된 휴식'];
 const RecordState = {
-  date: '', weight: '', exercise: [], diet: [],
+  date: '', weight: '', exercise: [], diet: [], rest: '',
   busy: false, status: '', draftRestored: false, routineOpen: false, acIndex: -1
 };
 const WeightCalendarState = { year: 0, month: 0 };
@@ -2269,7 +2272,8 @@ function stateFromLog(log) {
   return {
     weight: log && log['체중'] !== '' && log['체중'] !== undefined ? String(log['체중']) : '',
     exercise: exercise.length ? exercise : [emptyExerciseRow()],
-    diet: diet.length ? diet : [emptyDietGroup('아침')]
+    diet: diet.length ? diet : [emptyDietGroup('아침')],
+    rest: log && EXERCISE_REST_TYPES.indexOf(log['휴식']) >= 0 ? log['휴식'] : ''
   };
 }
 
@@ -2292,7 +2296,7 @@ let recordDraftTimer = 0;
 function scheduleRecordDraftSave() {
   clearTimeout(recordDraftTimer);
   const date = RecordState.date;
-  const snapshot = JSON.stringify({ weight: RecordState.weight, exercise: RecordState.exercise, diet: RecordState.diet, at: Date.now() });
+  const snapshot = JSON.stringify({ weight: RecordState.weight, exercise: RecordState.exercise, diet: RecordState.diet, rest: RecordState.rest, at: Date.now() });
   recordDraftTimer = setTimeout(() => {
     try { localStorage.setItem(recordDraftKey(date), snapshot); } catch (e) {}
   }, 300);
@@ -2315,6 +2319,7 @@ function setRecordDate(dateKey) {
   RecordState.weight = draft ? String(draft.weight || '') : base.weight;
   RecordState.exercise = draft && draft.exercise.length ? draft.exercise : base.exercise;
   RecordState.diet = draft && draft.diet.length ? draft.diet : base.diet;
+  RecordState.rest = draft ? (EXERCISE_REST_TYPES.indexOf(draft.rest) >= 0 ? draft.rest : '') : base.rest;
   RecordState.draftRestored = !!draft;
   RecordState.status = '';
   RecordState.routineOpen = false;
@@ -2418,6 +2423,11 @@ function renderRecordTab() {
       <div class="mp-rec-head"><h3><i class="bi bi-lightning-charge-fill"></i>운동</h3>
         <button type="button" class="mp-link-btn" data-act="routine-toggle"><i class="bi bi-list-check me-1"></i>오늘 루틴 불러오기</button>
       </div>
+      <div class="mp-rec-rest" role="group" aria-label="오늘 운동 휴식">
+        ${EXERCISE_REST_TYPES.map(t => `<label class="mp-rec-rest-opt ${RecordState.rest === t ? 'is-on' : ''} ${t === '미계획된 휴식' ? 'is-unplanned' : ''}">
+          <input type="checkbox" class="form-check-input" data-rec="rest" value="${t}" ${RecordState.rest === t ? 'checked' : ''}>${t}</label>`).join('')}
+      </div>
+      ${RecordState.rest ? `<div class="mp-rec-hint mb-2">${RecordState.rest === '계획된 휴식' ? '루틴대로 쉬는 날로 기록돼요.' : '계획에 없던 휴식으로 기록돼요.'} 쉬면서 스트레칭 등을 했다면 아래에 함께 적어도 돼요.</div>` : ''}
       ${routineHtml}
       <div class="mp-rec-ex-list">${exerciseHtml}</div>
       <button type="button" class="mp-btn mp-btn-ghost mp-btn-block mt-2" data-act="ex-add" ${RecordState.exercise.length >= RECORD_LIMITS.exerciseRows ? 'disabled' : ''}><i class="bi bi-plus-lg"></i>운동 추가</button>
@@ -2570,6 +2580,12 @@ function initRecordForm() {
       RecordState.diet[+el.dataset.g].meal = el.value;
       scheduleRecordDraftSave();
     }
+    // 휴식 체크박스는 둘 중 하나만 (다시 누르면 해제)
+    if (el.dataset.rec === 'rest') {
+      RecordState.rest = el.checked ? el.value : '';
+      scheduleRecordDraftSave();
+      renderRecordTab();
+    }
   });
   root.addEventListener('focusin', (e) => {
     if (e.target.dataset.rec === 'ex' && e.target.dataset.f === '종목' && e.target.value) renderAutocomplete(+e.target.dataset.i, e.target.value);
@@ -2667,7 +2683,8 @@ function buildDailyRecordPayload() {
   const noFood = diet.findIndex(r => !r['음식']);
   if (noFood >= 0) return { error: `식단 ${noFood + 1}번째 줄: 음식을 입력해 주세요.` };
   if (diet.length > RECORD_LIMITS.dietRows) return { error: `식단은 하루 ${RECORD_LIMITS.dietRows}줄까지 기록할 수 있어요.` };
-  return { payload: { weight, exercise, diet } };
+  const rest = EXERCISE_REST_TYPES.indexOf(RecordState.rest) >= 0 ? RecordState.rest : '';
+  return { payload: { weight, exercise, diet, rest } };
 }
 
 async function saveDailyRecord() {
@@ -2678,7 +2695,7 @@ async function saveDailyRecord() {
     return;
   }
   const date = RecordState.date;
-  const isEmpty = !built.payload.weight && !built.payload.exercise.length && !built.payload.diet.length;
+  const isEmpty = !built.payload.weight && !built.payload.exercise.length && !built.payload.diet.length && !built.payload.rest;
   if (isEmpty && getDailyLog(date) && !confirm(`${formatRecordDateLabel(date)} 기록을 모두 지울까요?`)) return;
 
   RecordState.busy = true;
@@ -2726,7 +2743,7 @@ function applyLocalDailyLog(log, removed) {
   const member = CurrentMemberState.member;
   const date = log['날짜'];
   CurrentMemberState.dailyLogs = (CurrentMemberState.dailyLogs || []).filter(r => r['날짜'] !== date);
-  if (!removed) CurrentMemberState.dailyLogs.push({ '날짜': date, '체중': log['체중'], '운동': log['운동'] || [], '식단': log['식단'] || [] });
+  if (!removed) CurrentMemberState.dailyLogs.push({ '날짜': date, '체중': log['체중'], '운동': log['운동'] || [], '식단': log['식단'] || [], '휴식': log['휴식'] || '' });
   CurrentMemberState.weights = (CurrentMemberState.weights || []).filter(r => String(r['날짜'] || '').trim() !== date);
   if (!removed && log['체중'] !== '' && log['체중'] !== undefined) CurrentMemberState.weights.push({ '날짜': date, '체중': Number(log['체중']) });
 

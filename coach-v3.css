@@ -498,6 +498,13 @@ body.cv3 {
 .today-in { display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; font-weight: 700; border-radius: 999px; padding: 1px 7px 1px 5px; white-space: nowrap; }
 .today-in.is-on { background: #e6fcf5; color: #087f5b; }
 .today-in.is-off { background: var(--cv-surface-2); color: var(--cv-ink-3); }
+/* 회원이 고른 운동 휴식: 계획된 = 파랑, 미계획된 = 주황 */
+.today-in.is-rest { background: var(--cv-primary-soft); color: #1b64da; }
+.today-in.is-rest.is-unplanned { background: #fff4e6; color: #d9480f; }
+.daily-rest-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 800; border-radius: 999px; padding: 2px 8px; background: var(--cv-primary-soft); color: #1b64da; white-space: nowrap; }
+.daily-rest-badge.is-unplanned { background: #fff4e6; color: #d9480f; }
+.coach-tl-member .daily-rest-badge { font-size: 0.68rem; color: #1b64da; margin-right: 6px; }
+.coach-tl-member .daily-rest-badge.is-unplanned { color: #d9480f; }
 
 /* 회원 일일 기록 상세 (데일리 펼치기·기록 창 공통) */
 .daily-rec { display: flex; flex-direction: column; gap: 10px; }

@@ -175,9 +175,10 @@ function buildMockDailyLogs() {
     { '날짜': shiftDateKey(today, -1), '회원번호': 'M001', '체중': 80.2,
       '운동': [ex('벤치프레스', '12', 3, 40), ex('인클라인 덤벨프레스', '12', 3, 12), ex('트레드밀 경사도 걷기', '30분', 1, '', '경사 8')],
       '식단': [meal('아침', '그릭요거트'), meal('아침', '삶은 달걀 2개'), meal('점심', '현미밥 2/3공기', '회사 식당'), meal('저녁', '닭가슴살 샐러드')] },
-    { '날짜': today, '회원번호': 'M001', '체중': 80.1, '운동': [], '식단': [meal('아침', '사과 1/2개')] },
+    { '날짜': today, '회원번호': 'M001', '체중': 80.1, '운동': [], '식단': [meal('아침', '사과 1/2개')], '휴식': '계획된 휴식' },
     { '날짜': shiftDateKey(today, -1), '회원번호': 'M002', '체중': 58.1, '운동': [], '식단': [meal('점심', '포케'), meal('간식', '아메리카노')] },
-    { '날짜': today, '회원번호': 'M002', '체중': '', '운동': [ex('매트 필라테스', '30분', 1, '')], '식단': [] }
+    { '날짜': today, '회원번호': 'M002', '체중': '', '운동': [ex('매트 필라테스', '30분', 1, '')], '식단': [] },
+    { '날짜': shiftDateKey(today, -2), '회원번호': 'M002', '체중': '', '운동': [], '식단': [], '휴식': '미계획된 휴식' }
   ];
 }
 
@@ -603,7 +604,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-11-08.2';
+const EXPECTED_BACKEND_VERSION = '2026-11-08.3';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -3871,6 +3872,16 @@ function getMemberCoachLogs(memberNo) {
 /* ------------------------- 회원 일일 기록 (WeightLog 운동·식단) ------------------------- */
 // 회원이 마이페이지 '기록' 탭에서 입력한 그 날 체중·운동·식단 (코치 화면은 읽기만 함)
 const DIET_MEAL_ORDER = ['아침', '점심', '저녁', '간식'];
+// 회원이 고른 운동 휴식 (서버 EXERCISE_REST_TYPES와 같은 값)
+const EXERCISE_REST_TYPES = ['계획된 휴식', '미계획된 휴식'];
+
+function dailyRest(log) {
+  return log && EXERCISE_REST_TYPES.includes(log['휴식']) ? log['휴식'] : '';
+}
+
+function renderDailyRestBadge(rest) {
+  return rest ? `<span class="daily-rest-badge ${rest === '미계획된 휴식' ? 'is-unplanned' : ''}"><i class="bi bi-moon-stars-fill"></i>${rest}</span>` : '';
+}
 
 function getDailyLog(memberNo, date) {
   if (!memberNo) return null;
@@ -3901,12 +3912,17 @@ function formatDailyReps(v) {
 function getDailyInputFlags(mem, memberNo, date) {
   const log = getDailyLog(memberNo, date);
   const dayWeight = computeWeeklyAvgChange(mem, date).dayWeight;
-  return { log, weight: dayWeight, hasWeight: dayWeight !== null, hasExercise: dailyRows(log, '운동').length > 0, hasDiet: dailyRows(log, '식단').length > 0 };
+  const rest = dailyRest(log);
+  return { log, weight: dayWeight, hasWeight: dayWeight !== null, hasExercise: dailyRows(log, '운동').length > 0 || !!rest, rest, hasDiet: dailyRows(log, '식단').length > 0 };
 }
 
 function renderDailyInputChips(flags) {
   const chip = (on, label) => `<span class="today-in ${on ? 'is-on' : 'is-off'}" title="${label} ${on ? '입력' : '미입력'}"><i class="bi ${on ? 'bi-check-lg' : 'bi-dash'}"></i>${label}</span>`;
-  return `<div class="today-inputs">${chip(flags.hasWeight, '체중')}${chip(flags.hasExercise, '운동')}${chip(flags.hasDiet, '식단')}</div>`;
+  // 운동 대신 휴식을 고른 날은 운동 칩 자리에 휴식 종류를 보여 줌
+  const exChip = flags.rest
+    ? `<span class="today-in is-rest ${flags.rest === '미계획된 휴식' ? 'is-unplanned' : ''}" title="운동 ${flags.rest}"><i class="bi bi-moon-stars-fill"></i>${flags.rest === '계획된 휴식' ? '계획 휴식' : '미계획 휴식'}</span>`
+    : chip(flags.hasExercise, '운동');
+  return `<div class="today-inputs">${chip(flags.hasWeight, '체중')}${exChip}${chip(flags.hasDiet, '식단')}</div>`;
 }
 
 // 식단 줄을 아침·점심·저녁·간식 순서로 묶음 (그 밖의 항목은 뒤에)
@@ -3940,14 +3956,14 @@ function renderDailyRecordDetail(flags) {
           <td>${escapeHtml(dailyCell(r['비고']))}</td>
         </tr>`).join('')}</tbody>
       </table></div>`
-    : empty;
+    : (flags.rest ? '' : empty);
   const dietHtml = diet.length
     ? diet.map(g => `<div class="daily-rec-meal"><b>${escapeHtml(g.meal)}</b><ul>${g.items.map(r =>
         `<li>${escapeHtml(dailyCell(r['음식']))}${dailyCell(r['비고']) ? `<small>${escapeHtml(dailyCell(r['비고']))}</small>` : ''}</li>`).join('')}</ul></div>`).join('')
     : empty;
   return `<div class="daily-rec">
     <div class="daily-rec-sec"><h6><i class="bi bi-speedometer2"></i>체중</h6>${flags.hasWeight ? `<div class="daily-rec-weight">${flags.weight}kg</div>` : empty}</div>
-    <div class="daily-rec-sec"><h6><i class="bi bi-lightning-charge-fill"></i>운동</h6>${exHtml}</div>
+    <div class="daily-rec-sec"><h6><i class="bi bi-lightning-charge-fill"></i>운동</h6>${flags.rest ? `<div class="mb-1">${renderDailyRestBadge(flags.rest)}</div>` : ''}${exHtml}</div>
     <div class="daily-rec-sec"><h6><i class="bi bi-egg-fried"></i>식단</h6>${dietHtml}</div>
   </div>`;
 }
@@ -4445,7 +4461,8 @@ function renderCoachLogDailyRecord(mem, memberNo, date) {
   const flags = getDailyInputFlags(mem, memberNo, date);
   const exCount = dailyRows(flags.log, '운동').length;
   const dietCount = dailyRows(flags.log, '식단').length;
-  const parts = [flags.hasWeight ? `체중 ${flags.weight}kg` : '체중 미입력', exCount ? `운동 ${exCount}개` : '운동 미입력', dietCount ? `식단 ${dietCount}개` : '식단 미입력'];
+  const exText = [flags.rest, exCount ? `운동 ${exCount}개` : ''].filter(Boolean).join(' + ') || '운동 미입력';
+  const parts = [flags.hasWeight ? `체중 ${flags.weight}kg` : '체중 미입력', exText, dietCount ? `식단 ${dietCount}개` : '식단 미입력'];
   return `<details class="coachlog-daily">
     <summary><i class="bi bi-person-check-fill"></i><span>회원 기록</span><small>${parts.join(' · ')}</small><i class="bi bi-chevron-down coachlog-daily-caret"></i></summary>
     ${renderDailyRecordDetail(flags)}
@@ -4702,7 +4719,7 @@ function renderMemberCoachTimeline(mem) {
   // 코치 기록 + 회원 기록(운동·식단이 있는 날)을 날짜별로 합침, 최신 날짜가 앞
   const byDate = {};
   getMemberCoachLogs(memberNo).forEach(r => { byDate[r['날짜']] = { date: r['날짜'], log: r, daily: null }; });
-  AppState.dailyLogs.filter(r => r['회원번호'] === memberNo && (dailyRows(r, '운동').length || dailyRows(r, '식단').length)).forEach(r => {
+  AppState.dailyLogs.filter(r => r['회원번호'] === memberNo && (dailyRows(r, '운동').length || dailyRows(r, '식단').length || dailyRest(r))).forEach(r => {
     (byDate[r['날짜']] = byDate[r['날짜']] || { date: r['날짜'], log: null, daily: null }).daily = r;
   });
   const days = Object.keys(byDate).sort((a, b) => (a < b ? 1 : -1)).map(d => byDate[d]);
@@ -4712,8 +4729,9 @@ function renderMemberCoachTimeline(mem) {
     if (!daily) return '';
     const ex = summarizeDailyExercise(dailyRows(daily, '운동'));
     const diet = summarizeDailyDiet(dailyRows(daily, '식단'));
+    const rest = dailyRest(daily);
     return `<div class="coach-tl-member">
-      ${ex ? `<div><span>운동</span>${escapeHtml(ex)}</div>` : ''}
+      ${ex || rest ? `<div><span>운동</span>${renderDailyRestBadge(rest)}${escapeHtml(ex)}</div>` : ''}
       ${diet ? `<div><span>식단</span>${escapeHtml(diet)}</div>` : ''}
     </div>`;
   };

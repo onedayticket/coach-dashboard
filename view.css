@@ -1254,6 +1254,19 @@ button.mp-cta-card {
 .mp-rec-weight span { font-weight: 700; color: var(--mp-ink-2); }
 .mp-rec-hint { margin-top: 6px; font-size: 0.8rem; color: var(--mp-ink-3); }
 
+/* 운동 휴식 체크박스 (계획된 / 미계획된, 둘 중 하나만) */
+.mp-rec-rest { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.mp-rec-rest-opt {
+  display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; min-height: 44px;
+  border: 1px solid var(--mp-line); border-radius: 12px; background: var(--mp-surface);
+  font-size: 0.88rem; font-weight: 700; color: var(--mp-ink-2); cursor: pointer;
+}
+.mp-rec-rest-opt .form-check-input { margin: 0; flex-shrink: 0; width: 1.15em; height: 1.15em; }
+.mp-rec-rest-opt.is-on { border-color: var(--mp-workout); background: var(--mp-workout-soft); color: var(--mp-workout); }
+.mp-rec-rest-opt.is-on .form-check-input { background-color: var(--mp-workout); border-color: var(--mp-workout); }
+.mp-rec-rest-opt.is-unplanned.is-on { border-color: var(--mp-mid); background: var(--mp-diet-soft); color: var(--mp-mid); }
+.mp-rec-rest-opt.is-unplanned.is-on .form-check-input { background-color: var(--mp-mid); border-color: var(--mp-mid); }
+
 .mp-rec-ex-list { display: flex; flex-direction: column; gap: 10px; }
 .mp-rec-ex { background: var(--mp-surface-2); border-radius: var(--mp-radius-sm); padding: 10px; }
 .mp-rec-ex-top { display: flex; align-items: center; gap: 6px; }
