@@ -50,7 +50,7 @@ const DEFAULT_GEMINI_API_KEY = '';
  * 백엔드 코드 버전 (app.js의 EXPECTED_BACKEND_VERSION과 동일하게 유지)
  * - 코드 수정 후 Apps Script 재배포가 누락되면 코치 대시보드가 버전 불일치를 감지해 안내합니다.
  */
-const BACKEND_VERSION = '2026-11-08.1';
+const BACKEND_VERSION = '2026-11-08.2';
 
 /**
  * CORS 대응 (doOptions)
@@ -62,7 +62,8 @@ function doOptions(e) {
 /**
  * GET 요청 핸들러 (doGet)
  * - action 파라미터에 따라 데이터를 반환합니다.
- * - action: 'getAll' (기본값) -> 전체 회원 목록, 체중 기록(WeightLog) 전체, 최근 코치 관리 기록(CoachLog), 코치 설정(CoachSettings), 지침서 반환
+ * - action: 'getAll' (기본값) -> 전체 회원 목록, 체중 기록(WeightLog) 전체, 최근 회원 일일 기록(운동·식단), 최근 코치 관리 기록(CoachLog),
+ *   코치 설정(CoachSettings), 운동 목록 미등록 개수(ExerciseList), 지침서 반환
  * - action: 'getGuidelines' -> 지침서만 반환
  */
 function doGet(e) {
@@ -110,12 +111,15 @@ function doGet(e) {
           // 전송량 절감: 공백 제거 별칭 키 중복 없이 원본 헤더만 전송 (대시보드는 공백 무관 탐색으로 동일하게 읽음)
           members: getSheetDataWithHeaders(memberSheet, { noAliases: true }),
           weights: readWeightLog(ss),
+          // 회원 일일 기록(체중·운동·식단): 최근 60일 (그 이전은 회원 상세 '더 보기' = getCoachLogHistory)
+          dailyLogs: readRecentDailyLogs(ss),
           // 코치 관리 기록: 최근 60일 + 그 이전이라도 아직 확인 안 한 '다음에 확인' (전체 기록은 getCoachLogHistory)
           coachLogs: readRecentCoachLogs(ss),
           coachSettings: readCoachSettings(ss),
           // AI 회원 분석: 회원별 최근 보고 전문 + 최근 14일 보고 요약, 밤 분석 실패 표시 (전체 보고는 getAnalysisHistory)
           analyses: readRecentAnalyses(ss),
           analysisFailures: readAnalysisFailures(),
+          exerciseListInfo: readExerciseListInfo(ss),
           guidelines: getGuidelinesData(guidelineSheet)
         }
       });
@@ -153,7 +157,7 @@ function doGet(e) {
  *   4. generateWorkoutRoutine: AI 운동 루틴 생성 (지침서 + 수정제안지침 최우선 반영)
  *   5. generateDietPlan: AI 식단 생성 (지침서 + 수정제안지침 최우선 반영)
  *   6. saveCoachLog: 코치 관리 기록 저장 (CoachLog, 회원번호+날짜 1행)
- *   7. getCoachLogHistory: 회원 1명의 코치 관리 기록 전체
+ *   7. getCoachLogHistory: 회원 1명의 코치 관리 기록 + 회원 일일 기록 전체
  *   8. analyzeMember: AI 회원 분석 (코치 전용 보고, AnalysisLog 누적)
  *   9. getAnalysisHistory: 회원 1명의 AI 분석 보고 전체
  *   - buildAiPrompt: 코치 브라우저 직통 스트리밍용 프롬프트만 조립해 반환 (workout/diet)
@@ -241,7 +245,7 @@ function doPost(e) {
       return withMembersWriteLock(() => handleSaveCoachLog(ss, payload));
     }
 
-    // 7. 회원 1명의 코치 관리 기록 전체 (회원 상세 타임라인 '더 보기')
+    // 7. 회원 1명의 코치 관리 기록·회원 일일 기록 전체 (회원 상세 타임라인 '더 보기')
     if (action === 'getCoachLogHistory') {
       return handleGetCoachLogHistory(ss, payload);
     }
@@ -1632,6 +1636,7 @@ function onOpen() {
       .addItem('⚖️ 체중 기록 옮기기 (Feedbacks·MemberPlanLog → WeightLog, 1회)', 'migrateWeightsToWeightLog')
       .addItem('🧯 폼 제출 트리거 삭제 (예전 데일리 피드백)', 'removeLegacyFeedbackTriggers')
       .addItem('🏋️ 운동 목록 초기 등록 (ExerciseList·WeightLog 기록 열)', 'setupExerciseList')
+      .addItem('🏋️ 미등록 운동 확인 (ExerciseList로 이동)', 'showUnregisteredExercises')
       .addSeparator()
       .addItem('🧱 코치 기록 시트 준비 (CoachLog·CoachSettings·Members 열)', 'setupCoachRecordSheets')
       .addItem('💬 코치 한마디 옮기기 (Feedbacks → CoachLog, 1회)', 'migrateCoachNotesToCoachLog')
@@ -2487,7 +2492,7 @@ function parseDailyJsonCell(raw) {
   }
 }
 
-// 체중이 있는 행만 (체중 그래프·통계·오늘 보드·AI 분석·회원 체중 그래프는 이것만 씀)
+// 체중이 있는 행만 (체중 그래프·통계·데일리·AI 분석·회원 체중 그래프는 이것만 씀)
 function readWeightLog(ss) {
   return readDailyLog(ss)
     .filter(r => r['체중'] !== '')
@@ -2495,6 +2500,19 @@ function readWeightLog(ss) {
       '날짜': r['날짜'], '회원번호': r['회원번호'], '이름': r['이름'], '체중': r['체중'],
       '입력자': r['입력자'], '기록시각': r['기록시각'], _rowNumber: r._rowNumber
     }));
+}
+
+// 코치 화면용 일일 기록 (이름·입력자·기록시각은 빼고 보냄)
+const DAILY_LOG_RECENT_DAYS = 60;
+
+function stripDailyLogRow(r) {
+  return { '날짜': r['날짜'], '회원번호': r['회원번호'], '체중': r['체중'], '운동': r['운동'], '식단': r['식단'] };
+}
+
+// getAll용: 최근 60일 (데일리·기록 창·회원 상세 타임라인)
+function readRecentDailyLogs(ss) {
+  const since = shiftDateKey(kstDateKey(), -DAILY_LOG_RECENT_DAYS);
+  return readDailyLog(ss).filter(r => r['날짜'] >= since).map(stripDailyLogRow);
 }
 
 function parseMemberWeightInput(raw) {
@@ -2618,13 +2636,17 @@ function parseDietRows(raw) {
 }
 
 // 예: "벤치프레스 12회×3세트 40kg / 트레드밀 걷기 30분"
+// - 시트에서 손으로 고친 JSON도 읽을 수 있도록 빈 칸·없는 칸은 건너뜀 (AI 분석 입력에도 같은 함수 사용)
 function summarizeExerciseRows(rows) {
   return rows.map(r => {
-    const reps = r['횟수'] === '' ? '' : (/^\d+$/.test(String(r['횟수'])) ? `${r['횟수']}회` : String(r['횟수']));
-    const sets = r['세트'] === '' ? '' : `${r['세트']}세트`;
+    const repsText = dailyText(r['횟수']);
+    const setsText = dailyText(r['세트']);
+    const weightText = dailyText(r['무게']);
+    const reps = !repsText ? '' : (/^\d+$/.test(repsText) ? `${repsText}회` : repsText);
+    const sets = setsText ? `${setsText}세트` : '';
     const volume = reps && sets ? `${reps}×${sets}` : (reps || sets);
-    return [r['종목'], volume, r['무게'] === '' ? '' : `${r['무게']}kg`].filter(Boolean).join(' ');
-  }).join(' / ');
+    return [dailyText(r['종목']), volume, weightText ? `${weightText}kg` : ''].filter(Boolean).join(' ');
+  }).filter(Boolean).join(' / ');
 }
 
 // 예: "아침: 사과, 삶은 달걀 / 점심: 현미밥"
@@ -2632,11 +2654,14 @@ function summarizeDietRows(rows) {
   const groups = [];
   const byMeal = {};
   rows.forEach(r => {
-    if (!byMeal[r['항목']]) {
-      byMeal[r['항목']] = [];
-      groups.push(r['항목']);
+    const meal = dailyText(r['항목']) || '기타';
+    const food = dailyText(r['음식']);
+    if (!food) return;
+    if (!byMeal[meal]) {
+      byMeal[meal] = [];
+      groups.push(meal);
     }
-    byMeal[r['항목']].push(r['음식']);
+    byMeal[meal].push(food);
   });
   return groups.map(g => `${g}: ${byMeal[g].join(', ')}`).join(' / ');
 }
@@ -2890,6 +2915,41 @@ function extractRoutineExerciseNames(text) {
     names.push(name);
   });
   return names;
+}
+
+// getAll용: '미등록' 개수·이름 몇 개·시트 주소 (코치 지침서 화면 안내)
+function readExerciseListInfo(ss) {
+  const sheet = getExerciseListSheet(ss, false);
+  if (!sheet) return { exists: false, unregistered: 0, names: [], url: '' };
+  const unregistered = readExerciseList(ss).filter(r => r['상태'] === EXERCISE_STATUS_UNREGISTERED);
+  return {
+    exists: true,
+    unregistered: unregistered.length,
+    names: unregistered.slice(0, 5).map(r => r['운동명']),
+    url: ss.getUrl() + '#gid=' + sheet.getSheetId()
+  };
+}
+
+/**
+ * [시트 메뉴] 미등록 운동 확인: ExerciseList 시트로 이동하고 '미등록' 개수·이름을 알려 줌
+ */
+function showUnregisteredExercises() {
+  const ui = SpreadsheetApp.getUi();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getExerciseListSheet(ss, false);
+  if (!sheet) {
+    ui.alert('🏋️ 미등록 운동 확인', "ExerciseList 시트가 아직 없습니다. '🏋️ 운동 목록 초기 등록'을 먼저 실행해 주세요.", ui.ButtonSet.OK);
+    return;
+  }
+  ss.setActiveSheet(sheet);
+  const names = readExerciseList(ss).filter(r => r['상태'] === EXERCISE_STATUS_UNREGISTERED).map(r => r['운동명']);
+  const shown = names.slice(0, 30);
+  ui.alert('🏋️ 미등록 운동 확인',
+    names.length
+      ? `회원이 입력한 미등록 운동이 ${names.length}개 있습니다.\n\n${shown.join(', ')}${names.length > shown.length ? ` …외 ${names.length - shown.length}개` : ''}\n\n` +
+        "'상태' 칸을 '등록'으로 바꾸면 다음 접속부터 회원 자동완성에 나옵니다. 부위도 함께 채워 주세요."
+      : '미등록 운동이 없습니다.',
+    ui.ButtonSet.OK);
 }
 
 /**
@@ -3398,7 +3458,8 @@ function handleGetCoachLogHistory(ss, payload) {
   const memberNo = String(payload.memberNo || '').trim();
   if (!memberNo) return createJsonResponse({ status: 'error', code: 'bad_request', message: '회원번호가 없습니다.' });
   const logs = readCoachLog(ss).filter(r => r['회원번호'] === memberNo).map(stripCoachLogRow);
-  return createJsonResponse({ status: 'success', memberNo: memberNo, logs: logs });
+  const dailyLogs = readDailyLog(ss).filter(r => r['회원번호'] === memberNo).map(stripDailyLogRow);
+  return createJsonResponse({ status: 'success', memberNo: memberNo, logs: logs, dailyLogs: dailyLogs });
 }
 
 /**
@@ -3580,6 +3641,7 @@ function runCoachNoteMigration(ss) {
  * [AI 회원 분석] 코치 기록·체중을 누적해 회원별 특이사항을 코치에게 보고 (코치 전용, 회원에게 절대 전달 안 함)
  * - 지침: Guidelines 시트의 '회원 분석 지침'을 서버가 직접 읽음 (브라우저가 보낸 값은 쓰지 않음, 없으면 오류만)
  * - 프롬프트: buildMemberAnalysisPrompt 한 곳에서만 조립, 숫자는 computeMemberAnalysisStats가 코드로 계산해 확정값으로 넣음
+ * - 입력: 체중 전체 + 코치 기록 전체 + 회원 일일 기록(운동·식단 요약, 최근 28일) + 지난 보고
  * - 출력: { "특이사항_있음": true/false, "보고": "..." } JSON만 인정, 그 밖에는 실패 (고정 문장으로 대신하지 않음)
  * - 저장: AnalysisLog 시트에 누적(분석일시 | 회원번호 | 이름 | 특이사항_있음 | 보고) + Members '최근 분석'·'분석 일시' 갱신
  * - 실패: 이전 보고는 그대로 두고, 스크립트 속성에 회원번호별 실패 시각·사유만 남김 (성공하면 지움)
@@ -3596,6 +3658,7 @@ const ANALYSIS_QUEUE_PROP = 'ANALYSIS_QUEUE_V1';
 const ANALYSIS_RUNNING_CACHE_KEY = 'ANALYSIS_RUNNING_V1';
 const ANALYSIS_REPORT_MAX_LEN = 5000;
 const ANALYSIS_RECENT_DAYS = 14;
+const ANALYSIS_DAILY_LOG_DAYS = 28;         // 프롬프트에 넣는 회원 일일 기록(운동·식단 요약) 범위
 const ANALYSIS_MAX_TRIES = 3;               // 밤 분석에서 회원 1명당 최대 시도 횟수 (넘으면 다음 날 밤에 다시)
 const ANALYSIS_RUN_BUDGET_MS = 180000;      // 한 번 실행에서 새 회원 분석을 시작하는 시간 한도 (6분 실행 제한 보호)
 const ANALYSIS_NIGHTLY_HANDLER = 'runNightlyAnalysis';
@@ -3617,7 +3680,7 @@ function getMemberExactField(m, names) {
   return '';
 }
 
-// 오늘 보드와 같은 규칙: 상태가 비어 있으면 유효
+// 데일리와 같은 규칙: 상태가 비어 있으면 유효
 function isMemberRowActive(m) {
   const s = getMemberExactField(m, ['상태', '회원상태', 'status']) || '유효';
   return s === '유효' || s.toLowerCase() === 'active';
@@ -3735,10 +3798,11 @@ function dateKeyDiff(fromKey, toKey) {
 
 /**
  * [코드 계산] 분석 프롬프트에 확정값으로 넣을 숫자 (AI에게 계산을 맡기지 않음)
- * - 7일 평균: 오늘 보드와 같은 기준 (기준일 포함 최근 7일 vs 그 전 7일)
+ * - 7일 평균: 데일리와 같은 기준 (기준일 포함 최근 7일 vs 그 전 7일)
  * - 연속 일수: 코치 기록이 있는 날끼리만 셈 (그 상태가 비어 있는 기록은 건너뛰고 끊지 않음)
+ * - 회원 기록 일수: WeightLog에 그날 운동(또는 식단) 줄이 1개 이상 있는 날 수
  */
-function computeMemberAnalysisStats(weights, logs, todayKey) {
+function computeMemberAnalysisStats(weights, logs, dailyLogs, todayKey) {
   const inRange = (date, fromExcl, toIncl) => date > shiftDateKey(todayKey, fromExcl) && date <= shiftDateKey(todayKey, toIncl);
   const avg = (list) => list.length ? Math.round(list.reduce((s, v) => s + v, 0) / list.length * 100) / 100 : null;
   const pastWeights = weights.filter(w => w['날짜'] <= todayKey);
@@ -3771,6 +3835,9 @@ function computeMemberAnalysisStats(weights, logs, todayKey) {
   };
   const lastLog = pastLogs.length ? pastLogs.reduce((a, b) => (a['날짜'] > b['날짜'] ? a : b)) : null;
   const lastWeight = pastWeights.length ? pastWeights.reduce((a, b) => (a['날짜'] > b['날짜'] ? a : b)) : null;
+  const pastDaily = (dailyLogs || []).filter(r => r['날짜'] <= todayKey);
+  const recentDaily = pastDaily.filter(r => inRange(r['날짜'], -7, 0));
+  const lastDaily = pastDaily.length ? pastDaily.reduce((a, b) => (a['날짜'] > b['날짜'] ? a : b)) : null;
 
   return {
     '기준일': todayKey,
@@ -3787,6 +3854,9 @@ function computeMemberAnalysisStats(weights, logs, todayKey) {
     "최근 7일 운동 '안 함' 횟수": recentLogs.filter(r => r['운동 상태'] === '안 함').length,
     '마지막 코치 기록 후 경과일': lastLog ? dateKeyDiff(lastLog['날짜'], todayKey) : null,
     '마지막 체중 입력 후 경과일': lastWeight ? dateKeyDiff(lastWeight['날짜'], todayKey) : null,
+    '최근 7일 운동 기록 일수(회원 입력)': recentDaily.filter(r => (r['운동'] || []).length).length,
+    '최근 7일 식단 기록 일수(회원 입력)': recentDaily.filter(r => (r['식단'] || []).length).length,
+    '마지막 회원 기록(체중·운동·식단) 후 경과일': lastDaily ? dateKeyDiff(lastDaily['날짜'], todayKey) : null,
     "미해결 '다음에 확인'": pastLogs.filter(r => r['다음에 확인'] && !r['확인 완료']).map(r => `${r['날짜']}: ${r['다음에 확인']}`)
   };
 }
@@ -3805,7 +3875,7 @@ function formatAnalysisStatValue(v) {
  * [프롬프트 단일 출처] AI 회원 분석 프롬프트 (코치 전용 보고)
  * @return {{prompt: string, systemInstruction: string}}
  */
-function buildMemberAnalysisPrompt(member, weights, logs, stats, lastReport, guideline) {
+function buildMemberAnalysisPrompt(member, weights, logs, dailyLogs, stats, lastReport, guideline) {
   const goal = {
     weight: getMemberExactField(member, ['체중 목표']),
     exercise: getMemberExactField(member, ['운동 목적'])
@@ -3826,6 +3896,13 @@ function buildMemberAnalysisPrompt(member, weights, logs, stats, lastReport, gui
     if (r['메모']) parts.push(`메모: ${r['메모']}`);
     if (r['코치 한마디']) parts.push(`코치 한마디: ${r['코치 한마디']}`);
     if (r['다음에 확인']) parts.push(`다음에 확인: ${r['다음에 확인']} (${r['확인 완료'] ? r['확인 완료'] + ' 확인 완료' : '아직 확인 전'})`);
+    return parts.join(' | ');
+  }).join('\n') : '(기록 없음)';
+  const dailyLines = dailyLogs.length ? dailyLogs.map(r => {
+    const parts = [`[${r['날짜']}]`];
+    if (r['체중'] !== '') parts.push(`체중 ${r['체중']}kg`);
+    parts.push(`운동: ${summarizeExerciseRows(r['운동'] || []) || '(기록 없음)'}`);
+    parts.push(`식단: ${summarizeDietRows(r['식단'] || []) || '(기록 없음)'}`);
     return parts.join(' | ');
   }).join('\n') : '(기록 없음)';
   const statLines = Object.keys(stats).map(k => `- ${k}: ${formatAnalysisStatValue(stats[k])}`).join('\n');
@@ -3857,6 +3934,9 @@ ${weightLines}
 [코치 관리 기록 전체 (날짜순, 메모는 코치 전용)]
 ${logLines}
 
+[회원이 직접 입력한 일일 기록 (최근 ${ANALYSIS_DAILY_LOG_DAYS}일, 날짜순 - 운동·식단 요약)]
+${dailyLines}
+
 [지난 분석 보고]
 ${lastReport ? `(${lastReport['분석일시']})\n${lastReport['보고']}` : '(없음 - 첫 분석)'}
 
@@ -3864,7 +3944,7 @@ ${lastReport ? `(${lastReport['분석일시']})\n${lastReport['보고']}` : '(�
 1. 아래 JSON 객체 하나만 출력하십시오. 앞뒤 설명, 코드 블록 표시(\`\`\`)는 쓰지 마십시오.
 {"특이사항_있음": true 또는 false, "보고": "회원 분석 지침의 보고 형식에 맞춘 텍스트"}
 2. "특이사항_있음"은 회원 분석 지침 기준으로 코치가 오늘 따로 챙겨야 할 일이 있으면 true, 없으면 false입니다.
-3. "보고"의 첫 줄은 가장 중요한 내용을 한 줄로 요약하십시오. (오늘 보드에 첫 줄만 표시됩니다)
+3. "보고"의 첫 줄은 가장 중요한 내용을 한 줄로 요약하십시오. (데일리 화면에 첫 줄만 표시됩니다)
 4. 숫자(평균, 변화량, 변화율, 횟수, 일수)는 위 확정값만 쓰십시오. 기록에 없는 사실을 지어내지 마십시오.
 5. 지난 분석 보고와 비교해 나아진 점·계속되는 점이 있으면 짚어 주십시오.
 `;
@@ -3931,8 +4011,13 @@ function analyzeOneMember(ss, memberNo, options) {
     .sort((a, b) => (a['날짜'] < b['날짜'] ? -1 : 1));
   const history = readAnalysisLog(ss).filter(r => r['회원번호'] === memberNo);
   const lastReport = history.length ? history[history.length - 1] : null;
-  const stats = computeMemberAnalysisStats(weights, logs, todayKey);
-  const built = buildMemberAnalysisPrompt(member, weights, logs, stats, lastReport, guideline);
+  // 회원 일일 기록: 숫자는 전체로 계산, 프롬프트에는 최근 28일만
+  const dailyLogs = readDailyLog(ss).filter(r => r['회원번호'] === memberNo)
+    .sort((a, b) => (a['날짜'] < b['날짜'] ? -1 : 1));
+  const dailySince = shiftDateKey(todayKey, -ANALYSIS_DAILY_LOG_DAYS);
+  const recentDailyLogs = dailyLogs.filter(r => r['날짜'] > dailySince && r['날짜'] <= todayKey);
+  const stats = computeMemberAnalysisStats(weights, logs, dailyLogs, todayKey);
+  const built = buildMemberAnalysisPrompt(member, weights, logs, recentDailyLogs, stats, lastReport, guideline);
 
   const aiResult = callGemini(built.prompt, built.systemInstruction, null, { responseMimeType: 'application/json', temperature: 0.3, maxOutputTokens: 4096 });
   if (!aiResult.text) {

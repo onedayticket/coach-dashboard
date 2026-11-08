@@ -340,7 +340,7 @@ body.cv3 {
 .cv3-seg-btn[data-routine-seg="diet"].is-active i { color: var(--cv-diet); }
 
 /* ========================================================================= */
-/* [오늘 보드] 날짜별 회원 기록 현황 */
+/* [데일리] 날짜별 회원 기록 현황 */
 /* ========================================================================= */
 .today-board { overflow: hidden; }
 .today-board-head {
@@ -436,7 +436,7 @@ body.cv3 {
 .today-row.is-done { border-left: 4px solid var(--cv-workout); background: #fbfdfc; }
 .today-row.is-disabled { opacity: 0.55; border-left: 4px solid var(--cv-line); grid-template-columns: 1fr; }
 .today-row-main { min-width: 0; }
-.today-row-name { font-weight: 800; font-size: 0.95rem; display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.today-row-name { font-weight: 800; font-size: 0.95rem; display: flex; align-items: baseline; gap: 6px; min-width: 0; white-space: nowrap; }
 .today-row-name small { font-weight: 600; font-size: 0.72rem; color: var(--cv-ink-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .today-row-sub { font-size: 0.75rem; color: var(--cv-ink-3); }
 .today-row-check {
@@ -466,6 +466,57 @@ body.cv3 {
 .today-status-dot.is-good { background: var(--cv-workout); }
 .today-status-dot.is-mid { background: #f59f00; }
 .today-status-dot.is-warn { background: #f04452; }
+/* 데일리: 회원 줄 + 펼치기 (줄 버튼 안에 버튼을 넣을 수 없어 형제로 둠) */
+.today-board-title { font-size: 1.05rem; font-weight: 800; margin: 0; padding: 14px 16px 0; display: flex; align-items: center; gap: 6px; }
+.today-board-title i { color: var(--cv-workout); }
+.today-item { display: flex; flex-direction: column; gap: 0; }
+.today-row-wrap { position: relative; }
+.today-row-wrap .today-row { padding-right: 48px; }
+.today-expand-btn {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: var(--cv-surface-2);
+  color: var(--cv-ink-2);
+}
+.today-expand-btn i { display: inline-block; transition: transform 0.15s; }
+.today-item.is-expanded .today-expand-btn i { transform: rotate(180deg); }
+.today-item.is-expanded .today-row { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.today-detail {
+  border: 1px solid var(--cv-line);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  background: #fff;
+  padding: 10px 12px 12px;
+}
+.today-inputs { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.today-in { display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; font-weight: 700; border-radius: 999px; padding: 1px 7px 1px 5px; white-space: nowrap; }
+.today-in.is-on { background: #e6fcf5; color: #087f5b; }
+.today-in.is-off { background: var(--cv-surface-2); color: var(--cv-ink-3); }
+
+/* 회원 일일 기록 상세 (데일리 펼치기·기록 창 공통) */
+.daily-rec { display: flex; flex-direction: column; gap: 10px; }
+.daily-rec-sec h6 { font-size: 0.78rem; font-weight: 800; color: var(--cv-ink-2); margin: 0 0 4px; display: flex; align-items: center; gap: 4px; }
+.daily-rec-empty { font-size: 0.8rem; color: var(--cv-ink-3); }
+.daily-rec-weight { font-weight: 800; font-size: 0.9rem; }
+.daily-rec-table-wrap { overflow-x: auto; }
+.daily-rec-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+.daily-rec-table th { font-size: 0.7rem; color: var(--cv-ink-3); font-weight: 700; text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--cv-line); white-space: nowrap; }
+.daily-rec-table td { padding: 5px 6px; border-bottom: 1px solid var(--cv-surface-2); vertical-align: top; }
+.daily-rec-table td:first-child { font-weight: 700; }
+.daily-rec-table td:nth-child(2), .daily-rec-table td:nth-child(3), .daily-rec-table td:nth-child(4) { white-space: nowrap; }
+.daily-rec-table td:last-child { color: var(--cv-ink-3); word-break: break-word; }
+.daily-rec-meal { display: flex; gap: 8px; font-size: 0.82rem; padding: 3px 0; }
+.daily-rec-meal > b { flex: 0 0 34px; font-size: 0.75rem; color: var(--cv-ink-2); padding-top: 1px; }
+.daily-rec-meal ul { list-style: none; margin: 0; padding: 0; min-width: 0; }
+.daily-rec-meal li { word-break: break-word; }
+.daily-rec-meal li small { margin-left: 6px; color: var(--cv-ink-3); }
+
 .today-empty { text-align: center; color: var(--cv-ink-3); padding: 40px 0; font-size: 0.88rem; }
 .today-empty i { display: block; font-size: 1.8rem; opacity: 0.5; margin-bottom: 4px; }
 
@@ -503,6 +554,14 @@ body.cv3 {
 .coachlog-stats span { display: block; font-size: 0.7rem; color: var(--cv-ink-3); }
 .coachlog-stats b { font-size: 0.92rem; }
 .coachlog-stats em, .coachlog-lastnote em { font-style: normal; color: var(--cv-ink-3); font-weight: 600; }
+.coachlog-daily { border: 1px solid var(--cv-line); border-radius: 12px; background: #fff; }
+.coachlog-daily > summary { list-style: none; display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer; font-size: 0.85rem; font-weight: 700; }
+.coachlog-daily > summary::-webkit-details-marker { display: none; }
+.coachlog-daily > summary > i:first-child { color: var(--cv-workout); }
+.coachlog-daily > summary small { color: var(--cv-ink-3); font-weight: 600; font-size: 0.75rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coachlog-daily-caret { margin-left: auto; color: var(--cv-ink-3); transition: transform 0.15s; }
+.coachlog-daily[open] .coachlog-daily-caret { transform: rotate(180deg); }
+.coachlog-daily > .daily-rec { padding: 4px 10px 10px; border-top: 1px solid var(--cv-surface-2); }
 .coachlog-lastnote { border-left: 3px solid var(--cv-primary); background: #f7faff; border-radius: 0 12px 12px 0; padding: 8px 10px; font-size: 0.85rem; }
 .coachlog-lastnote > span { display: block; font-size: 0.72rem; color: var(--cv-ink-3); font-weight: 700; margin-bottom: 2px; }
 .coachlog-lastnote > span i { margin-right: 3px; }
@@ -623,6 +682,19 @@ body.cv3 {
 .coach-tl-memo i, .coach-tl-note i, .coach-tl-check i { flex-shrink: 0; margin-top: 2px; }
 .coach-tl-note i { color: #e64980; }
 .coach-tl-check { color: #c2410c; }
+.coach-tl-member { display: flex; flex-direction: column; gap: 2px; font-size: 0.8rem; color: var(--cv-ink-2); background: #f6fbf9; border-radius: 8px; padding: 5px 8px; }
+.coach-tl-member > div { word-break: break-word; }
+.coach-tl-member span { font-size: 0.68rem; font-weight: 800; color: #087f5b; margin-right: 6px; }
+.coach-tl-item.is-member-only { background: #fcfdfd; border-style: dashed; }
+.coach-tl-nolog { font-size: 0.72rem; color: var(--cv-ink-3); }
+
+/* 지침서 화면: ExerciseList 미등록 운동 안내 */
+.exlist-notice { display: flex; align-items: center; gap: 10px; background: #fff; border: 1px solid #ffe8cc; border-left: 4px solid #f59f00; border-radius: 12px; padding: 10px 12px; font-size: 0.88rem; }
+.exlist-notice > i { color: #f59f00; font-size: 1.2rem; flex-shrink: 0; }
+.exlist-notice-body { flex: 1 1 auto; min-width: 0; }
+.exlist-notice-body small { display: block; color: var(--cv-ink-3); margin-top: 2px; }
+.exlist-notice .btn { flex-shrink: 0; }
+
 .coach-tl-check.is-done { color: var(--cv-ink-3); }
 .coach-tl-check small { margin-left: 4px; color: var(--cv-ink-3); white-space: nowrap; }
 .member-weight-table-details > summary { font-size: 0.85rem; font-weight: 700; color: var(--cv-ink-2); cursor: pointer; }
@@ -899,8 +971,12 @@ body.cv3 {
     width: calc(100% - 24px);
   }
 
-  /* 오늘 보드: 날짜 줄과 진행률을 한 줄씩 */
+  /* 데일리: 날짜 줄과 진행률을 한 줄씩 */
   .today-board-head { padding: 12px; }
+  .today-board-title { padding: 12px 12px 0; }
+  .exlist-notice { flex-wrap: wrap; }
+  .exlist-notice-body { flex-basis: calc(100% - 40px); }
+  .exlist-notice .btn { margin-left: 30px; }
   .today-date-nav { width: 100%; }
   .today-date-field { flex: 1 1 auto; justify-content: center; }
   .today-progress { flex: 1 1 100%; }

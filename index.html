@@ -18,7 +18,7 @@
   <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" rel="stylesheet">
   <!-- Custom CSS (style.css + v3 모바일 우선 디자인 레이어) -->
   <link href="style.css?v=4.0.0" rel="stylesheet">
-  <link href="coach-v3.css?v=4.2.0" rel="stylesheet">
+  <link href="coach-v3.css?v=4.3.0" rel="stylesheet">
 </head>
 <body class="cv3" data-ctab="today">
 
@@ -42,7 +42,7 @@
       <!-- [요구사항 1] 대시보드 메인 뷰 전환 탭: 참여자 관리 vs 지침서 관리 (모달 아님) -->
       <div class="d-none d-lg-flex align-items-center gap-1 ms-1 ms-lg-3">
         <button type="button" class="view-nav-btn active px-2 px-md-3 py-1" id="btnNavViewToday" onclick="switchDashboardView('today')">
-          <i class="bi bi-calendar-check-fill me-1 text-success"></i><span>오늘 보드</span>
+          <i class="bi bi-calendar-check-fill me-1 text-success"></i><span>데일리</span>
         </button>
         <button type="button" class="view-nav-btn px-2 px-md-3 py-1" id="btnNavViewMembers" onclick="switchDashboardView('members')">
           <i class="bi bi-people-fill me-1"></i><span class="d-none d-sm-inline">참여자 관리</span><span class="d-inline d-sm-none">참여자</span>
@@ -227,10 +227,11 @@
       <div class="col-12 col-md-8 col-xl-9" id="mainContentColumn">
 
         <!-- =================================================================== -->
-        <!-- [VIEW 0: 오늘 보드 - 날짜별 회원 기록 현황 (첫 화면)] -->
+        <!-- [VIEW 0: 데일리 - 날짜별 회원 기록 현황 (첫 화면)] -->
         <!-- =================================================================== -->
         <div id="viewTodayWrapper">
           <section class="section-panel today-board">
+            <h2 class="today-board-title"><i class="bi bi-calendar-check-fill"></i>데일리</h2>
             <div class="today-board-head">
               <div class="today-date-nav">
                 <button type="button" class="today-date-btn" id="btnBoardPrevDay" aria-label="전날"><i class="bi bi-chevron-left"></i></button>
@@ -666,6 +667,8 @@
             </div>
 
             <div class="section-body p-4 bg-light">
+              <!-- ExerciseList '미등록' 운동 안내 (0개면 숨김) -->
+              <div class="exlist-notice mb-3 d-none" id="exerciseListNotice"></div>
               <div class="alert alert-primary bg-primary-subtle border-0 rounded-3 mb-4 d-flex align-items-start gap-3">
                 <i class="bi bi-info-circle-fill text-primary fs-4 mt-1"></i>
                 <div>
@@ -755,7 +758,11 @@
                   </div>
                   <textarea class="form-control guideline-textarea" id="gdInlineAnalysis" rows="5" placeholder="지침 내용을 입력하거나 구글 시트와 연동하세요..."></textarea>
                   <div class="text-muted small mt-2">
-                    <i class="bi bi-lock-fill text-primary me-1"></i>분석 보고는 코치만 봅니다. 보고 첫 줄은 오늘 보드에 표시되니 첫 줄에 요약이 오도록 형식을 정해 주세요.
+                    <i class="bi bi-lock-fill text-primary me-1"></i>분석 보고는 코치만 봅니다. 보고 첫 줄은 데일리에 표시되니 첫 줄에 요약이 오도록 형식을 정해 주세요.
+                    <div class="mt-1">
+                      <i class="bi bi-lightbulb text-warning me-1"></i>AI는 회원이 직접 입력한 운동·식단 기록(최근 28일)과 최근 7일 운동·식단 기록 일수, 마지막 회원 기록 후 경과일도 함께 봅니다.
+                      회원 기록 기준도 넣을 수 있어요. 예) "최근 7일 운동 기록 2일 이하", "회원 기록 3일 이상 끊김", "식단 기록에 야식·음주가 3번 이상", "루틴에 없는 운동을 자주 함"
+                    </div>
                   </div>
                 </div>
 
@@ -770,11 +777,11 @@
   </div>
 
   <!-- ========================================================================= -->
-  <!-- [모바일 하단 탭바: 오늘 / 회원 / 루틴·식단(프로필 펼치기) / 기록 / 더보기(태그·지침서)] -->
+  <!-- [모바일 하단 탭바: 데일리 / 회원 / 루틴·식단(프로필 펼치기) / 기록 / 더보기(태그·지침서)] -->
   <!-- ========================================================================= -->
   <nav class="cv3-tabbar d-lg-none" id="coachTabBar" role="tablist" aria-label="메뉴">
     <button type="button" class="cv3-tab is-active" data-ctab-target="today" role="tab">
-      <span class="cv3-tab-icon"><i class="bi bi-calendar-check-fill"></i></span><span>오늘</span>
+      <span class="cv3-tab-icon"><i class="bi bi-calendar-check-fill"></i></span><span>데일리</span>
     </button>
     <button type="button" class="cv3-tab" data-ctab-target="list" role="tab">
       <span class="cv3-tab-icon"><i class="bi bi-people-fill"></i></span><span>회원</span>
@@ -1025,6 +1032,6 @@
   <!-- Chart.js 4.x CDN -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <!-- Main Application Logic (app.js) -->
-  <script src="app.js?v=4.2.1"></script>
+  <script src="app.js?v=4.3.0"></script>
 </body>
 </html>

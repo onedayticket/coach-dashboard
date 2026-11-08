@@ -9,7 +9,7 @@
  * 4. 구글 시트 DB 연동 및 동적 컬럼 보존 매핑
  * 5. Gemini AI 백엔드 실행: 운동 루틴/식단 생성
  * 6. 공복 체중 그래프 (WeightLog, 회원번호 기준) · 태그별 체중 비교
- * 7. 코치 관리 기록 (CoachLog): 오늘 보드 · 기록 창 · 회원 상세 타임라인
+ * 7. 코치 관리 기록 (CoachLog): 데일리 · 기록 창 · 회원 상세 타임라인
  * ==============================================================================
  */
 
@@ -32,8 +32,8 @@ const STORAGE_MODEL_PREF_KEY = 'coach_dash_model_pref_v1';
 const STORAGE_READ_PENDING_NOTIS_KEY = 'coach_dash_read_pending_notis_v1';
 const STORAGE_COACH_AUTH_KEY = 'coach_authenticated';
 const STORAGE_COACH_TOKEN_KEY = 'coach_session_token'; // GAS 서버가 발급한 코치 로그인 토큰 (모든 시트 조회/저장에 필수)
-const STORAGE_COACH_DATA_CACHE_KEY = 'coach_dash_data_cache_v4'; // 마지막으로 불러온 시트 데이터 사본 (새로고침 즉시 표시용, 잠금/로그아웃 시 삭제)
-const LEGACY_COACH_DATA_CACHE_KEYS = ['coach_dash_data_cache_v2', 'coach_dash_data_cache_v3']; // 예전 구조(코치 기록·AI 분석 없음) 저장본 - 시작할 때 지움
+const STORAGE_COACH_DATA_CACHE_KEY = 'coach_dash_data_cache_v5'; // 마지막으로 불러온 시트 데이터 사본 (새로고침 즉시 표시용, 잠금/로그아웃 시 삭제)
+const LEGACY_COACH_DATA_CACHE_KEYS = ['coach_dash_data_cache_v2', 'coach_dash_data_cache_v3', 'coach_dash_data_cache_v4']; // 예전 구조(코치 기록·AI 분석·회원 일일 기록 없음) 저장본 - 시작할 때 지움
 const STORAGE_COACH_FAIL_COUNT_KEY = 'coach_fail_count';
 const STORAGE_COACH_LOCK_UNTIL_KEY = 'coach_lock_until';
 
@@ -119,8 +119,12 @@ const MOCK_DB = {
       '운동 목적': ''
     }
   ],
-  // WeightLog 시트 (날짜 | 회원번호 | 이름 | 체중 | 입력자 | 기록시각) - 미리보기에서 오늘 보드가 보이도록 오늘 기준 날짜로 만듦
+  // WeightLog 시트 (날짜 | 회원번호 | 이름 | 체중 | 입력자 | 기록시각) - 미리보기에서 데일리가 보이도록 오늘 기준 날짜로 만듦
   weights: buildMockWeights(),
+  // WeightLog 회원 일일 기록 (날짜 | 회원번호 | 체중 | 운동 | 식단) - getAll과 같이 최근 60일
+  dailyLogs: buildMockDailyLogs(),
+  // ExerciseList '미등록' 개수 (미리보기에서는 시트 주소 없음)
+  exerciseListInfo: { exists: true, unregistered: 2, names: ['케이블 체스트 플라이', '나만의 운동'], url: '' },
   // CoachLog 시트 (날짜 | 회원번호 | 이름 | 식단 상태 | 운동 상태 | 식단 태그 | 운동 태그 | 메모 | 코치 한마디 | 다음에 확인 | 확인 완료 | 작성시각 | 수정시각)
   coachLogs: buildMockCoachLogs(),
   // CoachSettings 시트 (식단 태그 | 운동 태그 | 자주 쓰는 문구)
@@ -163,6 +167,20 @@ function buildMockWeights() {
   return rows;
 }
 
+function buildMockDailyLogs() {
+  const today = localDateKey();
+  const ex = (name, reps, sets, weight, note) => ({ '종목': name, '횟수': reps, '세트': sets, '무게': weight, '비고': note || '' });
+  const meal = (m, food, note) => ({ '항목': m, '음식': food, '비고': note || '' });
+  return [
+    { '날짜': shiftDateKey(today, -1), '회원번호': 'M001', '체중': 80.2,
+      '운동': [ex('벤치프레스', '12', 3, 40), ex('인클라인 덤벨프레스', '12', 3, 12), ex('트레드밀 경사도 걷기', '30분', 1, '', '경사 8')],
+      '식단': [meal('아침', '그릭요거트'), meal('아침', '삶은 달걀 2개'), meal('점심', '현미밥 2/3공기', '회사 식당'), meal('저녁', '닭가슴살 샐러드')] },
+    { '날짜': today, '회원번호': 'M001', '체중': 80.1, '운동': [], '식단': [meal('아침', '사과 1/2개')] },
+    { '날짜': shiftDateKey(today, -1), '회원번호': 'M002', '체중': 58.1, '운동': [], '식단': [meal('점심', '포케'), meal('간식', '아메리카노')] },
+    { '날짜': today, '회원번호': 'M002', '체중': '', '운동': [ex('매트 필라테스', '30분', 1, '')], '식단': [] }
+  ];
+}
+
 function buildMockCoachLogs() {
   const today = localDateKey();
   const row = (d, no, name, v) => Object.assign({
@@ -191,6 +209,9 @@ const AppState = {
   currentView: 'today',   // 'today' | 'members' | 'tagstats' | 'guidelines'
   members: [],
   weights: [], // WeightLog 공복 체중 기록 (회원번호로 회원과 연결)
+  dailyLogs: [], // WeightLog 회원 일일 기록 (체중·운동·식단, 최근 60일 + 회원 상세 '더 보기'로 이전 기록 추가)
+  exerciseListInfo: null, // ExerciseList '미등록' 개수·이름·시트 주소 (지침서 화면 안내)
+  boardExpanded: {}, // 데일리에서 펼친 회원 (회원번호 -> true, 날짜를 바꿔도 유지)
   coachLogs: [], // CoachLog 코치 관리 기록 (최근 60일 + 확인 안 한 '다음에 확인', 회원 상세 '더 보기'로 이전 기록 추가)
   coachSettings: null, // CoachSettings 태그·자주 쓰는 문구 (pickCoachSettings로 채움)
   coachLogHistoryLoaded: {}, // 회원번호 -> 전체 기록을 받아 왔는지
@@ -199,7 +220,7 @@ const AppState = {
   analysisHistoryLoaded: {}, // 회원번호 -> 이전 보고 전문을 받아 왔는지
   analysisRunning: {}, // 회원번호 -> [분석 업데이트] 진행 중
   localCoachLogEdits: [], // 방금 저장한 기록 (저장 직전에 출발한 백그라운드 최신화가 덮어쓰지 않도록 잠깐 다시 적용)
-  boardDate: localDateKey(), // 오늘 보드 날짜
+  boardDate: localDateKey(), // 데일리 날짜
   guidelines: {
     philosophy: '',
     exercise: '',
@@ -207,7 +228,7 @@ const AppState = {
     analysis: ''
   },
   selectedMember: null,
-  filterStatus: 'active', // 'all' | 'active' | 'inactive' (오늘 보드·회원 목록 공통, 기본 유효 회원)
+  filterStatus: 'active', // 'all' | 'active' | 'inactive' (데일리·회원 목록 공통, 기본 유효 회원)
   filterTag: 'all',    // 'all' | specific tag
   searchQuery: '',
   charts: {
@@ -582,7 +603,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-11-08.1';
+const EXPECTED_BACKEND_VERSION = '2026-11-08.2';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -704,6 +725,8 @@ function saveCoachDataCache() {
       savedAt: AppState.lastSyncedAt || AppState.cacheSavedAt || Date.now(), // '기준 시각' = 마지막 서버 수신 시각
       members: AppState.members,
       weights: AppState.weights,
+      dailyLogs: AppState.dailyLogs,
+      exerciseListInfo: AppState.exerciseListInfo,
       coachLogs: AppState.coachLogs,
       coachSettings: AppState.coachSettings,
       analyses: AppState.analyses,
@@ -731,6 +754,17 @@ function pickGuidelines(g) {
   return { philosophy: src.philosophy || '', exercise: src.exercise || '', diet: src.diet || '', analysis: src.analysis || '' };
 }
 
+function pickExerciseListInfo(info) {
+  if (!info || typeof info !== 'object') return null;
+  return {
+    exists: !!info.exists,
+    unregistered: Math.max(0, parseInt(info.unregistered, 10) || 0),
+    names: Array.isArray(info.names) ? info.names.map(n => String(n)).slice(0, 5) : [],
+    // 구글 시트 주소만 링크로 씀
+    url: /^https:\/\/docs\.google\.com\//.test(String(info.url || '')) ? String(info.url) : ''
+  };
+}
+
 function pickAnalysisFailures(f) {
   return (f && typeof f === 'object' && !Array.isArray(f)) ? f : {};
 }
@@ -749,6 +783,8 @@ function purgeLegacyCoachDataCaches() {
 function applyServerData(data, gasUrl) {
   AppState.members = Array.isArray(data.members) ? data.members : [];
   AppState.weights = Array.isArray(data.weights) ? data.weights : [];
+  AppState.dailyLogs = Array.isArray(data.dailyLogs) ? data.dailyLogs : [];
+  AppState.exerciseListInfo = pickExerciseListInfo(data.exerciseListInfo);
   AppState.coachLogs = Array.isArray(data.coachLogs) ? data.coachLogs : [];
   AppState.coachSettings = pickCoachSettings(data.coachSettings);
   AppState.coachLogHistoryLoaded = {};
@@ -783,6 +819,7 @@ function renderDashboardAfterData() {
   applyFiltersAndRenderMemberList();
   renderTodayBoard();
   populateInlineGuidelines();
+  renderExerciseListNotice();
   if (AppState.currentView === 'tagstats') renderTagStatsView();
   AppState.userEditedSinceRender = false;
   if (AppState.members.length > 0) {
@@ -799,6 +836,8 @@ async function startDashboard() {
   if (cached) {
     AppState.members = cached.members;
     AppState.weights = Array.isArray(cached.weights) ? cached.weights : [];
+    AppState.dailyLogs = Array.isArray(cached.dailyLogs) ? cached.dailyLogs : [];
+    AppState.exerciseListInfo = pickExerciseListInfo(cached.exerciseListInfo);
     AppState.coachLogs = Array.isArray(cached.coachLogs) ? cached.coachLogs : [];
     AppState.coachSettings = pickCoachSettings(cached.coachSettings);
     AppState.analyses = Array.isArray(cached.analyses) ? cached.analyses : [];
@@ -949,6 +988,8 @@ async function loadAllData() {
     // [실패는 실패로] 서버 실패를 Mock 데이터로 대신 채우지 않음 -> 빈 화면 + 실패 배지 + [다시 시도]
     AppState.members = [];
     AppState.weights = [];
+    AppState.dailyLogs = [];
+    AppState.exerciseListInfo = null;
     AppState.coachLogs = [];
     AppState.isOnline = false;
     AppState.dataSource = 'offline';
@@ -962,6 +1003,8 @@ async function loadAllData() {
   // 시트 미연동(GAS URL 없음) 미리보기 전용 Mock 데이터
   AppState.members = JSON.parse(JSON.stringify(MOCK_DB.members));
   AppState.weights = JSON.parse(JSON.stringify(MOCK_DB.weights));
+  AppState.dailyLogs = JSON.parse(JSON.stringify(MOCK_DB.dailyLogs));
+  AppState.exerciseListInfo = pickExerciseListInfo(MOCK_DB.exerciseListInfo);
   AppState.coachLogs = JSON.parse(JSON.stringify(MOCK_DB.coachLogs));
   AppState.coachSettings = pickCoachSettings(MOCK_DB.coachSettings);
   AppState.analyses = JSON.parse(JSON.stringify(MOCK_DB.analyses));
@@ -1452,7 +1495,8 @@ function simulateMockAction(payload) {
   }
 
   if (action === 'getCoachLogHistory') {
-    return { status: 'success', memberNo: payload.memberNo, logs: AppState.coachLogs.filter(r => r['회원번호'] === payload.memberNo) };
+    return { status: 'success', memberNo: payload.memberNo, logs: AppState.coachLogs.filter(r => r['회원번호'] === payload.memberNo),
+      dailyLogs: AppState.dailyLogs.filter(r => r['회원번호'] === payload.memberNo) };
   }
 
   // [미리보기 전용] AI 분석 결과를 흉내 내지 않음
@@ -1677,8 +1721,8 @@ function initCoachMobileTabs() {
 }
 
 /**
- * 대시보드 뷰 전환: 오늘 보드('today') / 참여자 관리('members') / 태그별 그래프('tagstats') / 코칭 지침서 관리('guidelines')
- * - 오늘 보드·태그별 그래프 뷰에서도 사이드바는 참여자 목록을 그대로 보여 줌 (회원을 누르면 참여자 관리로 이동)
+ * 대시보드 뷰 전환: 데일리('today') / 참여자 관리('members') / 태그별 그래프('tagstats') / 코칭 지침서 관리('guidelines')
+ * - 데일리·태그별 그래프 뷰에서도 사이드바는 참여자 목록을 그대로 보여 줌 (회원을 누르면 참여자 관리로 이동)
  */
 function switchDashboardView(viewName) {
   AppState.currentView = viewName;
@@ -2427,7 +2471,7 @@ function selectMember(memberKey, opts = {}) {
 
   AppState.selectedMember = mem;
 
-  // 참여자 관리 뷰로 자동 전환 (지침서·오늘 보드 뷰에서 클릭한 경우, 자동 선택은 지금 화면 유지)
+  // 참여자 관리 뷰로 자동 전환 (지침서·데일리 뷰에서 클릭한 경우, 자동 선택은 지금 화면 유지)
   if (AppState.currentView !== 'members' && !opts.auto) {
     switchDashboardView('members');
   } else {
@@ -3762,7 +3806,7 @@ function createSingleChartOptions(unit, minVal, maxVal, stepSize) {
 
 /**
  * ==============================================================================
- * [6. 코치 관리 기록] 오늘 보드 · 기록 창 · 회원 상세 타임라인 (CoachLog, 회원번호+날짜 1행)
+ * [6. 코치 관리 기록] 데일리 · 기록 창 · 회원 상세 타임라인 (CoachLog, 회원번호+날짜 1행)
  * - 체중·7일 평균 변화는 WeightLog로 코드가 계산 (AI 사용 안 함)
  * - 저장은 saveCoachLog (서버가 잠금 + Members 회원번호 정확 일치 확인), 미리보기(Mock)에서는 화면 메모리에만 반영
  * - 메모는 코치 전용, 코치 한마디만 회원 마이페이지에 보임
@@ -3824,6 +3868,125 @@ function getMemberCoachLogs(memberNo) {
   return AppState.coachLogs.filter(r => r['회원번호'] === memberNo).sort((a, b) => (a['날짜'] < b['날짜'] ? 1 : -1));
 }
 
+/* ------------------------- 회원 일일 기록 (WeightLog 운동·식단) ------------------------- */
+// 회원이 마이페이지 '기록' 탭에서 입력한 그 날 체중·운동·식단 (코치 화면은 읽기만 함)
+const DIET_MEAL_ORDER = ['아침', '점심', '저녁', '간식'];
+
+function getDailyLog(memberNo, date) {
+  if (!memberNo) return null;
+  return AppState.dailyLogs.find(r => r['회원번호'] === memberNo && r['날짜'] === date) || null;
+}
+
+function upsertDailyLogLocal(log) {
+  if (!log || !log['회원번호'] || !log['날짜']) return;
+  const idx = AppState.dailyLogs.findIndex(r => r['회원번호'] === log['회원번호'] && r['날짜'] === log['날짜']);
+  if (idx >= 0) AppState.dailyLogs[idx] = log;
+  else AppState.dailyLogs.push(log);
+}
+
+function dailyRows(log, field) {
+  return log && Array.isArray(log[field]) ? log[field].filter(r => r && typeof r === 'object') : [];
+}
+
+function dailyCell(v) {
+  return String(v === null || v === undefined ? '' : v).trim();
+}
+
+function formatDailyReps(v) {
+  const t = dailyCell(v);
+  return /^\d+$/.test(t) ? `${t}회` : t;
+}
+
+// 체중·운동·식단 입력 여부 (체중은 WeightLog 체중 행 기준 = 그래프와 같은 값)
+function getDailyInputFlags(mem, memberNo, date) {
+  const log = getDailyLog(memberNo, date);
+  const dayWeight = computeWeeklyAvgChange(mem, date).dayWeight;
+  return { log, weight: dayWeight, hasWeight: dayWeight !== null, hasExercise: dailyRows(log, '운동').length > 0, hasDiet: dailyRows(log, '식단').length > 0 };
+}
+
+function renderDailyInputChips(flags) {
+  const chip = (on, label) => `<span class="today-in ${on ? 'is-on' : 'is-off'}" title="${label} ${on ? '입력' : '미입력'}"><i class="bi ${on ? 'bi-check-lg' : 'bi-dash'}"></i>${label}</span>`;
+  return `<div class="today-inputs">${chip(flags.hasWeight, '체중')}${chip(flags.hasExercise, '운동')}${chip(flags.hasDiet, '식단')}</div>`;
+}
+
+// 식단 줄을 아침·점심·저녁·간식 순서로 묶음 (그 밖의 항목은 뒤에)
+function groupDailyDiet(rows) {
+  const groups = {};
+  const order = DIET_MEAL_ORDER.slice();
+  rows.forEach(r => {
+    const meal = dailyCell(r['항목']) || '기타';
+    if (!groups[meal]) {
+      groups[meal] = [];
+      if (order.indexOf(meal) < 0) order.push(meal);
+    }
+    if (dailyCell(r['음식'])) groups[meal].push(r);
+  });
+  return order.filter(m => groups[m] && groups[m].length).map(m => ({ meal: m, items: groups[m] }));
+}
+
+// 그 날 회원 기록 상세 (데일리 펼치기·기록 창 공통)
+function renderDailyRecordDetail(flags) {
+  const exercise = dailyRows(flags.log, '운동');
+  const diet = groupDailyDiet(dailyRows(flags.log, '식단'));
+  const empty = '<div class="daily-rec-empty">기록 없음</div>';
+  const exHtml = exercise.length
+    ? `<div class="daily-rec-table-wrap"><table class="daily-rec-table">
+        <thead><tr><th>종목</th><th>횟수</th><th>세트</th><th>무게</th><th>비고</th></tr></thead>
+        <tbody>${exercise.map(r => `<tr>
+          <td>${escapeHtml(dailyCell(r['종목']))}</td>
+          <td>${escapeHtml(formatDailyReps(r['횟수']))}</td>
+          <td>${escapeHtml(dailyCell(r['세트']))}</td>
+          <td>${dailyCell(r['무게']) ? `${escapeHtml(dailyCell(r['무게']))}kg` : ''}</td>
+          <td>${escapeHtml(dailyCell(r['비고']))}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>`
+    : empty;
+  const dietHtml = diet.length
+    ? diet.map(g => `<div class="daily-rec-meal"><b>${escapeHtml(g.meal)}</b><ul>${g.items.map(r =>
+        `<li>${escapeHtml(dailyCell(r['음식']))}${dailyCell(r['비고']) ? `<small>${escapeHtml(dailyCell(r['비고']))}</small>` : ''}</li>`).join('')}</ul></div>`).join('')
+    : empty;
+  return `<div class="daily-rec">
+    <div class="daily-rec-sec"><h6><i class="bi bi-speedometer2"></i>체중</h6>${flags.hasWeight ? `<div class="daily-rec-weight">${flags.weight}kg</div>` : empty}</div>
+    <div class="daily-rec-sec"><h6><i class="bi bi-lightning-charge-fill"></i>운동</h6>${exHtml}</div>
+    <div class="daily-rec-sec"><h6><i class="bi bi-egg-fried"></i>식단</h6>${dietHtml}</div>
+  </div>`;
+}
+
+// 타임라인 한 줄 요약 (화면 표시용)
+function summarizeDailyExercise(rows) {
+  return rows.map(r => {
+    const reps = formatDailyReps(r['횟수']);
+    const sets = dailyCell(r['세트']) ? `${dailyCell(r['세트'])}세트` : '';
+    const weight = dailyCell(r['무게']) ? `${dailyCell(r['무게'])}kg` : '';
+    return [dailyCell(r['종목']), reps && sets ? `${reps}×${sets}` : (reps || sets), weight].filter(Boolean).join(' ');
+  }).filter(Boolean).join(' / ');
+}
+
+function summarizeDailyDiet(rows) {
+  return groupDailyDiet(rows).map(g => `${g.meal}: ${g.items.map(r => dailyCell(r['음식'])).join(', ')}`).join(' / ');
+}
+
+/* --------------------- ExerciseList 미등록 운동 안내 (지침서 화면) --------------------- */
+function renderExerciseListNotice() {
+  const el = document.getElementById('exerciseListNotice');
+  if (!el) return;
+  const info = AppState.exerciseListInfo;
+  if (!info || !info.unregistered) {
+    el.classList.add('d-none');
+    el.innerHTML = '';
+    return;
+  }
+  const names = info.names.length ? ` (${info.names.map(escapeHtml).join(', ')}${info.unregistered > info.names.length ? ' 등' : ''})` : '';
+  el.classList.remove('d-none');
+  el.innerHTML = `
+    <i class="bi bi-list-check"></i>
+    <div class="exlist-notice-body">
+      <div>회원이 입력한 <b>미등록 운동 ${info.unregistered}개</b>${names}</div>
+      <small>ExerciseList 시트에서 '상태'를 '등록'으로 바꾸면 회원 자동완성에 나옵니다. 시트 메뉴 '🏋️ 미등록 운동 확인'으로도 갈 수 있어요.</small>
+    </div>
+    ${info.url ? `<a class="btn btn-sm btn-outline-primary fw-semibold" href="${escapeHtml(info.url)}" target="_blank" rel="noopener">시트 열기<i class="bi bi-box-arrow-up-right ms-1"></i></a>` : ''}`;
+}
+
 // 그 날짜 기준으로 아직 확인 안 한 이전 '다음에 확인' (그 날짜 이후에 확인 완료된 것도 그 날짜에는 미해결)
 function getOpenNextChecks(memberNo, date) {
   return getMemberCoachLogs(memberNo).filter(r => r['다음에 확인'] && r['날짜'] < date && (!r['확인 완료'] || r['확인 완료'] > date));
@@ -3882,7 +4045,7 @@ function reapplyLocalCoachLogEdits() {
   });
 }
 
-/* ---------------------------------- 오늘 보드 ---------------------------------- */
+/* ---------------------------------- 데일리 ---------------------------------- */
 
 // 상태·태그 필터 (회원 목록과 공통, 검색어는 보드에 적용하지 않음)
 function memberPassesStatusTagFilter(m) {
@@ -3919,7 +4082,7 @@ function getAnalysisSummary(a) {
   return line || '';
 }
 
-// 오늘 보드 맨 위로 올릴 AI 특이사항 (그 날짜 기준 가장 최근 분석이 특이사항 있음일 때)
+// 데일리 맨 위로 올릴 AI 특이사항 (그 날짜 기준 가장 최근 분석이 특이사항 있음일 때)
 function hasCoachAiAlert(mem, dateKey) {
   return isAnalysisFlagged(getAnalysisAsOf(getMemberNo(mem), dateKey));
 }
@@ -4115,18 +4278,29 @@ function renderTodayBoard() {
     const aiHtml = e.aiAlert
       ? `<div class="today-row-ai" title="AI 분석 특이사항 (코치 전용)"><i class="bi bi-stars"></i><span class="text-truncate">${escapeHtml(e.aiSummary || '특이사항 있음')}</span></div>`
       : '';
-    return `<button type="button" class="today-row ${e.log ? 'is-done' : 'is-todo'}${e.aiAlert ? ' is-ai-alert' : ''}" data-board-member="${escapeHtml(e.key)}">
-      <div class="today-row-main">
-        <div class="today-row-name">${e.aiAlert ? '<span class="today-ai-flag">⚠</span>' : ''}${escapeHtml(e.name)}<small>${escapeHtml(getMemberTag(e.mem))}</small></div>
-        ${aiHtml}
-        ${checkHtml}
+    const flags = getDailyInputFlags(e.mem, e.memberNo, date);
+    const expanded = !!AppState.boardExpanded[e.memberNo];
+    return `<div class="today-item ${e.log ? 'is-done' : 'is-todo'}${e.aiAlert ? ' is-ai-alert' : ''}${expanded ? ' is-expanded' : ''}">
+      <div class="today-row-wrap">
+        <button type="button" class="today-row ${e.log ? 'is-done' : 'is-todo'}${e.aiAlert ? ' is-ai-alert' : ''}" data-board-member="${escapeHtml(e.key)}">
+          <div class="today-row-main">
+            <div class="today-row-name">${e.aiAlert ? '<span class="today-ai-flag">⚠</span>' : ''}${escapeHtml(e.name)}<small>${escapeHtml(getMemberTag(e.mem))}</small></div>
+            ${renderDailyInputChips(flags)}
+            ${aiHtml}
+            ${checkHtml}
+          </div>
+          <div class="today-row-weight">
+            ${trend.dayWeight === null ? '<span class="today-weight-missing">미입력</span>' : `<b>${trend.dayWeight}kg</b>`}
+            ${renderWeeklyTrendHtml(trend)}
+          </div>
+          <div class="today-row-status">${statusHtml}</div>
+        </button>
+        <button type="button" class="today-expand-btn" data-board-expand="${escapeHtml(e.memberNo)}" aria-expanded="${expanded}" aria-label="${escapeHtml(e.name)} 그날 기록 ${expanded ? '접기' : '펼치기'}">
+          <i class="bi bi-chevron-down"></i>
+        </button>
       </div>
-      <div class="today-row-weight">
-        ${trend.dayWeight === null ? '<span class="today-weight-missing">미입력</span>' : `<b>${trend.dayWeight}kg</b>`}
-        ${renderWeeklyTrendHtml(trend)}
-      </div>
-      <div class="today-row-status">${statusHtml}</div>
-    </button>`;
+      ${expanded ? `<div class="today-detail">${renderDailyRecordDetail(flags)}</div>` : ''}
+    </div>`;
   }).join('');
 }
 
@@ -4134,6 +4308,14 @@ function initTodayBoardActions() {
   const list = document.getElementById('boardList');
   if (list) {
     list.addEventListener('click', (e) => {
+      const expandBtn = e.target.closest('[data-board-expand]');
+      if (expandBtn) {
+        const no = expandBtn.getAttribute('data-board-expand');
+        if (AppState.boardExpanded[no]) delete AppState.boardExpanded[no];
+        else AppState.boardExpanded[no] = true;
+        renderTodayBoard();
+        return;
+      }
       const row = e.target.closest('[data-board-member]');
       if (row) openCoachLogSheet(row.getAttribute('data-board-member'), AppState.boardDate);
     });
@@ -4251,10 +4433,23 @@ function renderCoachLogSummary(mem, memberNo, date) {
       <div><span>7일 평균</span><b>${trend.cur === null ? '-' : `${trend.cur}kg`}</b></div>
       <div><span>전 주 대비</span><b>${renderWeeklyTrendHtml(trend)}</b></div>
     </div>
+    ${renderCoachLogDailyRecord(mem, memberNo, date)}
     <div class="coachlog-lastnote">
       <span><i class="bi bi-chat-quote"></i>직전 코치 한마디${last ? ` · ${escapeHtml(formatDateLabel(last['날짜']))}` : ''}</span>
       <div>${last ? escapeHtml(last['코치 한마디']) : '<em>아직 없습니다.</em>'}</div>
     </div>`;
+}
+
+// 기록 창 위쪽: 그 날 회원 기록 (접힌 상태, 펼쳐서 보며 기록)
+function renderCoachLogDailyRecord(mem, memberNo, date) {
+  const flags = getDailyInputFlags(mem, memberNo, date);
+  const exCount = dailyRows(flags.log, '운동').length;
+  const dietCount = dailyRows(flags.log, '식단').length;
+  const parts = [flags.hasWeight ? `체중 ${flags.weight}kg` : '체중 미입력', exCount ? `운동 ${exCount}개` : '운동 미입력', dietCount ? `식단 ${dietCount}개` : '식단 미입력'];
+  return `<details class="coachlog-daily">
+    <summary><i class="bi bi-person-check-fill"></i><span>회원 기록</span><small>${parts.join(' · ')}</small><i class="bi bi-chevron-down coachlog-daily-caret"></i></summary>
+    ${renderDailyRecordDetail(flags)}
+  </details>`;
 }
 
 function renderCoachLogChoices() {
@@ -4332,7 +4527,7 @@ function setCoachLogSaving(saving, goNext) {
   }
 }
 
-// 오늘 보드 순서에서 현재 회원 다음의 미기록 회원 (끝까지 없으면 처음부터)
+// 데일리 순서에서 현재 회원 다음의 미기록 회원 (끝까지 없으면 처음부터)
 function findNextUnrecordedBoardEntry(currentKey) {
   const entries = getTodayBoardEntries().filter(e => e.memberNo);
   const idx = entries.findIndex(e => e.key === currentKey);
@@ -4497,17 +4692,38 @@ function renderMemberCoachTimeline(mem) {
   const memberNo = getMemberNo(mem);
   const key = getMemberKey(mem);
   const head = `<div class="coach-timeline-head">
-      <h6><i class="bi bi-journal-text"></i>날짜별 코치 기록</h6>
+      <h6><i class="bi bi-journal-text"></i>날짜별 기록</h6>
       ${memberNo ? `<button type="button" class="btn btn-sm btn-primary" data-cl-open="${escapeHtml(key)}" data-cl-date="${localDateKey()}"><i class="bi bi-plus-lg me-1"></i>오늘 기록</button>` : ''}
     </div>`;
   if (!memberNo) {
     el.innerHTML = head + '<div class="coach-timeline-empty">회원번호가 없어 코치 기록을 남길 수 없습니다.</div>';
     return;
   }
-  const logs = getMemberCoachLogs(memberNo);
+  // 코치 기록 + 회원 기록(운동·식단이 있는 날)을 날짜별로 합침, 최신 날짜가 앞
+  const byDate = {};
+  getMemberCoachLogs(memberNo).forEach(r => { byDate[r['날짜']] = { date: r['날짜'], log: r, daily: null }; });
+  AppState.dailyLogs.filter(r => r['회원번호'] === memberNo && (dailyRows(r, '운동').length || dailyRows(r, '식단').length)).forEach(r => {
+    (byDate[r['날짜']] = byDate[r['날짜']] || { date: r['날짜'], log: null, daily: null }).daily = r;
+  });
+  const days = Object.keys(byDate).sort((a, b) => (a < b ? 1 : -1)).map(d => byDate[d]);
   const canLoadMore = AppState.dataSource !== 'mock' && !AppState.coachLogHistoryLoaded[memberNo];
   const tagHtml = (text) => splitCoachLogTags(text).map(t => `<span class="coach-tl-tag">${escapeHtml(t)}</span>`).join('');
-  const items = logs.map(r => {
+  const memberHtml = (daily) => {
+    if (!daily) return '';
+    const ex = summarizeDailyExercise(dailyRows(daily, '운동'));
+    const diet = summarizeDailyDiet(dailyRows(daily, '식단'));
+    return `<div class="coach-tl-member">
+      ${ex ? `<div><span>운동</span>${escapeHtml(ex)}</div>` : ''}
+      ${diet ? `<div><span>식단</span>${escapeHtml(diet)}</div>` : ''}
+    </div>`;
+  };
+  const items = days.map(({ date, log: r, daily }) => {
+    if (!r) {
+      return `<button type="button" class="coach-tl-item is-member-only" data-cl-open="${escapeHtml(key)}" data-cl-date="${escapeHtml(date)}">
+      <div class="coach-tl-date">${escapeHtml(formatDateLabel(date))}</div>
+      <div class="coach-tl-body">${memberHtml(daily)}<div class="coach-tl-nolog">코치 기록 없음 · 눌러서 기록</div></div>
+    </button>`;
+    }
     const statuses = [['식단', r['식단 상태']], ['운동', r['운동 상태']]]
       .filter(([, v]) => v).map(([k, v]) => `<span class="coach-tl-status ${COACH_LOG_STATUS_CLASS[v] || ''}">${k} ${escapeHtml(v)}</span>`).join('');
     const tags = tagHtml(r['식단 태그']) + tagHtml(r['운동 태그']);
@@ -4521,11 +4737,12 @@ function renderMemberCoachTimeline(mem) {
         ${r['메모'] ? `<div class="coach-tl-memo"><i class="bi bi-lock-fill"></i>${escapeHtml(r['메모'])}</div>` : ''}
         ${r['코치 한마디'] ? `<div class="coach-tl-note"><i class="bi bi-chat-heart-fill"></i>${escapeHtml(r['코치 한마디'])}</div>` : ''}
         ${check}
+        ${memberHtml(daily)}
       </div>
     </button>`;
   }).join('');
   el.innerHTML = head +
-    (items ? `<div class="coach-tl-list">${items}</div>` : '<div class="coach-timeline-empty">아직 코치 기록이 없습니다. 오늘 보드나 [오늘 기록]에서 남겨 주세요.</div>') +
+    (items ? `<div class="coach-tl-list">${items}</div>` : '<div class="coach-timeline-empty">아직 기록이 없습니다. 데일리나 [오늘 기록]에서 코치 기록을 남겨 주세요.</div>') +
     (canLoadMore ? `<button type="button" class="btn btn-sm btn-light border w-100 mt-2" data-cl-history="${escapeHtml(memberNo)}"><i class="bi bi-clock-history me-1"></i>60일보다 이전 기록 더 보기</button>` : '');
 }
 
@@ -4537,6 +4754,7 @@ async function loadMoreCoachLogHistory(memberNo, btn) {
   const res = await postToGasBackend({ action: 'getCoachLogHistory', memberNo }, { silent: true, noAbort: true });
   if (res && res.status === 'success' && Array.isArray(res.logs)) {
     res.logs.forEach(log => upsertCoachLogLocal(log));
+    (Array.isArray(res.dailyLogs) ? res.dailyLogs : []).forEach(upsertDailyLogLocal);
     reapplyLocalCoachLogEdits();
     AppState.coachLogHistoryLoaded[memberNo] = true;
   } else {
@@ -4851,7 +5069,7 @@ function initEventListeners() {
   // 코치가 입력칸을 수정하면 표시 (백그라운드 최신화가 작성 중인 내용을 덮어쓰지 않도록 보호)
   document.addEventListener('input', (e) => {
     const t = e.target;
-    // 검색창·그래프 옵션·오늘 보드 날짜·기록 창 입력은 상세 패널 입력이 아니므로 제외
+    // 검색창·그래프 옵션·데일리 날짜·기록 창 입력은 상세 패널 입력이 아니므로 제외
     if (!t || t.id === 'memberSearchInput' || t.id === 'tagStatsIncludeInactive' || t.id === 'boardDateInput') return;
     if (t.closest && t.closest('#coachLogSheet')) return;
     AppState.userEditedSinceRender = true;
