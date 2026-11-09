@@ -873,7 +873,9 @@ async function retryInitialLoad() {
  * - 실패 시 저장본 유지 + 배지에 '서버 연결 실패 (눌러서 재시도)' 표시 (Mock으로 덮어쓰지 않음)
  */
 let backgroundRefreshInFlight = false;
-async function refreshDataInBackground() {
+// options.manual: 코치가 상단 배지를 눌러 직접 최신화 (끝나면 결과를 알림으로 알려 줌)
+async function refreshDataInBackground(options) {
+  const manual = !!(options && options.manual);
   const gasUrl = (AppState.gasUrl || '').trim();
   if (!gasUrl || backgroundRefreshInFlight) return;
   backgroundRefreshInFlight = true;
@@ -895,10 +897,12 @@ async function refreshDataInBackground() {
     console.log(`[백그라운드 최신화 완료] ${((Date.now() - startedAt) / 1000).toFixed(1)}초`);
     applyServerData(resJson.data, gasUrl);
     rerenderAfterBackgroundRefresh();
+    if (manual) showToast(`최신 기록을 불러왔어요 (${formatSyncTime(AppState.lastSyncedAt)} 기준)`, 'success');
   } catch (e) {
     console.warn(`[백그라운드 최신화 실패 ${((Date.now() - startedAt) / 1000).toFixed(1)}초]`, e.message || e);
     AppState.syncState = 'failed';
     updateApiStatusUI();
+    if (manual) showToast('최신 기록을 불러오지 못했어요. 상단 배지를 눌러 다시 시도해 주세요.', 'danger');
   } finally {
     backgroundRefreshInFlight = false;
   }
@@ -5036,50 +5040,76 @@ function initApiSettings() {
   }
 }
 
+function formatSyncTime(ts) {
+  return new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/**
+ * 상단 연결 상태 배지
+ * - 서버 데이터를 보고 있으면 'HH:MM 기준'을 보여 주고, 누르면 바로 최신화 (회원이 방금 저장한 기록 확인용)
+ * - 좁은 화면에서는 상태 점 + 짧은 글자(.api-badge-short)만 표시
+ */
 function updateApiStatusUI() {
   const badge = document.getElementById('apiStatusBadge');
   if (!badge) return;
 
-  const fmtTime = (ts) => new Date(ts).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
   const fmtDateTime = (ts) => new Date(ts).toLocaleString('ko-KR', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   const baseClass = 'badge border py-2 px-3 small';
-  badge.onclick = null;
-  badge.style.cursor = '';
+  const dot = (color) => `<span class="status-dot bg-${color} me-1"></span>`;
+  const spinner = '<span class="spinner-border spinner-border-sm me-1 api-badge-spin" role="status" aria-hidden="true"></span>';
+  const refreshIcon = '<i class="bi bi-arrow-clockwise api-badge-icon"></i>';
+  // label: 넓은 화면 글자, short: 좁은 화면 글자 (없으면 점만)
+  const set = (tone, lead, label, short, title, onClick) => {
+    badge.className = `${baseClass} bg-${tone}-subtle text-${tone === 'warning' ? 'warning-emphasis' : tone} border-${tone}-subtle`;
+    badge.innerHTML = `${lead}<span class="api-badge-label">${label}</span>${short ? `<span class="api-badge-short">${short}</span>` : ''}`;
+    badge.title = title;
+    badge.onclick = onClick || null;
+    badge.onkeydown = onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick(); } } : null;
+    badge.style.cursor = onClick ? 'pointer' : '';
+    if (onClick) {
+      badge.setAttribute('role', 'button');
+      badge.setAttribute('tabindex', '0');
+    } else {
+      badge.removeAttribute('role');
+      badge.removeAttribute('tabindex');
+    }
+  };
+  const manualRefresh = () => refreshDataInBackground({ manual: true });
+  const syncing = AppState.syncState === 'syncing';
 
   if (AppState.dataSource === 'cache') {
     const basis = AppState.cacheSavedAt ? fmtDateTime(AppState.cacheSavedAt) : '이전';
     if (AppState.syncState === 'failed') {
-      badge.className = `${baseClass} bg-danger-subtle text-danger border-danger-subtle`;
-      badge.innerHTML = `<span class="status-dot bg-danger me-1"></span> 저장된 데이터 (${basis} 기준) · 서버 연결 실패 <u>재시도</u>`;
-      badge.title = '구글 시트 서버에 연결하지 못해 마지막으로 불러온 데이터를 표시하고 있습니다. 클릭하면 다시 최신화를 시도합니다.';
-      badge.style.cursor = 'pointer';
-      badge.onclick = () => refreshDataInBackground();
+      set('danger', dot('danger'), ` 저장된 데이터 (${basis} 기준) · 서버 연결 실패 <u>재시도</u>`, refreshIcon,
+        '구글 시트 서버에 연결하지 못해 마지막으로 불러온 데이터를 표시하고 있습니다. 클릭하면 다시 최신화를 시도합니다.', manualRefresh);
     } else {
-      badge.className = `${baseClass} bg-warning-subtle text-warning-emphasis border-warning-subtle`;
-      badge.innerHTML = `<span class="spinner-grow spinner-grow-sm text-warning me-1" style="width: 0.6rem; height: 0.6rem;" role="status" aria-hidden="true"></span> 저장된 데이터 (${basis} 기준) · 최신화 중`;
-      badge.title = '마지막으로 불러온 데이터를 먼저 표시하고, 구글 시트 최신 데이터를 받아오는 중입니다.';
+      set('warning', spinner, ` 저장된 데이터 (${basis} 기준) · 최신화 중`, '',
+        '마지막으로 불러온 데이터를 먼저 표시하고, 구글 시트 최신 데이터를 받아오는 중입니다.');
     }
     return;
   }
 
   if (AppState.dataSource === 'offline') {
-    badge.className = `${baseClass} bg-danger-subtle text-danger border-danger-subtle`;
-    badge.innerHTML = '<span class="status-dot bg-danger me-1"></span> 서버 응답이 늦어요 · <u>다시 시도</u>';
-    badge.title = '구글 시트 서버에서 데이터를 받지 못했습니다. 클릭하면 다시 불러옵니다.';
-    badge.style.cursor = 'pointer';
-    badge.onclick = () => retryInitialLoad();
+    set('danger', dot('danger'), ' 서버 응답이 늦어요 · <u>다시 시도</u>', refreshIcon,
+      '구글 시트 서버에서 데이터를 받지 못했습니다. 클릭하면 다시 불러옵니다.', () => retryInitialLoad());
     return;
   }
 
   if (AppState.isOnline) {
-    badge.className = `${baseClass} bg-success-subtle text-success border-success-subtle`;
-    const syncedAt = AppState.lastSyncedAt ? ` · ${fmtTime(AppState.lastSyncedAt)} 동기화` : '';
-    badge.innerHTML = `<span class="status-dot bg-success me-1"></span> Google Sheets 실시간 연동${syncedAt}`;
-    badge.title = AppState.lastSyncedAt ? `구글 시트 최신 데이터 (${fmtDateTime(AppState.lastSyncedAt)} 수신)` : '구글 시트와 연결되었습니다.';
+    const time = AppState.lastSyncedAt ? formatSyncTime(AppState.lastSyncedAt) : '';
+    const basis = time ? `${time} 기준` : '구글 시트 연동';
+    if (syncing) {
+      set('success', spinner, ` ${basis} · 최신화 중`, time, '구글 시트 최신 데이터를 받아오는 중입니다.');
+    } else if (AppState.syncState === 'failed') {
+      set('danger', dot('danger'), ` ${basis} · 최신화 실패 <u>재시도</u>`, `${time}${refreshIcon}`,
+        '구글 시트 최신 데이터를 받지 못해 마지막으로 불러온 데이터를 표시하고 있습니다. 클릭하면 다시 시도합니다.', manualRefresh);
+    } else {
+      set('success', dot('success'), ` ${basis} ${refreshIcon}`, `${time}${refreshIcon}`,
+        AppState.lastSyncedAt ? `구글 시트 데이터 (${fmtDateTime(AppState.lastSyncedAt)} 수신). 누르면 회원이 새로 입력한 기록까지 다시 불러옵니다.` : '누르면 구글 시트 최신 데이터를 다시 불러옵니다.',
+        manualRefresh);
+    }
   } else {
-    badge.className = `${baseClass} bg-secondary-subtle text-secondary border-secondary-subtle`;
-    badge.innerHTML = '<span class="status-dot bg-secondary me-1"></span> 미리보기 모드 (시트 미연동 · 저장 안 됨)';
-    badge.title = '';
+    set('secondary', dot('secondary'), ' 미리보기 모드 (시트 미연동 · 저장 안 됨)', '', '');
   }
 }
 

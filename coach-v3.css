@@ -120,7 +120,15 @@ body.cv3 {
 #apiStatusBadge {
   border-radius: 999px;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
 }
+#apiStatusBadge .api-badge-short { display: none; }
+#apiStatusBadge .api-badge-icon { margin-left: 2px; }
+#apiStatusBadge .api-badge-spin { width: 0.7rem; height: 0.7rem; border-width: 2px; }
+#apiStatusBadge[role="button"]:hover { filter: brightness(0.97); }
+#apiStatusBadge[role="button"]:focus-visible { outline: 2px solid var(--cv-primary); outline-offset: 2px; }
 
 /* ========================================================================= */
 /* [공통 카드 / 버튼 / 입력 리프레시] */
@@ -1061,13 +1069,18 @@ body.cv3 {
 @media (max-width: 575.98px) {
   body.cv3 { overflow-x: clip; }
 
+  /* 좁은 화면: 상태 점 + 짧은 글자(시각·새로고침 아이콘)만 */
   #apiStatusBadge {
-    font-size: 0 !important;
-    padding: 9px !important;
-    line-height: 0;
+    padding: 7px 9px !important;
+    line-height: 1;
+    font-size: 0.72rem !important;
+    gap: 3px;
   }
+  #apiStatusBadge .api-badge-label { display: none; }
+  #apiStatusBadge .api-badge-short { display: inline-flex; align-items: center; gap: 2px; }
+  #apiStatusBadge .api-badge-short:empty { display: none; }
 
-  #apiStatusBadge .status-dot {
+  #apiStatusBadge .status-dot, #apiStatusBadge .api-badge-spin {
     margin: 0 !important;
     width: 10px;
     height: 10px;
