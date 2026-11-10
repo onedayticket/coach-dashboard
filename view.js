@@ -126,7 +126,7 @@ DAY2 (휴식) - 가벼운 스트레칭 및 회복 휴식
   // M001 회원의 WeightLog 일일 기록 (체중·운동·식단, 서버는 본인 회원번호 행만 보냄)
   dailyLogs: [
     { '날짜': '2026-10-12', '체중': 81.4, '운동': [], '식단': [], '휴식': '계획된 휴식' },
-    { '날짜': '2026-10-14', '체중': '', '운동': [{ '종목': '트레드밀 경사도 걷기', '횟수': '30분', '세트': 1, '무게': '', '비고': '' }], '식단': [] },
+    { '날짜': '2026-10-14', '체중': '', '운동': [{ '종목': '트레드밀 경사도 걷기', '횟수': '30분', '세트': 1, '무게': '', '비고': '' }], '식단': [], '휴식': '운동 완료' },
     { '날짜': '2026-10-15', '체중': 81.1,
       '운동': [{ '종목': '벤치프레스', '횟수': '12', '세트': 3, '무게': 40, '비고': '' }, { '종목': '랫풀다운', '횟수': '12', '세트': 3, '무게': 35, '비고': '마지막 세트 힘듦' }],
       '식단': [{ '항목': '아침', '음식': '사과 1/2개', '비고': '' }, { '항목': '아침', '음식': '삶은 달걀 2개', '비고': '' }, { '항목': '점심', '음식': '현미밥 2/3공기 + 닭가슴살', '비고': '회사 근처' }] }
@@ -1962,7 +1962,7 @@ function renderPlanRegenPanel(kind, member) {
   `;
 }
 
-// AI가 정리한 '요청 반영 안내' (반영한 내용 / 코치님 지침과 다른 부분 / 반영하지 못한 내용과 이유) 표시
+// AI가 정리한 '요청 반영 안내' (반영한 내용 / 반영하지 못한 내용과 이유) 표시 - 예전 안내의 '코치님 지침과 다른 부분' 줄도 그대로 읽음
 function renderRequestNoteBox(note) {
   if (!note) return '';
   const hasUnapplied = /반영하지\s*못한\s*내용\s*:\s*(?!없음)\S/.test(note);
@@ -2191,7 +2191,7 @@ function resizeMemberCharts() {
  * ==============================================================================
  * [기록 탭] 날짜별 체중·운동·식단을 한 번에 기록 (구글 폼 대체)
  * - 서버(memberSaveDailyLog)가 WeightLog의 본인 회원번호+날짜 행을 덮어쓰거나 새로 씀 (체중·운동·식단·휴식이 모두 비면 행 삭제)
- * - 운동 휴식: 계획된 휴식 / 미계획된 휴식 체크박스 (둘 중 하나만)
+ * - 운동 상태: 운동 완료 / 계획된 휴식 / 미계획된 휴식 체크박스 (셋 중 하나만, 필드 이름은 예전 그대로 '휴식')
  * - 입력 중인 내용은 회원·날짜별로 localStorage에 임시 보관 (저장 성공 시 삭제)
  * - 저장 성공 후 화면의 기록도 같은 규칙으로 고쳐 바로 반영 (새로고침하면 시트 값으로 다시 받음)
  * ==============================================================================
@@ -2200,8 +2200,14 @@ const RECORD_DRAFT_PREFIX = 'coach_dash_view_draft_v1_';
 const DIET_MEALS = ['아침', '점심', '저녁', '간식'];
 const RECORD_LIMITS = { exerciseRows: 30, dietRows: 30, exerciseName: 40, food: 100, note: 100 };
 const AUTOCOMPLETE_MAX = 8;
-// 운동 휴식 표시 (둘 중 하나만, 서버 EXERCISE_REST_TYPES와 같은 값)
-const EXERCISE_REST_TYPES = ['계획된 휴식', '미계획된 휴식'];
+// 운동 상태 표시 (셋 중 하나만, 서버 EXERCISE_REST_TYPES와 같은 값)
+const EXERCISE_REST_TYPES = ['운동 완료', '계획된 휴식', '미계획된 휴식'];
+const EXERCISE_REST_CLASS = { '운동 완료': 'is-done', '계획된 휴식': 'is-planned', '미계획된 휴식': 'is-unplanned' };
+const EXERCISE_REST_HINT = {
+  '운동 완료': '오늘 운동한 날로 기록돼요.',
+  '계획된 휴식': '루틴대로 쉬는 날로 기록돼요. 쉬면서 스트레칭 등을 했다면 아래에 함께 적어도 돼요.',
+  '미계획된 휴식': '계획에 없던 휴식으로 기록돼요. 쉬면서 스트레칭 등을 했다면 아래에 함께 적어도 돼요.'
+};
 const RecordState = {
   date: '', weight: '', exercise: [], diet: [], rest: '',
   busy: false, status: '', draftRestored: false, routineOpen: false, acIndex: -1
@@ -2423,18 +2429,19 @@ function renderRecordTab() {
       <div class="mp-rec-head"><h3><i class="bi bi-lightning-charge-fill"></i>운동</h3>
         <button type="button" class="mp-link-btn" data-act="routine-toggle"><i class="bi bi-list-check me-1"></i>오늘 루틴 불러오기</button>
       </div>
-      <div class="mp-rec-rest" role="group" aria-label="오늘 운동 휴식">
-        ${EXERCISE_REST_TYPES.map(t => `<label class="mp-rec-rest-opt ${RecordState.rest === t ? 'is-on' : ''} ${t === '미계획된 휴식' ? 'is-unplanned' : ''}">
+      <div class="mp-rec-rest" role="group" aria-label="오늘 운동 상태">
+        ${EXERCISE_REST_TYPES.map(t => `<label class="mp-rec-rest-opt ${RecordState.rest === t ? 'is-on' : ''} ${EXERCISE_REST_CLASS[t]}">
           <input type="checkbox" class="form-check-input" data-rec="rest" value="${t}" ${RecordState.rest === t ? 'checked' : ''}>${t}</label>`).join('')}
       </div>
-      ${RecordState.rest ? `<div class="mp-rec-hint mb-2">${RecordState.rest === '계획된 휴식' ? '루틴대로 쉬는 날로 기록돼요.' : '계획에 없던 휴식으로 기록돼요.'} 쉬면서 스트레칭 등을 했다면 아래에 함께 적어도 돼요.</div>` : ''}
+      ${RecordState.rest ? `<div class="mp-rec-hint mb-2">${EXERCISE_REST_HINT[RecordState.rest]}</div>` : ''}
+      <div class="mp-rec-subhead">운동 상세 기록 <small class="mp-rec-optional">선택사항</small></div>
       ${routineHtml}
       <div class="mp-rec-ex-list">${exerciseHtml}</div>
       <button type="button" class="mp-btn mp-btn-ghost mp-btn-block mt-2" data-act="ex-add" ${RecordState.exercise.length >= RECORD_LIMITS.exerciseRows ? 'disabled' : ''}><i class="bi bi-plus-lg"></i>운동 추가</button>
     </section>
 
     <section class="mp-card mp-rec-card">
-      <div class="mp-rec-head"><h3><i class="bi bi-egg-fried"></i>식단</h3><small>항목 옆 + 는 식사 추가, 음식 옆 + 는 같은 식사에 음식 추가</small></div>
+      <div class="mp-rec-head"><h3><i class="bi bi-egg-fried"></i>식단 기록 <small class="mp-rec-optional">선택사항</small></h3><small>항목 옆 + 는 식사 추가, 음식 옆 + 는 같은 식사에 음식 추가</small></div>
       <div class="mp-rec-meals">${dietHtml}</div>
     </section>
 
@@ -2580,7 +2587,7 @@ function initRecordForm() {
       RecordState.diet[+el.dataset.g].meal = el.value;
       scheduleRecordDraftSave();
     }
-    // 휴식 체크박스는 둘 중 하나만 (다시 누르면 해제)
+    // 운동 상태 체크박스는 셋 중 하나만 (다시 누르면 해제)
     if (el.dataset.rec === 'rest') {
       RecordState.rest = el.checked ? el.value : '';
       scheduleRecordDraftSave();

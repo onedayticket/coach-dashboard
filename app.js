@@ -70,7 +70,12 @@ const MOCK_DB = {
 - 저녁: 닭가슴살 샐러드 (발사믹 드레싱) + 삶은 고구마 100g
 - 수분: 하루 2L 이상 (텀블러 4회)`,
       '체중 목표': '',
-      '운동 목적': ''
+      '운동 목적': '',
+      '운동 고정 조건': '허리 통증 - 데드리프트·고중량 스쿼트 제외',
+      '식단 고정 조건': '',
+      '회원 운동 요청': '주 3회 말고 주 4회로 늘려 주세요',
+      '회원 운동 요청 결과': '- 반영한 내용: 운동일을 주 4회로 늘렸어요.\n- 반영하지 못한 내용: 없음',
+      '회원 운동 변경일시': `${localDateKey()} 08:40`
     },
     {
       '회원번호': 'M002',
@@ -95,7 +100,9 @@ const MOCK_DB = {
 - 점심: 현미 포케 (연어 또는 닭가슴살)
 - 저녁: 단호박 에그슬럿 + 방울토마토`,
       '체중 목표': '',
-      '운동 목적': ''
+      '운동 목적': '',
+      '운동 고정 조건': '',
+      '식단 고정 조건': '유당불내증 - 우유 대신 두유·락토프리'
     },
     {
       '회원번호': 'M003',
@@ -118,6 +125,12 @@ const MOCK_DB = {
       '체중 목표': '',
       '운동 목적': ''
     }
+  ],
+  // MemberPlanLog 수정 이력 (M001, 최신순 - getPlanHistory와 같은 필드)
+  planHistory: [
+    { at: `${localDateKey()} 08:40`, kind: 'exercise', action: 'AI 재생성', requester: '회원', request: '주 3회 말고 주 4회로 늘려 주세요', note: '- 반영한 내용: 운동일을 주 4회로 늘렸어요.\n- 반영하지 못한 내용: 없음' },
+    { at: '2026-10-20 21:05', kind: 'exercise', action: '코치 수정', requester: '코치', request: '스쿼트를 맨몸으로, 플랭크 추가', note: '' },
+    { at: '2026-10-08 10:00', kind: 'diet', action: '코치 새로 만들기', requester: '코치', request: '', note: '' }
   ],
   // WeightLog 시트 (날짜 | 회원번호 | 이름 | 체중 | 입력자 | 기록시각) - 미리보기에서 데일리가 보이도록 오늘 기준 날짜로 만듦
   weights: buildMockWeights(),
@@ -174,6 +187,7 @@ function buildMockDailyLogs() {
   return [
     { '날짜': shiftDateKey(today, -1), '회원번호': 'M001', '체중': 80.2,
       '운동': [ex('벤치프레스', '12', 3, 40), ex('인클라인 덤벨프레스', '12', 3, 12), ex('트레드밀 경사도 걷기', '30분', 1, '', '경사 8')],
+      '휴식': '운동 완료',
       '식단': [meal('아침', '그릭요거트'), meal('아침', '삶은 달걀 2개'), meal('점심', '현미밥 2/3공기', '회사 식당'), meal('저녁', '닭가슴살 샐러드')] },
     { '날짜': today, '회원번호': 'M001', '체중': 80.1, '운동': [], '식단': [meal('아침', '사과 1/2개')], '휴식': '계획된 휴식' },
     { '날짜': shiftDateKey(today, -1), '회원번호': 'M002', '체중': 58.1, '운동': [], '식단': [meal('점심', '포케'), meal('간식', '아메리카노')] },
@@ -220,6 +234,10 @@ const AppState = {
   analysisFailures: {}, // 회원번호 -> { at, reason } 마지막 분석 실패 (성공하면 서버가 지움)
   analysisHistoryLoaded: {}, // 회원번호 -> 이전 보고 전문을 받아 왔는지
   analysisRunning: {}, // 회원번호 -> [분석 업데이트] 진행 중
+  planDrafts: {}, // '회원번호|exercise|diet' -> AI 결과 초안 { plan, mode, requests, basePlan } (적용 전, 메모리에만)
+  planHistory: {}, // 회원번호 -> 루틴·식단 수정 이력 (MemberPlanLog, 펼칠 때 getPlanHistory)
+  planHistoryLoading: {},
+  planHistoryFailed: {},
   localCoachLogEdits: [], // 방금 저장한 기록 (저장 직전에 출발한 백그라운드 최신화가 덮어쓰지 않도록 잠깐 다시 적용)
   boardDate: localDateKey(), // 데일리 날짜
   guidelines: {
@@ -604,7 +622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
  */
 
 // 이 프론트엔드가 기대하는 GAS 백엔드 코드 버전 (gas_backend.js의 BACKEND_VERSION과 반드시 동일)
-const EXPECTED_BACKEND_VERSION = '2026-11-08.3';
+const EXPECTED_BACKEND_VERSION = '2026-11-09.1';
 
 /**
  * [백그라운드] GAS 배포 버전 점검 + AI 키 확보 (데이터 로드 직후 1회, 화면 로딩을 막지 않음)
@@ -1249,7 +1267,7 @@ function hasBrowserGeminiKey() {
 async function requestAiPromptFromGas(kind, fields) {
   const res = await postToGasBackend({ action: 'buildAiPrompt', kind, ...fields }, { silent: true });
   if (res && res.status === 'success' && res.prompt) {
-    return { prompt: res.prompt, systemInstruction: res.systemInstruction || '', scores: res.scores || null, maxOutputTokens: res.maxOutputTokens || null };
+    return { prompt: res.prompt, systemInstruction: res.systemInstruction || '', mode: res.mode || '', scores: res.scores || null, maxOutputTokens: res.maxOutputTokens || null };
   }
   if (res && res.status !== 'cancelled') console.warn('[AI 프롬프트 수신 실패 -> GAS 생성으로 진행]', res && res.message);
   return null;
@@ -1464,14 +1482,34 @@ function simulateMockAction(payload) {
   }
 
   if (action === 'updateMemberGuidelineRoutine') {
-    const mem = AppState.members.find(m => getMemberKey(m) === payload.memberKey);
-    if (mem) {
-      if (payload.exerciseGuideline !== undefined) mem['운동 루틴 수정 제안 지침'] = payload.exerciseGuideline;
-      if (payload.dietGuideline !== undefined) mem['식단 수정 제안 지침'] = payload.dietGuideline;
-      if (payload.exerciseRoutine !== undefined) mem['현재 제안 운동 루틴'] = payload.exerciseRoutine;
-      if (payload.dietRoutine !== undefined) mem['현재 제안 식단'] = payload.dietRoutine;
-    }
+    const mem = AppState.members.find(m => getMemberNo(m) === (payload.memberNo || payload.memberKey));
+    if (!mem) return { status: 'error', code: 'not_found', message: '회원번호를 찾지 못했습니다.' };
+    if (payload.exerciseGuideline !== undefined) setMemberFieldExact(mem, PLAN_PANEL.exercise.requestFields, payload.exerciseGuideline);
+    if (payload.dietGuideline !== undefined) setMemberFieldExact(mem, PLAN_PANEL.diet.requestFields, payload.dietGuideline);
+    if (payload.exerciseFixed !== undefined) setMemberFieldExact(mem, [PLAN_PANEL.exercise.fixedField], payload.exerciseFixed);
+    if (payload.dietFixed !== undefined) setMemberFieldExact(mem, [PLAN_PANEL.diet.fixedField], payload.dietFixed);
+    if (payload.exerciseRoutine !== undefined) mem['현재 제안 운동 루틴'] = payload.exerciseRoutine;
+    if (payload.dietRoutine !== undefined) mem['현재 제안 식단'] = payload.dietRoutine;
     return { status: 'success', message: '로컬 Mock에 루틴/지침이 저장되었습니다.' };
+  }
+
+  // 루틴·식단 적용: 서버와 같은 규칙(플랜 저장 + AI 결과면 이번 수정 요청 비움 + 이력)으로 화면 메모리에만 반영
+  if (action === 'applyPlanChange') {
+    const p = PLAN_PANEL[payload.kind];
+    const mem = AppState.members.find(m => getMemberNo(m) === payload.memberNo);
+    if (!p || !mem) return { status: 'error', code: 'not_found', message: '회원번호를 찾지 못했습니다.' };
+    const current = getMemberFieldExact(mem, [p.planField]);
+    if (payload.basePlan !== undefined && !payload.force && current.trim() !== String(payload.basePlan).trim()) {
+      return { status: 'error', code: 'plan_changed', message: `그사이 회원이 ${p.label}을 바꿨습니다. 덮어쓰면 회원이 바꾼 내용이 사라집니다.`, currentPlan: current };
+    }
+    const now = new Date();
+    const at = `${localDateKey()} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    const actionLabel = { edit: '코치 수정', new: '코치 새로 만들기', manual: '코치 직접 편집' }[payload.mode];
+    MOCK_DB.planHistory.unshift({ at, kind: payload.kind, action: actionLabel, requester: '코치', request: payload.request || '', note: '' });
+    return { status: 'success', memberNo: payload.memberNo, kind: payload.kind, mode: payload.mode, plan: payload.plan, requestCleared: payload.mode !== 'manual', changedAt: at };
+  }
+  if (action === 'getPlanHistory') {
+    return { status: 'success', memberNo: payload.memberNo, history: payload.memberNo === 'M001' ? MOCK_DB.planHistory.slice() : [] };
   }
 
   if (action === 'updateGuidelines') {
@@ -2560,62 +2598,15 @@ function updatePersonalInfoPanel(mem) {
   }
 }
 
-function omitGuideAndSelfEditFields(mem) {
-  const selfEdit = ['회원운동요청', '회원식단요청', '이전버전(운동)', '이전버전(식단)', '회원운동변경일시', '회원식단변경일시', '회원운동요청결과', '회원식단요청결과'];
-  const out = {};
-  Object.keys(mem || {}).forEach(k => {
-    const clean = String(k).replace(/\s+/g, '');
-    if (clean.includes('지침') || clean.includes('분석') || selfEdit.includes(clean)) return;
-    out[k] = mem[k];
-  });
-  return out;
-}
-
 /**
- * [중단] 지침 및 루틴 관리 패널 바인딩
+ * [중단] 루틴·식단 관리 패널 바인딩 (고정 조건·이번 수정 요청·현재 플랜·적용 전 초안·수정 이력)
  */
 function updateGuidelineRoutinePanel(mem) {
-  const exGuide = getField(mem, 
-    '운동 루틴 수정 제안 지침', '운동루틴수정제안지침', 
-    '운동 수정 제안 지침', '운동수정제안지침', 
-    '운동 제안 지침서', '운동제안지침서', 
-    '운동수정지침', '운동제안지침', '운동지침'
-  );
-  // 루틴/식단 값은 지침 열·회원 셀프 수정 열(요청/이전 버전/변경일시)을 제외하고 탐색 (부분 일치로 지침 문구가 루틴 칸에 채워지는 오매칭 방지)
-  const planSource = omitGuideAndSelfEditFields(mem);
-  const exRoutine = getField(planSource, 
-    '현재 제안 운동 루틴', '현재제안운동루틴', 
-    '제안운동루틴', '제안 운동 루틴', 
-    '현재운동루틴', '현재 운동 루틴', 
-    '운동루틴', '운동 루틴'
-  );
-  const dietGuide = getField(mem, 
-    '식단 수정 제안 지침', '식단수정제안지침', 
-    '식단 제안 지침서', '식단제안지침서', 
-    '식단수정지침', '식단제안지침', '식단지침'
-  );
-  const dietRoutine = getField(planSource, 
-    '현재 제안 식단', '현재제안식단', 
-    '제안식단', '제안 식단', 
-    '현재식단', '현재 식단', 
-    '식단계획', '식단 계획'
-  );
-
   MEMBER_PLAN_CHANGE_KINDS.forEach(k => renderMemberRequestNoteForCoach(mem, k));
-
-  setInputValue('inputExerciseGuideline', exGuide);
-  setInputValue('inputCurrentExerciseRoutine', exRoutine);
-  setInputValue('inputDietGuideline', dietGuide);
-  setInputValue('inputCurrentDietPlan', dietRoutine);
-
-  // [아코디언 표 미리보기 렌더링 (운동 & 식단)]
-  renderCoachWorkoutRoutinePreview(exRoutine);
-  switchRoutineViewMode('table');
-  renderCoachDietPlanPreview(dietRoutine);
-  switchDietViewMode('table');
+  Object.keys(PLAN_PANEL).forEach(kind => renderPlanPanelInputs(mem, kind));
 }
 
-// 회원이 마이페이지에서 마지막으로 요청한 수정과 '요청 반영 안내'를 지침 칸 아래에 표시 (코치 지침과 다른 부분은 빨간색 강조)
+// 회원이 마이페이지에서 마지막으로 요청한 수정과 '요청 반영 안내'를 이번 수정 요청 칸 아래에 표시 (반영 안 된 부분은 빨간색 강조)
 function renderMemberRequestNoteForCoach(mem, k) {
   const box = document.getElementById(`${k.kind}MemberRequestNote`);
   if (!box) return;
@@ -2628,11 +2619,14 @@ function renderMemberRequestNoteForCoach(mem, k) {
     box.innerHTML = '';
     return;
   }
+  // 예전 안내의 '코치님 지침과 다른 부분' 또는 새 안내의 '반영하지 못한 내용'(고정 조건·안전 원칙 등)이 있으면 강조
   const conflict = hasCoachConflictRequestNote(note);
-  box.className = `mt-2 p-2 rounded-3 small border ${conflict ? 'border-danger bg-danger-subtle' : 'bg-light'}`;
+  const unapplied = hasUnappliedRequestNote(note);
+  const warn = conflict || unapplied;
+  box.className = `mt-2 p-2 rounded-3 small border ${warn ? 'border-danger bg-danger-subtle' : 'bg-light'}`;
   box.innerHTML = `
-    <div class="fw-bold ${conflict ? 'text-danger' : 'text-dark'} mb-1">
-      <i class="bi ${conflict ? 'bi-exclamation-octagon-fill' : 'bi-person-gear'} me-1"></i>회원 셀프 수정 (${escapeHtml(changedAt)})${conflict ? ' · 코치 지침과 다른 부분 있음' : ''}
+    <div class="fw-bold ${warn ? 'text-danger' : 'text-dark'} mb-1">
+      <i class="bi ${warn ? 'bi-exclamation-octagon-fill' : 'bi-person-gear'} me-1"></i>회원 셀프 수정 (${escapeHtml(changedAt)})${conflict ? ' · 코치 지침과 다른 부분 있음' : (unapplied ? ' · 반영 안 된 요청 있음' : '')}
     </div>
     ${request ? `<div class="text-muted mb-1">요청: ${escapeHtml(request)}</div>` : ''}
     ${note ? `<div class="text-dark" style="white-space: pre-wrap;">${escapeHtml(note)}</div>` : ''}
@@ -3421,249 +3415,383 @@ function initGuidelineRoutineActions() {
     renderCoachDietPlanPreview(inputCurrentDietPlan.value);
   });
 
-  // 1. 운동 루틴 수정 제안 지침 [저장]
-  const btnSaveExGuide = document.getElementById('btnSaveExerciseGuideline');
-  if (btnSaveExGuide) {
-    btnSaveExGuide.addEventListener('click', async () => {
-      if (!AppState.selectedMember) return;
-      const key = getMemberKey(AppState.selectedMember);
-      const val = getInputValue('inputExerciseGuideline');
-      AppState.selectedMember['운동 루틴 수정 제안 지침'] = val;
+  // 1~4. 고정 조건 저장 / 이번 수정 요청 임시 저장 / 현재 플랜 저장(초안이 있으면 적용) / AI 수정·새로 만들기
+  Object.keys(PLAN_PANEL).forEach(kind => {
+    const p = PLAN_PANEL[kind];
+    document.getElementById(p.fixedSaveBtn)?.addEventListener('click', () => savePlanMemberField(kind, 'fixed'));
+    document.getElementById(p.requestSaveBtn)?.addEventListener('click', () => savePlanMemberField(kind, 'request'));
+    document.getElementById(p.planSaveBtn)?.addEventListener('click', () => applyPlanChange(kind));
+  });
+  document.querySelectorAll('[data-plan-ai]').forEach(btn => {
+    btn.addEventListener('click', () => runPlanAi(btn.getAttribute('data-plan-ai'), btn.getAttribute('data-plan-mode')));
+  });
+  document.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target : null;
+    if (!t) return;
+    const applyBtn = t.closest('[data-plan-apply]');
+    if (applyBtn) return applyPlanChange(applyBtn.getAttribute('data-plan-apply'));
+    const discardBtn = t.closest('[data-plan-discard]');
+    if (discardBtn) return discardPlanDraft(discardBtn.getAttribute('data-plan-discard'));
+    const retryBtn = t.closest('[data-plan-history-retry]');
+    if (retryBtn && AppState.selectedMember) loadPlanHistory(getMemberNo(AppState.selectedMember), true);
+  });
+  // 최근 수정 이력: 펼칠 때 불러옴 (toggle은 버블링되지 않아 캡처로 받음)
+  document.addEventListener('toggle', (e) => {
+    const el = e.target;
+    if (!el || !el.matches || !el.matches('[data-plan-history]') || !el.open || !AppState.selectedMember) return;
+    const memberNo = getMemberNo(AppState.selectedMember);
+    if (memberNo && !AppState.planHistory[memberNo]) loadPlanHistory(memberNo);
+  }, true);
+}
 
-      showToast('운동 수정 제안 지침을 시트(Members)에 저장 중...', 'info');
-      const res = await postToGasBackend({
-        action: 'updateMemberGuidelineRoutine',
-        memberKey: key,
-        exerciseGuideline: val
-      });
-      if (res && res.status === 'success') showToast('운동 수정 지침이 구글 시트에 저장되었습니다.', 'success');
-    });
+/**
+ * ==============================================================================
+ * [루틴·식단] 현재 플랜 기준 수정 / 새로 만들기 / 적용 (프롬프트는 서버 buildWorkoutPrompt·buildDietPrompt에서만 만듦)
+ * - [수정]: 지금 화면의 플랜(초안이 있으면 초안) + 이번 수정 요청 + 고정 조건 → 요청한 부분만 바꿈
+ * - [새로 만들기]: 신청서 기준으로 처음부터 (회원 변경 이력이 있으면 먼저 확인 창)
+ * - AI 결과는 바로 저장하지 않고 '적용 전' 초안으로 보여 줌 → [적용]하면 applyPlanChange
+ *   (현재 플랜 저장 + 이번 수정 요청 칸 비우기 + MemberPlanLog 이력, 그사이 회원이 바꿨으면 확인 후 덮어씀)
+ * - 초안은 회원번호·종류별로 화면 메모리에만 보관 (다른 회원을 보고 와도 유지, 새로고침하면 사라짐)
+ * ==============================================================================
+ */
+const PLAN_PANEL = {
+  exercise: {
+    label: '운동 루틴', short: '루틴', aiKind: 'workout', action: 'generateWorkoutRoutine', resultKey: 'routine',
+    planField: '현재 제안 운동 루틴', requestFields: ['운동 루틴 수정 제안 지침', '운동 수정 제안 지침'], fixedField: '운동 고정 조건', previousField: '이전 버전(운동)',
+    requestInput: 'inputExerciseGuideline', fixedInput: 'inputExerciseFixed', planInput: 'inputCurrentExerciseRoutine',
+    requestSaveBtn: 'btnSaveExerciseGuideline', fixedSaveBtn: 'btnSaveExerciseFixed', planSaveBtn: 'btnSaveExerciseRoutine',
+    payloadRequest: 'exerciseGuideline', payloadFixed: 'exerciseFixed',
+    render: (text) => { renderCoachWorkoutRoutinePreview(text); switchRoutineViewMode('table'); }
+  },
+  diet: {
+    label: '식단', short: '식단', aiKind: 'diet', action: 'generateDietPlan', resultKey: 'dietPlan',
+    planField: '현재 제안 식단', requestFields: ['식단 수정 제안 지침'], fixedField: '식단 고정 조건', previousField: '이전 버전(식단)',
+    requestInput: 'inputDietGuideline', fixedInput: 'inputDietFixed', planInput: 'inputCurrentDietPlan',
+    requestSaveBtn: 'btnSaveDietGuideline', fixedSaveBtn: 'btnSaveDietFixed', planSaveBtn: 'btnSaveDietPlan',
+    payloadRequest: 'dietGuideline', payloadFixed: 'dietFixed',
+    render: (text) => { renderCoachDietPlanPreview(text); switchDietViewMode('table'); }
   }
+};
+const PLAN_HISTORY_ACTION_LABEL = { '코치 수정': '수정', '코치 새로 만들기': '새로 만들기', '코치 직접 편집': '직접 편집', 'AI 재생성': 'AI 셀프 수정', '이전 버전 되돌림': '이전 버전 되돌림' };
 
-  // 2. 현재 제안 운동 루틴 [저장]
-  const btnSaveExRoutine = document.getElementById('btnSaveExerciseRoutine');
-  if (btnSaveExRoutine) {
-    btnSaveExRoutine.addEventListener('click', async () => {
-      if (!AppState.selectedMember) return;
-      const key = getMemberKey(AppState.selectedMember);
-      const val = getInputValue('inputCurrentExerciseRoutine');
-      AppState.selectedMember['현재 제안 운동 루틴'] = val;
+// 열 이름이 정확히 같은(공백·대소문자 무시) 회원 값 (부분 일치 금지 - 서버 exactMemberField와 같은 규칙)
+function findMemberFieldKey(mem, names) {
+  const wanted = names.map(n => String(n).replace(/[\s_]+/g, '').toLowerCase());
+  return Object.keys(mem || {}).find(k => wanted.includes(String(k).replace(/[\s_]+/g, '').toLowerCase()));
+}
 
-      // 미리보기 아코디언도 최신 내용으로 동기화
-      renderCoachWorkoutRoutinePreview(val);
-
-      showToast('현재 제안 운동 루틴을 시트(Members)에 저장 중...', 'info');
-      const res = await postToGasBackend({
-        action: 'updateMemberGuidelineRoutine',
-        memberKey: key,
-        exerciseRoutine: val
-      });
-      if (res && res.status === 'success') showToast('운동 루틴이 구글 시트에 저장되었습니다.', 'success');
-    });
+function getMemberFieldExact(mem, names) {
+  const keys = Object.keys(mem || {});
+  const wanted = names.map(n => String(n).replace(/[\s_]+/g, '').toLowerCase());
+  for (const k of keys) {
+    if (!wanted.includes(String(k).replace(/[\s_]+/g, '').toLowerCase())) continue;
+    const v = mem[k];
+    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
   }
+  return '';
+}
 
-  // 3. 식단 수정 제안 지침 [저장]
-  const btnSaveDietGuide = document.getElementById('btnSaveDietGuideline');
-  if (btnSaveDietGuide) {
-    btnSaveDietGuide.addEventListener('click', async () => {
-      if (!AppState.selectedMember) return;
-      const key = getMemberKey(AppState.selectedMember);
-      const val = getInputValue('inputDietGuideline');
-      AppState.selectedMember['식단 수정 제안 지침'] = val;
+function setMemberFieldExact(mem, names, value) {
+  if (!mem) return;
+  mem[findMemberFieldKey(mem, names) || names[0]] = value;
+}
 
-      showToast('식단 수정 제안 지침을 시트(Members)에 저장 중...', 'info');
-      const res = await postToGasBackend({
-        action: 'updateMemberGuidelineRoutine',
-        memberKey: key,
-        dietGuideline: val
-      });
-      if (res && res.status === 'success') showToast('식단 수정 지침이 구글 시트에 저장되었습니다.', 'success');
-    });
+function planDraftKey(memberNo, kind) {
+  return `${memberNo}|${kind}`;
+}
+
+function getPlanDraft(memberNo, kind) {
+  return memberNo ? AppState.planDrafts[planDraftKey(memberNo, kind)] || null : null;
+}
+
+function setPlanText(kind, text) {
+  const p = PLAN_PANEL[kind];
+  setInputValue(p.planInput, text);
+  p.render(text);
+}
+
+// 지금 회원의 현재 플랜·이번 수정 요청·고정 조건을 입력칸에 채움 (초안이 있으면 초안을 보여 줌)
+function renderPlanPanelInputs(mem, kind) {
+  const p = PLAN_PANEL[kind];
+  const draft = getPlanDraft(getMemberNo(mem), kind);
+  setInputValue(p.fixedInput, getMemberFieldExact(mem, [p.fixedField]));
+  // 초안을 만든 요청은 초안에 들어 있으므로 요청 칸은 비워 둠 ([버리기]하면 돌려놓음)
+  setInputValue(p.requestInput, draft ? '' : getMemberFieldExact(mem, p.requestFields));
+  setPlanText(kind, draft ? draft.plan : getMemberFieldExact(mem, [p.planField]));
+  renderPlanDraftBar(kind);
+  renderPlanHistory(kind);
+}
+
+function renderPlanDraftBar(kind) {
+  const bar = document.getElementById(`${kind}PlanDraftBar`);
+  if (!bar) return;
+  const mem = AppState.selectedMember;
+  const draft = mem ? getPlanDraft(getMemberNo(mem), kind) : null;
+  if (!draft) {
+    bar.classList.add('d-none');
+    bar.innerHTML = '';
+    return;
   }
+  const p = PLAN_PANEL[kind];
+  bar.classList.remove('d-none');
+  bar.innerHTML = `
+    <div class="plan-draft-head"><i class="bi bi-eye-fill"></i><b>AI ${draft.mode === 'new' ? '새로 만들기' : '수정'} 결과 미리보기</b><span class="plan-draft-badge">적용 전</span></div>
+    ${draft.requests.length ? `<div class="plan-draft-req">요청: ${escapeHtml(draft.requests.join(' / '))}</div>` : ''}
+    <div class="plan-draft-hint">아래 ${p.label}을 확인하고 [적용]하면 회원 화면에 반영되고, 이번 수정 요청은 수정 이력으로 옮겨집니다. 더 고칠 부분은 요청을 적고 [수정]을 다시 누르세요.</div>
+    <div class="plan-draft-actions">
+      <button type="button" class="btn btn-primary btn-sm fw-bold" data-plan-apply="${kind}"><i class="bi bi-check2-circle me-1"></i>적용</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" data-plan-discard="${kind}"><i class="bi bi-x-lg me-1"></i>버리기</button>
+    </div>`;
+}
 
-  // 4. 현재 제안 식단 [저장]
-  const btnSaveDietPlan = document.getElementById('btnSaveDietPlan');
-  if (btnSaveDietPlan) {
-    btnSaveDietPlan.addEventListener('click', async () => {
-      if (!AppState.selectedMember) return;
-      const key = getMemberKey(AppState.selectedMember);
-      const val = getInputValue('inputCurrentDietPlan');
-      AppState.selectedMember['현재 제안 식단'] = val;
-      renderCoachDietPlanPreview(val);
-
-      showToast('현재 제안 식단을 시트(Members)에 저장 중...', 'info');
-      const res = await postToGasBackend({
-        action: 'updateMemberGuidelineRoutine',
-        memberKey: key,
-        dietRoutine: val
-      });
-      if (res && res.status === 'success') showToast('식단 계획이 구글 시트에 저장되었습니다.', 'success');
-    });
+// [새로 만들기] 전: 회원이 셀프 수정으로 바꾼 내용이 있으면 알려 주고 확인
+async function confirmPlanNew(memberNo, kind, autoSwitched) {
+  const p = PLAN_PANEL[kind];
+  const head = autoSwitched ? `현재 ${p.label}이 비어 있어 신청서 기준으로 새로 만듭니다.\n\n` : '';
+  let history = AppState.planHistory[memberNo];
+  if (!history) {
+    showLoadingOverlay('회원 변경 이력을 확인하는 중...');
+    const res = await postToGasBackend({ action: 'getPlanHistory', memberNo }, { silent: true });
+    hideLoadingOverlay();
+    if (res && res.status === 'cancelled') return false;
+    if (res && res.status === 'success') history = AppState.planHistory[memberNo] = res.history || [];
   }
+  if (!history) return confirm(`${head}회원 변경 이력을 확인하지 못했습니다. 그래도 새로 만들까요?`);
+  const changes = history.filter(h => h.kind === kind && h.requester === '회원');
+  if (!changes.length) return true;
+  const cut = (t) => t.length > 60 ? t.slice(0, 60) + '…' : t;
+  const lines = changes.slice(0, 5).map(h => `- ${h.at} ${h.request ? cut(h.request) : (PLAN_HISTORY_ACTION_LABEL[h.action] || h.action)}`);
+  return confirm(`${head}회원이 바꾼 내용이 있습니다:\n${lines.join('\n')}${changes.length > 5 ? `\n…외 ${changes.length - 5}건` : ''}\n\n` +
+    `새로 만들면 현재 ${p.label} 대신 신청서 기준으로 처음부터 만듭니다. (회원 요청 최근 5건은 참고로 넣습니다)\n계속할까요?`);
+}
 
-  // 5. [AI 운동 루틴 업데이트] 버튼 (직통 초고속 모드 + 지침서 및 수정지침 최우선 반영)
-  const btnAiExRoutine = document.getElementById('btnAiUpdateExerciseRoutine');
-  if (btnAiExRoutine) {
-    btnAiExRoutine.addEventListener('click', async () => {
-      if (!AppState.selectedMember) return;
-      const mem = AppState.selectedMember;
-      const customGuideline = getInputValue('inputExerciseGuideline');
+async function runPlanAi(kind, requestedMode) {
+  const mem = AppState.selectedMember;
+  const p = PLAN_PANEL[kind];
+  if (!mem || !p) return;
+  const memberNo = getMemberNo(mem);
+  if (!memberNo) {
+    showToast('회원번호가 없는 회원은 루틴·식단을 저장할 수 없습니다. Members 시트에 회원번호를 먼저 입력해 주세요.', 'warning');
+    return;
+  }
+  const request = getInputValue(p.requestInput).trim();
+  const currentPlan = getInputValue(p.planInput);
+  const mode = (requestedMode === 'new' || !currentPlan.trim()) ? 'new' : 'edit';
+  if (mode === 'edit' && !request) {
+    showToast(`어떻게 바꿀지 '이번 수정 요청'에 적어 주세요.`, 'warning');
+    document.getElementById(p.requestInput)?.focus();
+    return;
+  }
+  if (mode === 'new' && !(await confirmPlanNew(memberNo, kind, requestedMode !== 'new'))) return;
 
-      showLoadingOverlay('AI가 운동 지침서와 수정 지침을 분석하여 루틴을 생성 중입니다...');
+  const fields = { member: mem, mode, currentPlan: mode === 'edit' ? currentPlan : '', request, fixed: getInputValue(p.fixedInput), guidelines: AppState.guidelines };
+  const retry = () => runPlanAi(kind, requestedMode);
+  showLoadingOverlay(mode === 'edit'
+    ? `AI가 현재 ${p.short}에서 요청한 부분만 고치는 중입니다...`
+    : `AI가 신청서 기준으로 ${p.label}을 새로 만드는 중입니다...`);
 
-      // [1] 브라우저 직통 스트리밍 (브라우저 전용 키가 있을 때만, 프롬프트는 GAS에서 받아옴)
-      const builtPrompt = hasBrowserGeminiKey()
-        ? await requestAiPromptFromGas('workout', { member: mem, customExerciseGuideline: customGuideline, guidelines: AppState.guidelines })
-        : null;
-      if (builtPrompt) {
-        const directRes = await callGeminiDirectlyFromBrowser(builtPrompt.prompt, builtPrompt.systemInstruction);
-        if (directRes && directRes.isAborted) {
-          hideLoadingOverlay();
-          showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
-          return;
-        }
-        if (directRes && directRes.text) {
-          hideLoadingOverlay();
-          setInputValue('inputCurrentExerciseRoutine', directRes.text);
-          renderCoachWorkoutRoutinePreview(directRes.text);
-          switchRoutineViewMode('table');
-          if (directRes.isTruncated) {
-            showToast(`⚠️ [브라우저 직통 ${directRes.elapsedSec}초] 토큰 한도 끊김 (${directRes.text.length}자)`, 'warning', 8000);
-          } else {
-            showToast(`✓ [브라우저 직통 ${directRes.elapsedSec}초] AI 운동 루틴 생성 완료 (${directRes.model}, ${directRes.text.length}자)`, 'success', 5000);
-          }
-          return;
-        } else {
-          if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
-            hideLoadingOverlay();
-            showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
-            return;
-          }
-          console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
-          showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
-        }
-      }
-
-      // [2] GAS 백엔드 경유 모드 (초경량 직행)
-      const gasStartTime = performance.now();
-      const res = await postToGasBackend({
-        action: 'generateWorkoutRoutine',
-        member: AppState.selectedMember,
-        customExerciseGuideline: customGuideline,
-        guidelines: AppState.guidelines
-      }, { retry: () => btnAiExRoutine.click() });
+  let text = '';
+  let usedMode = mode;
+  let doneMsg = '';
+  // [1] 브라우저 직통 스트리밍 (브라우저 전용 키가 있을 때만, 프롬프트는 GAS에서 받아옴)
+  const builtPrompt = hasBrowserGeminiKey() ? await requestAiPromptFromGas(p.aiKind, fields) : null;
+  if (builtPrompt) {
+    const directRes = await callGeminiDirectlyFromBrowser(builtPrompt.prompt, builtPrompt.systemInstruction);
+    if ((directRes && directRes.isAborted) || (!(directRes && directRes.text) && currentTaskAbortController && currentTaskAbortController.signal.aborted)) {
       hideLoadingOverlay();
-      if (res && res.status === 'cancelled') {
-        showToast('운동 루틴 생성이 취소되었습니다.', 'info', 3000);
-        return;
-      }
-      const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
-
-      if (!res || res.status !== 'success' || !res.routine) {
-        showAiFailure(res, '운동 루틴', () => btnAiExRoutine.click());
-        return;
-      }
-      if (res && res.routine) {
-        if (res.isAiGenerated) {
-          setInputValue('inputCurrentExerciseRoutine', res.routine);
-          renderCoachWorkoutRoutinePreview(res.routine);
-          switchRoutineViewMode('table');
-          const modelName = (res.debug && res.debug.model) ? res.debug.model : 'AI';
-          if (res.debug && res.debug.isTruncated) {
-            showToast(`⚠️ [GAS 백엔드 ${gasElapsedSec}초] 토큰 한도 끊김 (${res.routine.length}자)`, 'warning', 8000);
-          } else {
-            showToast(`✓ [GAS 백엔드 ${gasElapsedSec}초] AI 맞춤 운동 루틴 생성 완료 (${modelName}, ${res.routine.length}자)`, 'success', 5000);
-          }
-        } else {
-          const errDetail = (res.debug && res.debug.errorMessage) ? res.debug.errorMessage : '구글 서버 과부하';
-          showToast(`⚠️ [AI 일시 지연 (${gasElapsedSec}초)] ${errDetail}\n잠시 후 다시 버튼을 눌러주세요.`, 'warning', 7000);
-          console.warn('[Gemini AI 디버그 정보]', res.debug);
-        }
-      }
-    });
+      showToast(`${p.label} 생성이 취소되었습니다.`, 'info', 3000);
+      return;
+    }
+    if (directRes && directRes.text) {
+      text = directRes.text;
+      usedMode = builtPrompt.mode || mode;
+      doneMsg = directRes.isTruncated
+        ? `⚠️ [브라우저 직통 ${directRes.elapsedSec}초] 토큰 한도 끊김 (${text.length}자) - 적용 전에 끝부분을 확인해 주세요`
+        : `✓ [브라우저 직통 ${directRes.elapsedSec}초] ${p.label} ${usedMode === 'new' ? '새로 만들기' : '수정'} 완료 (${directRes.model}) - 확인 후 [적용]해 주세요`;
+    } else {
+      console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
+      showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
+    }
   }
 
-  // 6. [AI 식단 업데이트] 버튼 (직통 초고속 모드 + 지침서 및 수정지침 최우선 반영)
-  const btnAiDietPlan = document.getElementById('btnAiUpdateDietPlan');
-  if (btnAiDietPlan) {
-    btnAiDietPlan.addEventListener('click', async () => {
-      if (!AppState.selectedMember) return;
-      const mem = AppState.selectedMember;
-      const customGuideline = getInputValue('inputDietGuideline');
-
-      showLoadingOverlay('AI가 식단 지침서와 수정 지침을 분석하여 식단을 생성 중입니다...');
-
-      // [1] 브라우저 직통 스트리밍 (브라우저 전용 키가 있을 때만, 프롬프트는 GAS에서 받아옴)
-      const builtPrompt = hasBrowserGeminiKey()
-        ? await requestAiPromptFromGas('diet', { member: mem, customDietGuideline: customGuideline, guidelines: AppState.guidelines })
-        : null;
-      if (builtPrompt) {
-        const directRes = await callGeminiDirectlyFromBrowser(builtPrompt.prompt, builtPrompt.systemInstruction);
-        if (directRes && directRes.isAborted) {
-          hideLoadingOverlay();
-          showToast('식단 생성이 취소되었습니다.', 'info', 3000);
-          return;
-        }
-        if (directRes && directRes.text) {
-          hideLoadingOverlay();
-          setInputValue('inputCurrentDietPlan', directRes.text);
-          renderCoachDietPlanPreview(directRes.text);
-          switchDietViewMode('table');
-          if (directRes.isTruncated) {
-            showToast(`⚠️ [브라우저 직통 ${directRes.elapsedSec}초] 토큰 한도 끊김 (${directRes.text.length}자)`, 'warning', 8000);
-          } else {
-            showToast(`✓ [브라우저 직통 ${directRes.elapsedSec}초] AI 맞춤 데일리 식단 생성 완료 (${directRes.model}, ${directRes.text.length}자)`, 'success', 5000);
-          }
-          return;
-        } else {
-          if (currentTaskAbortController && currentTaskAbortController.signal.aborted) {
-            hideLoadingOverlay();
-            showToast('식단 생성이 취소되었습니다.', 'info', 3000);
-            return;
-          }
-          console.warn('[브라우저 직통 실패 -> GAS 백엔드로 자동 전환]', directRes ? directRes.error : '알 수 없음');
-          showLoadingOverlay(`브라우저 직통 실패 (${directRes ? directRes.error : '오류'}) ➔ GAS 백엔드로 전환하여 생성 중...`);
-        }
-      }
-
-      // [2] GAS 백엔드 경유 모드 (초경량 직행)
-      const gasStartTime = performance.now();
-      const res = await postToGasBackend({
-        action: 'generateDietPlan',
-        member: AppState.selectedMember,
-        customDietGuideline: customGuideline,
-        guidelines: AppState.guidelines
-      }, { retry: () => btnAiDietPlan.click() });
-      hideLoadingOverlay();
-      if (res && res.status === 'cancelled') {
-        showToast('식단 생성이 취소되었습니다.', 'info', 3000);
-        return;
-      }
-      const gasElapsedSec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
-
-      if (!res || res.status !== 'success' || !res.dietPlan) {
-        showAiFailure(res, '식단', () => btnAiDietPlan.click());
-        return;
-      }
-      if (res && res.dietPlan) {
-        if (res.isAiGenerated) {
-          setInputValue('inputCurrentDietPlan', res.dietPlan);
-          renderCoachDietPlanPreview(res.dietPlan);
-          switchDietViewMode('table');
-          const modelName = (res.debug && res.debug.model) ? res.debug.model : 'AI';
-          if (res.debug && res.debug.isTruncated) {
-            showToast(`⚠️ [GAS 백엔드 ${gasElapsedSec}초] 토큰 한도 끊김 (${res.dietPlan.length}자)`, 'warning', 8000);
-          } else {
-            showToast(`✓ [GAS 백엔드 ${gasElapsedSec}초] AI 맞춤 데일리 식단 생성 완료 (${modelName}, ${res.dietPlan.length}자)`, 'success', 5000);
-          }
-        } else {
-          const errDetail = (res.debug && res.debug.errorMessage) ? res.debug.errorMessage : '구글 서버 과부하';
-          showToast(`⚠️ [AI 일시 지연 (${gasElapsedSec}초)] ${errDetail}\n잠시 후 다시 버튼을 눌러주세요.`, 'warning', 7000);
-          console.warn('[Gemini AI 디버그 정보]', res.debug);
-        }
-      }
-    });
+  // [2] GAS 백엔드 경유
+  if (!text) {
+    const gasStartTime = performance.now();
+    const res = await postToGasBackend({ action: p.action, ...fields }, { retry });
+    hideLoadingOverlay();
+    if (res && res.status === 'cancelled') {
+      showToast(`${p.label} 생성이 취소되었습니다.`, 'info', 3000);
+      return;
+    }
+    if (!res || res.status !== 'success' || !res[p.resultKey]) {
+      if (res && res.code === 'empty_request') showToast(res.message, 'warning');
+      else showAiFailure(res, p.label, retry);
+      return;
+    }
+    text = res[p.resultKey];
+    usedMode = res.mode || mode;
+    const sec = ((performance.now() - gasStartTime) / 1000).toFixed(1);
+    const modelName = (res.debug && res.debug.model) ? res.debug.model : 'AI';
+    doneMsg = (res.debug && res.debug.isTruncated)
+      ? `⚠️ [GAS 백엔드 ${sec}초] 토큰 한도 끊김 (${text.length}자) - 적용 전에 끝부분을 확인해 주세요`
+      : `✓ [GAS 백엔드 ${sec}초] ${p.label} ${usedMode === 'new' ? '새로 만들기' : '수정'} 완료 (${modelName}) - 확인 후 [적용]해 주세요`;
   }
+  hideLoadingOverlay();
+
+  // 초안 보관: 같은 초안에 [수정]을 이어서 하면 요청을 이어 붙이고, [새로 만들기]는 초안을 새로 시작
+  const prev = getPlanDraft(memberNo, kind);
+  const sheetPlan = getMemberFieldExact(mem, [p.planField]);
+  AppState.planDrafts[planDraftKey(memberNo, kind)] = (usedMode === 'new' || !prev)
+    ? { plan: text, mode: usedMode, requests: request ? [request] : [], basePlan: prev ? prev.basePlan : sheetPlan }
+    : { plan: text, mode: prev.mode, requests: prev.requests.concat(request ? [request] : []), basePlan: prev.basePlan };
+  if (AppState.selectedMember === mem) {
+    setInputValue(p.requestInput, '');
+    setPlanText(kind, text);
+    renderPlanDraftBar(kind);
+  }
+  showToast(doneMsg, doneMsg.startsWith('⚠️') ? 'warning' : 'success', 6000);
+}
+
+function discardPlanDraft(kind) {
+  const mem = AppState.selectedMember;
+  const p = PLAN_PANEL[kind];
+  if (!mem || !p) return;
+  const memberNo = getMemberNo(mem);
+  const draft = getPlanDraft(memberNo, kind);
+  if (!draft) return;
+  delete AppState.planDrafts[planDraftKey(memberNo, kind)];
+  // 초안을 만든 요청은 요청 칸으로 돌려놓음 (지금 칸에 새로 적은 내용이 있으면 그대로 둠)
+  if (!getInputValue(p.requestInput).trim()) setInputValue(p.requestInput, draft.requests.join(' / ') || getMemberFieldExact(mem, p.requestFields));
+  setPlanText(kind, getMemberFieldExact(mem, [p.planField]));
+  renderPlanDraftBar(kind);
+  showToast(`AI 결과를 버렸습니다. 시트의 ${p.label}은 그대로입니다.`, 'info');
+}
+
+/**
+ * [적용] (초안이 있으면 AI 결과 적용, 없으면 직접 편집 저장)
+ * - 서버 applyPlanChange: 현재 플랜 저장 + (AI 결과면) 이번 수정 요청 칸 비움 + 이전 버전 비움 + 이력
+ */
+async function applyPlanChange(kind, opts = {}) {
+  const mem = AppState.selectedMember;
+  const p = PLAN_PANEL[kind];
+  if (!mem || !p) return;
+  const memberNo = getMemberNo(mem);
+  if (!memberNo) {
+    showToast('회원번호가 없는 회원은 저장할 수 없습니다. Members 시트에 회원번호를 먼저 입력해 주세요.', 'warning');
+    return;
+  }
+  const draft = getPlanDraft(memberNo, kind);
+  const plan = getInputValue(p.planInput);
+  const payload = {
+    action: 'applyPlanChange', memberNo, kind, plan,
+    mode: draft ? draft.mode : 'manual',
+    request: draft ? draft.requests.join(' / ') : '',
+    basePlan: draft ? draft.basePlan : getMemberFieldExact(mem, [p.planField]),
+    force: !!opts.force
+  };
+  showToast(`${p.label}을 시트(Members)에 저장 중...`, 'info');
+  const res = await postToGasBackend(payload, { silent: true, noAbort: true });
+  if (res && res.status === 'cancelled') return;
+  if (res && res.code === 'plan_changed') {
+    if (typeof res.currentPlan === 'string') setMemberFieldExact(mem, [p.planField], res.currentPlan);
+    const ok = confirm(`${res.message}\n\n그래도 지금 화면의 ${p.label}으로 덮어쓸까요?\n(취소하면 시트는 그대로 두고, 회원이 바꾼 내용은 '최근 수정 이력'에서 볼 수 있어요)`);
+    if (ok) applyPlanChange(kind, { force: true });
+    return;
+  }
+  if (!res || res.status !== 'success') {
+    if (!res || res.code !== 'network') showRetryToast(`저장하지 못했습니다: ${(res && res.message) || '서버 오류'}`, () => applyPlanChange(kind, opts));
+    return;
+  }
+
+  setMemberFieldExact(mem, [p.planField], res.plan);
+  if (res.requestCleared) setMemberFieldExact(mem, p.requestFields, '');
+  if (findMemberFieldKey(mem, [p.previousField])) setMemberFieldExact(mem, [p.previousField], '');
+  delete AppState.planDrafts[planDraftKey(memberNo, kind)];
+  delete AppState.planHistory[memberNo];
+  if (AppState.selectedMember === mem) {
+    if (draft) setInputValue(p.requestInput, '');
+    setPlanText(kind, res.plan);
+    renderPlanDraftBar(kind);
+    if (document.getElementById(`${kind}PlanHistory`)?.open) loadPlanHistory(memberNo);
+    else renderPlanHistory(kind);
+  }
+  if (AppState.dataSource !== 'mock') saveCoachDataCache();
+  showToast(res.unchanged
+    ? `바뀐 내용이 없어 저장하지 않았습니다.`
+    : `✓ ${p.label}을 ${draft ? '적용' : '저장'}했습니다. 회원 화면에 반영됩니다.${res.requestCleared ? ' 이번 수정 요청은 수정 이력으로 옮겼습니다.' : ''}`, 'success');
+}
+
+// 고정 조건 저장 / 이번 수정 요청 임시 저장 (Members 열, 회원번호 정확 일치)
+async function savePlanMemberField(kind, field) {
+  const mem = AppState.selectedMember;
+  const p = PLAN_PANEL[kind];
+  if (!mem || !p) return;
+  const memberNo = getMemberNo(mem);
+  if (!memberNo) {
+    showToast('회원번호가 없는 회원은 저장할 수 없습니다. Members 시트에 회원번호를 먼저 입력해 주세요.', 'warning');
+    return;
+  }
+  const isFixed = field === 'fixed';
+  const val = getInputValue(isFixed ? p.fixedInput : p.requestInput);
+  const name = isFixed ? `${p.short === '루틴' ? '운동' : '식단'} 고정 조건` : '이번 수정 요청';
+  showToast(`${name}을 시트(Members)에 저장 중...`, 'info');
+  const res = await postToGasBackend({
+    action: 'updateMemberGuidelineRoutine', memberNo, memberKey: memberNo,
+    [isFixed ? p.payloadFixed : p.payloadRequest]: val
+  }, { retry: () => savePlanMemberField(kind, field) });
+  if (res && res.status === 'success') {
+    setMemberFieldExact(mem, isFixed ? [p.fixedField] : p.requestFields, val);
+    showToast(`✓ ${name}이 구글 시트에 저장되었습니다.`, 'success');
+  }
+}
+
+/* ------------------------------ 최근 수정 이력 (MemberPlanLog) ------------------------------ */
+async function loadPlanHistory(memberNo, force) {
+  if (!memberNo || AppState.planHistoryLoading[memberNo]) return;
+  if (force) delete AppState.planHistory[memberNo];
+  AppState.planHistoryLoading[memberNo] = true;
+  AppState.planHistoryFailed[memberNo] = false;
+  Object.keys(PLAN_PANEL).forEach(renderPlanHistory);
+  const res = await postToGasBackend({ action: 'getPlanHistory', memberNo }, { silent: true, noAbort: true });
+  AppState.planHistoryLoading[memberNo] = false;
+  if (res && res.status === 'success') AppState.planHistory[memberNo] = res.history || [];
+  else AppState.planHistoryFailed[memberNo] = true;
+  Object.keys(PLAN_PANEL).forEach(renderPlanHistory);
+}
+
+function renderPlanHistory(kind) {
+  const body = document.getElementById(`${kind}PlanHistoryBody`);
+  if (!body) return;
+  const mem = AppState.selectedMember;
+  const memberNo = mem ? getMemberNo(mem) : '';
+  if (!memberNo) {
+    body.innerHTML = '<div class="plan-history-empty">회원번호가 없어 이력을 볼 수 없습니다.</div>';
+    return;
+  }
+  if (AppState.planHistoryLoading[memberNo]) {
+    body.innerHTML = '<div class="plan-history-empty"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>불러오는 중...</div>';
+    return;
+  }
+  const list = AppState.planHistory[memberNo];
+  if (!list) {
+    body.innerHTML = AppState.planHistoryFailed[memberNo]
+      ? '<div class="plan-history-empty text-danger">이력을 불러오지 못했습니다. <button type="button" class="btn btn-link btn-sm p-0 align-baseline" data-plan-history-retry>다시 시도</button></div>'
+      : '<div class="plan-history-empty">펼치면 불러옵니다.</div>';
+    return;
+  }
+  const rows = list.filter(h => h.kind === kind);
+  if (!rows.length) {
+    body.innerHTML = '<div class="plan-history-empty">수정 이력이 없습니다.</div>';
+    return;
+  }
+  body.innerHTML = `<ul class="plan-history-list">${rows.map(h => {
+    const who = h.requester === '회원' ? 'is-member' : (h.requester === '코치' ? 'is-coach' : '');
+    return `<li>
+      <div class="plan-history-meta"><span class="plan-history-who ${who}">${escapeHtml(h.requester || '-')}</span><span>${escapeHtml(h.at)}</span><span class="plan-history-action">${escapeHtml(PLAN_HISTORY_ACTION_LABEL[h.action] || h.action)}</span></div>
+      ${h.request ? `<div class="plan-history-req">${escapeHtml(h.request)}</div>` : ''}
+      ${h.note ? `<details class="plan-history-note"><summary>요청 반영 안내</summary><div>${escapeHtml(h.note)}</div></details>` : ''}
+    </li>`;
+  }).join('')}</ul>`;
 }
 
 /**
@@ -3876,15 +4004,21 @@ function getMemberCoachLogs(memberNo) {
 /* ------------------------- 회원 일일 기록 (WeightLog 운동·식단) ------------------------- */
 // 회원이 마이페이지 '기록' 탭에서 입력한 그 날 체중·운동·식단 (코치 화면은 읽기만 함)
 const DIET_MEAL_ORDER = ['아침', '점심', '저녁', '간식'];
-// 회원이 고른 운동 휴식 (서버 EXERCISE_REST_TYPES와 같은 값)
-const EXERCISE_REST_TYPES = ['계획된 휴식', '미계획된 휴식'];
+// 회원이 고른 그날 운동 상태 (서버 EXERCISE_REST_TYPES와 같은 값, 필드 이름은 예전 그대로 '휴식')
+const EXERCISE_REST_TYPES = ['운동 완료', '계획된 휴식', '미계획된 휴식'];
+const EXERCISE_REST_VIEW = {
+  '운동 완료': { cls: 'is-done', icon: 'bi-check-circle-fill', short: '운동 완료' },
+  '계획된 휴식': { cls: '', icon: 'bi-moon-stars-fill', short: '계획 휴식' },
+  '미계획된 휴식': { cls: 'is-unplanned', icon: 'bi-moon-stars-fill', short: '미계획 휴식' }
+};
 
 function dailyRest(log) {
   return log && EXERCISE_REST_TYPES.includes(log['휴식']) ? log['휴식'] : '';
 }
 
 function renderDailyRestBadge(rest) {
-  return rest ? `<span class="daily-rest-badge ${rest === '미계획된 휴식' ? 'is-unplanned' : ''}"><i class="bi bi-moon-stars-fill"></i>${rest}</span>` : '';
+  const v = EXERCISE_REST_VIEW[rest];
+  return v ? `<span class="daily-rest-badge ${v.cls}"><i class="bi ${v.icon}"></i>${rest}</span>` : '';
 }
 
 function getDailyLog(memberNo, date) {
@@ -3922,11 +4056,24 @@ function getDailyInputFlags(mem, memberNo, date) {
 
 function renderDailyInputChips(flags) {
   const chip = (on, label) => `<span class="today-in ${on ? 'is-on' : 'is-off'}" title="${label} ${on ? '입력' : '미입력'}"><i class="bi ${on ? 'bi-check-lg' : 'bi-dash'}"></i>${label}</span>`;
-  // 운동 대신 휴식을 고른 날은 운동 칩 자리에 휴식 종류를 보여 줌
-  const exChip = flags.rest
-    ? `<span class="today-in is-rest ${flags.rest === '미계획된 휴식' ? 'is-unplanned' : ''}" title="운동 ${flags.rest}"><i class="bi bi-moon-stars-fill"></i>${flags.rest === '계획된 휴식' ? '계획 휴식' : '미계획 휴식'}</span>`
+  // 회원이 운동 상태(운동 완료/휴식)를 고른 날은 운동 칩 자리에 그 상태를 보여 줌
+  const rv = EXERCISE_REST_VIEW[flags.rest];
+  const exChip = rv
+    ? `<span class="today-in is-rest ${rv.cls}" title="운동 상태: ${flags.rest}"><i class="bi ${rv.icon}"></i>${rv.short}</span>`
     : chip(flags.hasExercise, '운동');
   return `<div class="today-inputs">${chip(flags.hasWeight, '체중')}${exChip}${chip(flags.hasDiet, '식단')}</div>`;
+}
+
+// 회원이 그 날짜에 마이페이지에서 루틴·식단을 셀프 수정(또는 되돌림)했으면 표시 (Members '회원 운동/식단 변경일시')
+function renderSelfEditChips(mem, date) {
+  const chips = MEMBER_PLAN_CHANGE_KINDS.map(k => {
+    const changedAt = String(mem[k.changed[0]] || mem[k.changed[1]] || '').trim();
+    if (changedAt.slice(0, 10) !== date) return '';
+    const short = k.kind === 'exercise' ? '루틴' : '식단';
+    const isRevert = changedAt.includes('되돌림');
+    return `<span class="today-selfedit" title="회원이 마이페이지에서 ${k.label}을 ${isRevert ? '되돌렸습니다' : 'AI로 바꿨습니다'} (${escapeHtml(changedAt)})"><i class="bi bi-person-gear"></i>${short} ${isRevert ? '되돌림' : '셀프 수정'}</span>`;
+  }).join('');
+  return chips ? `<div class="today-selfedits">${chips}</div>` : '';
 }
 
 // 식단 줄을 아침·점심·저녁·간식 순서로 묶음 (그 밖의 항목은 뒤에)
@@ -4306,6 +4453,7 @@ function renderTodayBoard() {
           <div class="today-row-main">
             <div class="today-row-name">${e.aiAlert ? '<span class="today-ai-flag">⚠</span>' : ''}${escapeHtml(e.name)}<small>${escapeHtml(getMemberTag(e.mem))}</small></div>
             ${renderDailyInputChips(flags)}
+            ${renderSelfEditChips(e.mem, date)}
             ${aiHtml}
             ${checkHtml}
           </div>
@@ -4867,7 +5015,7 @@ function updateGlobalNotificationBadges() {
       </div>
       ${item.request ? `<div class="small text-muted text-truncate" style="max-width: 300px;">요청: ${escapeHtml(item.request)}</div>` : ''}
       ${item.hasCoachConflict ? '<div class="small text-danger fw-semibold"><i class="bi bi-exclamation-octagon me-1"></i>회원 요청이 코치 수정 지침과 다르게 반영되었습니다</div>' : ''}
-      ${item.hasUnapplied ? '<div class="small text-warning-emphasis fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>일부 요청은 지침과 맞지 않아 반영되지 않았습니다</div>' : ''}
+      ${item.hasUnapplied ? '<div class="small text-warning-emphasis fw-semibold"><i class="bi bi-exclamation-triangle me-1"></i>일부 요청은 고정 조건·지침과 맞지 않아 반영되지 않았습니다</div>' : ''}
       <div class="text-end mt-1">
         <span class="badge bg-success text-white small px-2 py-1"><i class="bi bi-eye me-1"></i>변경 내용 확인 &rarr;</span>
       </div>

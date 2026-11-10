@@ -1254,18 +1254,27 @@ button.mp-cta-card {
 .mp-rec-weight span { font-weight: 700; color: var(--mp-ink-2); }
 .mp-rec-hint { margin-top: 6px; font-size: 0.8rem; color: var(--mp-ink-3); }
 
-/* 운동 휴식 체크박스 (계획된 / 미계획된, 둘 중 하나만) */
-.mp-rec-rest { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+/* 운동 상태 체크박스 (운동 완료 = 초록 / 계획된 휴식 = 파랑 / 미계획된 휴식 = 주황, 셋 중 하나만) */
+.mp-rec-rest { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
 .mp-rec-rest-opt {
-  display: flex; align-items: center; gap: 8px; margin: 0; padding: 10px 12px; min-height: 44px;
+  display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px; min-height: 44px; line-height: 1.2; word-break: keep-all;
   border: 1px solid var(--mp-line); border-radius: 12px; background: var(--mp-surface);
   font-size: 0.88rem; font-weight: 700; color: var(--mp-ink-2); cursor: pointer;
 }
 .mp-rec-rest-opt .form-check-input { margin: 0; flex-shrink: 0; width: 1.15em; height: 1.15em; }
 .mp-rec-rest-opt.is-on { border-color: var(--mp-workout); background: var(--mp-workout-soft); color: var(--mp-workout); }
 .mp-rec-rest-opt.is-on .form-check-input { background-color: var(--mp-workout); border-color: var(--mp-workout); }
+.mp-rec-rest-opt.is-planned.is-on { border-color: var(--mp-primary); background: var(--mp-primary-soft); color: var(--mp-primary); }
+.mp-rec-rest-opt.is-planned.is-on .form-check-input { background-color: var(--mp-primary); border-color: var(--mp-primary); }
 .mp-rec-rest-opt.is-unplanned.is-on { border-color: var(--mp-mid); background: var(--mp-diet-soft); color: var(--mp-mid); }
 .mp-rec-rest-opt.is-unplanned.is-on .form-check-input { background-color: var(--mp-mid); border-color: var(--mp-mid); }
+
+@media (max-width: 360px) { .mp-rec-rest-opt { font-size: 0.8rem; padding: 8px 6px; } }
+
+/* 선택 입력 표시 (운동 상세 기록·식단 기록) */
+.mp-rec-subhead { margin: 4px 0 8px; font-size: 0.86rem; font-weight: 800; color: var(--mp-ink-2); }
+.mp-rec-optional { margin-left: 4px; font-size: 0.72rem; font-weight: 600; color: var(--mp-ink-3); }
+.mp-rec-head h3 .mp-rec-optional { font-size: 0.72rem; }
 
 .mp-rec-ex-list { display: flex; flex-direction: column; gap: 10px; }
 .mp-rec-ex { background: var(--mp-surface-2); border-radius: var(--mp-radius-sm); padding: 10px; }

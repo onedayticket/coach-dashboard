@@ -506,13 +506,18 @@ body.cv3 {
 .today-in { display: inline-flex; align-items: center; gap: 2px; font-size: 0.7rem; font-weight: 700; border-radius: 999px; padding: 1px 7px 1px 5px; white-space: nowrap; }
 .today-in.is-on { background: #e6fcf5; color: #087f5b; }
 .today-in.is-off { background: var(--cv-surface-2); color: var(--cv-ink-3); }
-/* 회원이 고른 운동 휴식: 계획된 = 파랑, 미계획된 = 주황 */
+/* 회원이 고른 운동 상태: 운동 완료 = 초록, 계획된 휴식 = 파랑, 미계획된 휴식 = 주황 */
 .today-in.is-rest { background: var(--cv-primary-soft); color: #1b64da; }
 .today-in.is-rest.is-unplanned { background: #fff4e6; color: #d9480f; }
 .daily-rest-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 0.74rem; font-weight: 800; border-radius: 999px; padding: 2px 8px; background: var(--cv-primary-soft); color: #1b64da; white-space: nowrap; }
 .daily-rest-badge.is-unplanned { background: #fff4e6; color: #d9480f; }
+.today-in.is-rest.is-done, .daily-rest-badge.is-done { background: #e6fcf5; color: #087f5b; }
+/* 회원이 그 날짜에 루틴·식단을 셀프 수정 (Members 회원 운동/식단 변경일시) */
+.today-selfedits { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.today-selfedit { display: inline-flex; align-items: center; gap: 3px; font-size: 0.7rem; font-weight: 700; border-radius: 999px; padding: 1px 7px 1px 5px; background: #f3f0ff; color: #6741d9; white-space: nowrap; }
 .coach-tl-member .daily-rest-badge { font-size: 0.68rem; color: #1b64da; margin-right: 6px; }
 .coach-tl-member .daily-rest-badge.is-unplanned { color: #d9480f; }
+.coach-tl-member .daily-rest-badge.is-done { color: #087f5b; }
 
 /* 회원 일일 기록 상세 (데일리 펼치기·기록 창 공통) */
 .daily-rec { display: flex; flex-direction: column; gap: 10px; }
@@ -1090,3 +1095,33 @@ body.cv3 {
   .cv3-navbar .ms-auto { gap: 6px !important; }
   .cv3-navbar .dropdown.me-1 { margin-right: 0 !important; }
 }
+
+
+/* ------------------------------------------------------------------ */
+/* 루틴·식단 패널: [수정]/[새로 만들기], 적용 전 초안, 최근 수정 이력      */
+/* ------------------------------------------------------------------ */
+.plan-ai-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.plan-ai-actions .btn { padding-top: 0.45rem; padding-bottom: 0.45rem; }
+.plan-ai-hint { margin-top: 6px; font-size: 0.74rem; color: var(--cv-ink-3, #8b95a1); }
+.plan-draft-bar { margin-bottom: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid #a5d8ff; background: #e7f5ff; font-size: 0.82rem; }
+.plan-draft-head { display: flex; align-items: center; gap: 6px; color: #1864ab; }
+.plan-draft-badge { margin-left: auto; font-size: 0.7rem; font-weight: 800; padding: 1px 8px; border-radius: 999px; background: #1c7ed6; color: #fff; white-space: nowrap; }
+.plan-draft-req { margin-top: 6px; color: #191f28; white-space: pre-wrap; word-break: break-word; }
+.plan-draft-hint { margin-top: 4px; color: #4e5968; font-size: 0.76rem; }
+.plan-draft-actions { margin-top: 8px; display: flex; gap: 8px; }
+.plan-draft-actions .btn { flex: 1; }
+.plan-history { border-top: 1px solid var(--cv-line, #e8ebee); padding-top: 10px; }
+.plan-history > summary { cursor: pointer; font-size: 0.82rem; font-weight: 700; color: #4e5968; list-style: revert; }
+.plan-history-body { margin-top: 8px; max-height: 280px; overflow-y: auto; }
+.plan-history-empty { font-size: 0.78rem; color: #8b95a1; padding: 4px 0; }
+.plan-history-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.plan-history-list li { font-size: 0.78rem; padding: 8px 10px; border-radius: 10px; background: #f9fafb; }
+.plan-history-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: #6b7684; }
+.plan-history-who { font-weight: 800; font-size: 0.7rem; padding: 1px 7px; border-radius: 999px; background: #e9ecef; color: #495057; }
+.plan-history-who.is-coach { background: #e7f5ff; color: #1864ab; }
+.plan-history-who.is-member { background: #f3f0ff; color: #6741d9; }
+.plan-history-action { font-weight: 700; color: #333d4b; }
+.plan-history-req { margin-top: 4px; color: #191f28; white-space: pre-wrap; word-break: break-word; }
+.plan-history-note { margin-top: 4px; }
+.plan-history-note > summary { cursor: pointer; color: #6b7684; font-size: 0.74rem; }
+.plan-history-note > div { white-space: pre-wrap; color: #333d4b; margin-top: 2px; }
